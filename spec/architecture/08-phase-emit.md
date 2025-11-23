@@ -556,6 +556,7 @@ public sealed record NamespaceMetadata
 ```csharp
 public sealed record TypeMetadata
 {
+    public required string StableId { get; init; }          // "System.Private.CoreLib:System.Collections.Generic.List`1"
     public required string ClrName { get; init; }           // "System.Collections.Generic.List`1"
     public required string TsEmitName { get; init; }        // "List_1"
     public required string Kind { get; init; }              // "Class"
@@ -576,6 +577,7 @@ public sealed record TypeMetadata
 ```csharp
 public sealed record MethodMetadata
 {
+    public required string StableId { get; init; }                  // Full member StableId
     public required string ClrName { get; init; }                  // "Add"
     public required string TsEmitName { get; init; }               // "Add" or "IEnumerable_1$view$Add"
     public required string NormalizedSignature { get; init; }       // For universal matching
@@ -596,9 +598,10 @@ public sealed record MethodMetadata
 ```csharp
 public sealed record PropertyMetadata
 {
-    public required string ClrName { get; init; }
-    public required string TsEmitName { get; init; }
-    public required string NormalizedSignature { get; init; }
+    public required string StableId { get. init; }               // Full member StableId
+    public required string ClrName { get. init; }
+    public required string TsEmitName { get. init; }
+    public required string NormalizedSignature { get. init; }
     public required string Provenance { get; init; }
     public required string EmitScope { get; init; }
     public required bool IsStatic { get; init; }
@@ -616,11 +619,12 @@ public sealed record PropertyMetadata
 ```csharp
 public sealed record FieldMetadata
 {
-    public required string ClrName { get; init; }
-    public required string TsEmitName { get; init; }
-    public required string NormalizedSignature { get; init; }
-    public required bool IsStatic { get; init; }
-    public required bool IsReadOnly { get; init; }
+    public required string StableId { get; init; }               // Full member StableId
+    public required string ClrName { get. init; }
+    public required string TsEmitName { get. init; }
+    public required string NormalizedSignature { get. init; }
+    public required bool IsStatic { get. init; }
+    public required bool IsReadOnly { get. init; }
     public required bool IsLiteral { get; init; }              // const field
 }
 ```
@@ -629,6 +633,7 @@ public sealed record FieldMetadata
 ```csharp
 public sealed record EventMetadata
 {
+    public required string StableId { get; init; }               // Full member StableId
     public required string ClrName { get; init; }
     public required string TsEmitName { get; init; }
     public required string NormalizedSignature { get; init; }
@@ -640,8 +645,9 @@ public sealed record EventMetadata
 ```csharp
 public sealed record ConstructorMetadata
 {
+    public required string StableId { get; init; }               // Full member StableId
     public required string NormalizedSignature { get; init; }
-    public required bool IsStatic { get; init; }
+    public required bool IsStatic { get. init; }
     public required int ParameterCount { get; init; }
 }
 ```
@@ -797,6 +803,8 @@ public sealed record MethodBinding
     public required string EmitScope { get; init; }
     public required int Arity { get; init; }
     public required int ParameterCount { get; init; }
+    public required string DeclaringClrType { get; init; }      // Declaring type CLR name
+    public required string DeclaringAssemblyName { get; init; } // Declaring assembly name
 }
 ```
 
@@ -814,6 +822,8 @@ public sealed record PropertyBinding
     public required bool IsIndexer { get; init; }
     public required bool HasGetter { get; init; }
     public required bool HasSetter { get; init; }
+    public required string DeclaringClrType { get; init; }      // Declaring type CLR name
+    public required string DeclaringAssemblyName { get; init; } // Declaring assembly name
 }
 ```
 
@@ -828,6 +838,8 @@ public sealed record FieldBinding
     public required string NormalizedSignature { get; init; }
     public required bool IsStatic { get; init; }
     public required bool IsReadOnly { get; init; }
+    public required string DeclaringClrType { get; init; }      // Declaring type CLR name
+    public required string DeclaringAssemblyName { get; init; } // Declaring assembly name
 }
 ```
 
@@ -841,6 +853,8 @@ public sealed record EventBinding
     public required int MetadataToken { get; init; }
     public required string NormalizedSignature { get; init; }
     public required bool IsStatic { get; init; }
+    public required string DeclaringClrType { get; init; }      // Declaring type CLR name
+    public required string DeclaringAssemblyName { get; init; } // Declaring assembly name
 }
 ```
 
@@ -854,6 +868,8 @@ public sealed record ConstructorBinding
     public required string NormalizedSignature { get; init; }
     public required bool IsStatic { get; init; }
     public required int ParameterCount { get; init; }
+    public required string DeclaringClrType { get; init; }      // Declaring type CLR name
+    public required string DeclaringAssemblyName { get; init; } // Declaring assembly name
 }
 ```
 
