@@ -1856,7 +1856,13 @@ public sealed record LibraryContract
 | TBG882 | VersionDriftForSameIdentity | ERROR | Load | Version drift (same assembly, different versions) | **PG_LOAD_003** |
 | TBG883 | RetargetableOrContentTypeAssemblyRef | ERROR | Load | Retargetable/ContentType assembly reference | **PG_LOAD_004** |
 
-**Total: 43 diagnostic codes**
+**Total: 50 diagnostic codes** (47 TBG codes + 3 LIB codes)
+
+**Note:** This table shows the core TBG001-TBG883 codes. Additional codes not shown in table:
+- TBG8A1, TBG8A2 (Surface naming policy - documented in Surface Name Policy section)
+- TBG8P1 (Primitive generic lifting - documented in Primitive Lifting section)
+- TBG900-907 (Plan validation codes - documented in Shape Pass sections)
+- LIB001-003 (Library mode codes - documented in Library Mode Validation section)
 
 ---
 

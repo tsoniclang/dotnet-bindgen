@@ -186,7 +186,7 @@
 - **LIB002:** Dangling reference (user type → filtered type)
 - **LIB003:** Disabled in library mode
 
-**Total:** 46 diagnostic codes (TBG001-TBG883, LIB001-LIB003 in full system)
+**Total:** 50 diagnostic codes (47 TBG codes + 3 LIB codes)
 
 ---
 
