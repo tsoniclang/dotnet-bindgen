@@ -803,8 +803,8 @@ public sealed record MethodBinding
     public required string EmitScope { get; init; }
     public required int Arity { get; init; }
     public required int ParameterCount { get; init; }
-    public required string DeclaringClrType { get; init; }      // Declaring type CLR name
-    public required string DeclaringAssemblyName { get; init; } // Declaring assembly name
+    public required string DeclaringClrType { get; init; }
+    public required string DeclaringAssemblyName { get; init; }
 }
 ```
 
@@ -822,8 +822,8 @@ public sealed record PropertyBinding
     public required bool IsIndexer { get; init; }
     public required bool HasGetter { get; init; }
     public required bool HasSetter { get; init; }
-    public required string DeclaringClrType { get; init; }      // Declaring type CLR name
-    public required string DeclaringAssemblyName { get; init; } // Declaring assembly name
+    public required string DeclaringClrType { get; init; }
+    public required string DeclaringAssemblyName { get; init; }
 }
 ```
 
@@ -838,8 +838,8 @@ public sealed record FieldBinding
     public required string NormalizedSignature { get; init; }
     public required bool IsStatic { get; init; }
     public required bool IsReadOnly { get; init; }
-    public required string DeclaringClrType { get; init; }      // Declaring type CLR name
-    public required string DeclaringAssemblyName { get; init; } // Declaring assembly name
+    public required string DeclaringClrType { get; init; }
+    public required string DeclaringAssemblyName { get; init; }
 }
 ```
 
@@ -853,8 +853,8 @@ public sealed record EventBinding
     public required int MetadataToken { get; init; }
     public required string NormalizedSignature { get; init; }
     public required bool IsStatic { get; init; }
-    public required string DeclaringClrType { get; init; }      // Declaring type CLR name
-    public required string DeclaringAssemblyName { get; init; } // Declaring assembly name
+    public required string DeclaringClrType { get; init; }
+    public required string DeclaringAssemblyName { get; init; }
 }
 ```
 
@@ -868,8 +868,8 @@ public sealed record ConstructorBinding
     public required string NormalizedSignature { get; init; }
     public required bool IsStatic { get; init; }
     public required int ParameterCount { get; init; }
-    public required string DeclaringClrType { get; init; }      // Declaring type CLR name
-    public required string DeclaringAssemblyName { get; init; } // Declaring assembly name
+    public required string DeclaringClrType { get; init; }
+    public required string DeclaringAssemblyName { get; init; }
 }
 ```
 
