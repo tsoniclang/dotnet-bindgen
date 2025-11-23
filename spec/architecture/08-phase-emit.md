@@ -577,10 +577,10 @@ public sealed record TypeMetadata
 ```csharp
 public sealed record MethodMetadata
 {
-    public required string StableId { get; init; }                  // Full member StableId
+    public required string StableId { get; init; }
     public required string ClrName { get; init; }                  // "Add"
     public required string TsEmitName { get; init; }               // "Add" or "IEnumerable_1$view$Add"
-    public required string NormalizedSignature { get; init; }       // For universal matching
+    public required string NormalizedSignature { get; init; }
     public required string Provenance { get; init; }               // "Direct", "Inherited", "ExplicitImpl"
     public required string EmitScope { get; init; }                // "ClassSurface", "ViewOnly"
     public required bool IsStatic { get; init; }
@@ -598,7 +598,7 @@ public sealed record MethodMetadata
 ```csharp
 public sealed record PropertyMetadata
 {
-    public required string StableId { get. init; }               // Full member StableId
+    public required string StableId { get. init; }
     public required string ClrName { get. init; }
     public required string TsEmitName { get. init; }
     public required string NormalizedSignature { get. init; }
@@ -619,22 +619,19 @@ public sealed record PropertyMetadata
 ```csharp
 public sealed record FieldMetadata
 {
-    public required string StableId { get; init; }               // Full member StableId
-    public required string ClrName { get. init; }
+    public required string StableId { get; init; }    public required string ClrName { get. init; }
     public required string TsEmitName { get. init; }
     public required string NormalizedSignature { get. init; }
     public required bool IsStatic { get. init; }
     public required bool IsReadOnly { get. init; }
-    public required bool IsLiteral { get; init; }              // const field
-}
+    public required bool IsLiteral { get; init; }}
 ```
 
 ### Record: EventMetadata
 ```csharp
 public sealed record EventMetadata
 {
-    public required string StableId { get; init; }               // Full member StableId
-    public required string ClrName { get; init; }
+    public required string StableId { get; init; }    public required string ClrName { get; init; }
     public required string TsEmitName { get; init; }
     public required string NormalizedSignature { get; init; }
     public required bool IsStatic { get; init; }
@@ -645,8 +642,7 @@ public sealed record EventMetadata
 ```csharp
 public sealed record ConstructorMetadata
 {
-    public required string StableId { get; init; }               // Full member StableId
-    public required string NormalizedSignature { get; init; }
+    public required string StableId { get; init; }    public required string NormalizedSignature { get; init; }
     public required bool IsStatic { get. init; }
     public required int ParameterCount { get; init; }
 }
@@ -798,9 +794,7 @@ public sealed record MethodBinding
     public required string ClrName { get; init; }
     public required string TsEmitName { get; init; }
     public required int MetadataToken { get; init; }
-    public required string CanonicalSignature { get; init; }    // From StableId
-    public required string NormalizedSignature { get; init; }   // Universal format
-    public required string EmitScope { get; init; }
+    public required string CanonicalSignature { get; init; }    public required string NormalizedSignature { get; init; }    public required string EmitScope { get; init; }
     public required int Arity { get; init; }
     public required int ParameterCount { get; init; }
     public required string DeclaringClrType { get; init; }
@@ -812,8 +806,7 @@ public sealed record MethodBinding
 ```csharp
 public sealed record PropertyBinding
 {
-    public required string StableId { get; init; }          // Full member StableId
-    public required string ClrName { get; init; }
+    public required string StableId { get; init; }    public required string ClrName { get; init; }
     public required string TsEmitName { get; init; }
     public required int MetadataToken { get; init; }
     public required string CanonicalSignature { get; init; }
@@ -831,8 +824,7 @@ public sealed record PropertyBinding
 ```csharp
 public sealed record FieldBinding
 {
-    public required string StableId { get; init; }          // Full member StableId
-    public required string ClrName { get; init; }
+    public required string StableId { get; init; }    public required string ClrName { get; init; }
     public required string TsEmitName { get; init; }
     public required int MetadataToken { get; init; }
     public required string NormalizedSignature { get; init; }
@@ -847,8 +839,7 @@ public sealed record FieldBinding
 ```csharp
 public sealed record EventBinding
 {
-    public required string StableId { get; init; }          // Full member StableId
-    public required string ClrName { get; init; }
+    public required string StableId { get; init; }    public required string ClrName { get; init; }
     public required string TsEmitName { get; init; }
     public required int MetadataToken { get; init; }
     public required string NormalizedSignature { get; init; }
@@ -862,8 +853,7 @@ public sealed record EventBinding
 ```csharp
 public sealed record ConstructorBinding
 {
-    public required string StableId { get; init; }          // Full member StableId
-    public required int MetadataToken { get; init; }
+    public required string StableId { get; init; }    public required int MetadataToken { get; init; }
     public required string CanonicalSignature { get; init; }
     public required string NormalizedSignature { get; init; }
     public required bool IsStatic { get; init; }
