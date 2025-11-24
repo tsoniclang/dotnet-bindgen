@@ -23,8 +23,7 @@ public static class SignatureCanonicalizer
         string returnType)
     {
         var sb = new StringBuilder();
-        // BUG FIX: Do NOT append methodName here - it's already in MemberStableId.MemberName
-        // Previous code: sb.Append(methodName); caused "AddNewAddNew" duplication
+        // Do NOT append methodName here - it's already in MemberStableId.MemberName
         sb.Append('(');
 
         for (int i = 0; i < parameterTypes.Count; i++)
@@ -51,7 +50,7 @@ public static class SignatureCanonicalizer
         string propertyType)
     {
         var sb = new StringBuilder();
-        // BUG FIX: Do NOT append propertyName here - it's already in MemberStableId.MemberName
+        // Do NOT append propertyName here - it's already in MemberStableId.MemberName
 
         if (indexParameterTypes.Count > 0)
         {
@@ -77,7 +76,7 @@ public static class SignatureCanonicalizer
     /// </summary>
     public static string CanonicalizeField(string fieldName, string fieldType)
     {
-        // BUG FIX: Do NOT include fieldName here - it's already in MemberStableId.MemberName
+        // Do NOT include fieldName here - it's already in MemberStableId.MemberName
         return $":{NormalizeTypeName(fieldType)}";
     }
 
@@ -88,7 +87,7 @@ public static class SignatureCanonicalizer
     /// </summary>
     public static string CanonicalizeEvent(string eventName, string delegateType)
     {
-        // BUG FIX: Do NOT include eventName here - it's already in MemberStableId.MemberName
+        // Do NOT include eventName here - it's already in MemberStableId.MemberName
         return $":{NormalizeTypeName(delegateType)}";
     }
 
@@ -116,8 +115,7 @@ public static class SignatureCanonicalizer
     /// <summary>
     /// Extract method signature from a canonical signature.
     /// Useful for debugging and diagnostics.
-    /// NOTE: After the AddNew bug fix, canonical signatures no longer include the method name.
-    /// Format is now: "(param1,param2):ReturnType" instead of "MethodName(param1,param2):ReturnType"
+    /// Format is: "(param1,param2):ReturnType"
     /// </summary>
     public static (string? name, string[] parameters, string returnType) ParseMethodSignature(
         string canonicalSignature)
@@ -126,8 +124,8 @@ public static class SignatureCanonicalizer
         var closeParenIndex = canonicalSignature.IndexOf(')');
         var colonIndex = canonicalSignature.IndexOf(':', closeParenIndex);
 
-        // BUG FIX: Canonical signature no longer includes method name
-        // Return null for name since it's not in the signature anymore
+        // Canonical signature does not include method name
+        // Return null for name since it's not in the signature
         var name = parenIndex > 0 ? canonicalSignature[..parenIndex] : null;
         var paramsStr = canonicalSignature[(parenIndex + 1)..closeParenIndex];
         var returnType = canonicalSignature[(colonIndex + 1)..];

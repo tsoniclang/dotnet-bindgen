@@ -1009,13 +1009,10 @@ Builder.Build
 EmitPhase(ctx, plan, outputDirectory) → Builder.cs:285
   ↓
 ┌────────────────────────────────────────────┐
-│ Step 1: Emit Support Types (once per build)│
+│ Step 1: Support Types from @tsonic/types   │
 └────────────────────────────────────────────┘
-  ↓
-SupportTypesEmit.Emit(ctx, outputDirectory) → Emit/SupportTypesEmitter.cs
-  Generate: _support/types.d.ts
     Branded numeric types (int, uint, byte, etc.)
-    Unsafe marker types (UnsafePointer, UnsafeByRef, etc.)
+    Unsafe marker types (ptr<T>, ref<T>, etc.)
   ↓
 ┌────────────────────────────────────────────────┐
 │ Step 2: Emit Internal Index Files (per namespace)│

@@ -128,7 +128,7 @@ public static class BindingEmitter
 
     private static MethodBinding GenerateMethodBinding(MethodSymbol method, TypeSymbol declaringType, BuildContext ctx)
     {
-        // M5 FIX: Use view scope for ViewOnly members, class scope for others
+        // Use view scope for ViewOnly members, class scope for others
         string tsEmitName;
         if (method.EmitScope == EmitScope.ViewOnly && method.SourceInterface != null)
         {
@@ -166,7 +166,7 @@ public static class BindingEmitter
 
     private static PropertyBinding GeneratePropertyBinding(PropertySymbol property, TypeSymbol declaringType, BuildContext ctx)
     {
-        // M5 FIX: Use view scope for ViewOnly members, class scope for others
+        // Use view scope for ViewOnly members, class scope for others
         string tsEmitName;
         if (property.EmitScope == EmitScope.ViewOnly && property.SourceInterface != null)
         {

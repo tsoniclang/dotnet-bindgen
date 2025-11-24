@@ -109,7 +109,7 @@ public static class IndexerPlanner
         // Getter: T get_Item(TIndex index)
         // Setter: void set_Item(TIndex index, T value)
 
-        // M5 FIX: Base scope without #static/#instance suffix - ReserveMemberName will add it
+        // Base scope without #static/#instance suffix - ReserveMemberName will add it
         var typeScope = ScopeFactory.ClassBase(type);
 
         // Always create getter

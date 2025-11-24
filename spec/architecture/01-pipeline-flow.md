@@ -498,7 +498,7 @@ Each pass executes sequentially and returns a new immutable SymbolGraph:
 **Mutability**: Side effects only (writes to file system)
 
 **Key Operations**:
-1. Emit `_support/types.d.ts` (centralized marker types)
+1. Support types from `@tsonic/types` package
 2. For each namespace (in emission order):
    - Emit `<namespace>/internal/index.d.ts` (internal declarations)
    - Emit `<namespace>/index.d.ts` (public facade)
@@ -684,8 +684,8 @@ Assembly Paths (string[])
     ┌───────────────┐   ┌─────────────────┴───────────────────────────┐
     │ Return        │   │ PHASE 5: EMIT                               │
     │ Success=false │   │                                             │
-    └───────────────┘   │ SupportTypesEmit.Emit                     │
-                        │   → _support/types.d.ts                     │
+    └───────────────┘   │ Support types from @tsonic/types          │
+                        │                                             │
                         │ InternalIndexEmitter.Emit                 │
                         │   → <ns>/internal/index.d.ts                │
                         │ FacadeEmitter.Emit                        │

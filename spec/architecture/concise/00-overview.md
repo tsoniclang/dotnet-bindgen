@@ -166,7 +166,7 @@ BuildContext (Policy, SymbolRenamer, DiagnosticBag, Interner, Logger, LibraryMod
                  ▼
 ┌─────────────────────────────────────────┐
 │ PHASE 5: Emit (File Generation)         │
-│  - SupportTypesEmit (_support/types)    │
+│  - Support types from @tsonic/types pkg │
 │  - InternalIndexEmitter (internal/)     │
 │  - FacadeEmitter (facade/)              │
 │  - MetadataEmitter (metadata.json)      │
@@ -394,7 +394,6 @@ src/tsbindgen/
 │       ├── Types.cs, ImportExport.cs, Constraints.cs
 │       ├── Finalization.cs, Context.cs, LibraryMode.cs
 └── Emit/                       # Phase 5: File generation
-    ├── SupportTypesEmitter.cs  # _support/types.d.ts
     ├── InternalIndexEmitter.cs # internal/index.d.ts
     ├── FacadeEmitter.cs        # facade/index.d.ts
     ├── MetadataEmitter.cs      # metadata.json

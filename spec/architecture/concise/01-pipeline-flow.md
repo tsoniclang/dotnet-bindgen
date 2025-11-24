@@ -368,7 +368,7 @@ The tsbindgen pipeline executes in **strict sequential order** through 5 main ph
 **Mutability**: Side effects (file system)
 
 **Operations**:
-1. Emit `_support/types.d.ts` (centralized marker types)
+1. Support types from `@tsonic/types` package
 2. For each namespace (in emission order):
    - `<ns>/internal/index.d.ts` (internal declarations)
    - `<ns>/index.d.ts` (public facade)

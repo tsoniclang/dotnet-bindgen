@@ -180,9 +180,8 @@ internal static class Types
 
     /// <summary>
     /// PG_TYPEMAP_001: Validates that no type references use unsupported special forms.
-    /// NOTE: Pointers and byrefs are now properly handled via types from @tsonic/types
-    /// (ptr<T>, ref<T>) and no longer trigger validation errors.
-    /// This guard currently detects function pointers and other unsupported forms.
+    /// Pointers and byrefs are handled via types from @tsonic/types (ptr<T>, ref<T>).
+    /// This guard detects function pointers and other unsupported forms.
     /// </summary>
     internal static void ValidateTypeMapCompliance(BuildContext ctx, SymbolGraph graph, ValidationContext validationCtx)
     {

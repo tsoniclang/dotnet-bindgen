@@ -236,8 +236,6 @@ function validateMetadataFiles() {
         if (!fs.statSync(nsPath).isDirectory()) continue;
 
         // Skip internal subdirectories (not real namespaces)
-        // 'internal' was used before for root namespace, '_root' is used now to avoid case collision
-        // '_support' contains marker types (TSUnsafePointer, TSByRef)
         if (ns === 'internal' || ns === '_root' || ns === '_support') continue;
 
         const indexPath = path.join(nsPath, 'internal', 'index.d.ts');

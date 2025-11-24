@@ -9,7 +9,7 @@ The **Emit Phase** is the fourth and final phase of the architecture. It takes t
 3. **Metadata Sidecars** - `metadata.json` files with CLR-specific information for Tsonic compiler
 4. **Binding Metadata** - `bindings.json` files mapping TypeScript names to CLR names
 5. **Module Stubs** - `index.js` stub files that throw at runtime (prevent execution)
-6. **Support Types** - Centralized `_support/types.d.ts` with marker types for unsafe constructs
+6. **Support Types** - From `@tsonic/types` package with marker types for unsafe constructs
 
 **Key Principles:**
 - **Uses Renamer for all names** - Single source of truth for TypeScript identifiers
@@ -39,8 +39,6 @@ output/
     internal/
       index.d.ts
       metadata.json
-  _support/
-    types.d.ts              # Shared marker types (TSUnsafePointer, TSByRef)
 ```
 
 **Special Cases:**
@@ -255,12 +253,12 @@ private static string GenerateNamespaceDeclaration(BuildContext ctx, SymbolGraph
 1. **Creates TypeNameResolver** - Single source of truth for type names
 2. **File header** - Comments with namespace and contributing assemblies
 3. **Imports branded primitives** - Imports `int`, `byte`, `decimal`, etc. from `@tsonic/types` package
-4. **Conditional support types import** - If namespace uses pointers/byrefs, imports from `_support/types.d.ts`
+4. **Conditional support types import** - If namespace uses pointers/byrefs, imports from `@tsonic/types`
 5. **Cross-namespace imports** - Type imports from other namespaces with aliases if needed
 6. **Type declarations** - Iterates through `nsOrder.OrderedTypes` and emits each as pure ES module exports
 
 **Algorithm:**
-- Calls `NamespaceUsesSupportTypes` to check if `TSUnsafePointer`/`TSByRef` needed
+- Calls `NamespaceUsesSupportTypes` to check if `ptr`/`ref` types needed from @tsonic/types
 - Uses `importPlan.GetImportsFor` to get cross-namespace imports
 - All types are exported directly at module level (pure ESM, no TypeScript namespace wrappers)
 - For each type, checks if it has explicit views (companion views pattern):
@@ -344,7 +342,7 @@ interface __Dictionary_2$views<TKey, TValue> {
 3. **Return:**
    - Matched interface (with correct type arguments), or `null` if not found
 
-**Why needed:** ViewPlanner stores interface references with generic parameters from the interface's perspective, but when emitting companion views, we need the type arguments from the implementing class's perspective.
+ViewPlanner stores interface references with generic parameters from the interface's perspective, but when emitting companion views, we need the type arguments from the implementing class's perspective.
 
 **Example:**
 ```csharp
@@ -387,7 +385,7 @@ NestedTypeReference("Outer`1+Inner")               → "Inner"
 - `NestedTypeReference nested` → `nested.NestedName`
 - Other types → `typeRef.ToString` or empty string
 
-**Why needed:** Interface matching must ignore type arguments and compare only the base generic definition. `IEnumerable<T>` and `IEnumerable<string>` both have base name `IEnumerable\`1`.
+Interface matching must ignore type arguments and compare only the base generic definition. `IEnumerable<T>` and `IEnumerable<string>` both have base name `IEnumerable\`1`.
 
 **Used by:** `FindMatchingInterface` to compare interface names
 
@@ -418,7 +416,7 @@ interface __List_1$views<T> {
 }
 ```
 
-**Why needed:** View interfaces that are transitively implemented (not directly in the implements clause) don't get added to `ValueImportQualifiedNames` by ImportPlanner, so they need manual cross-namespace qualification.
+View interfaces that are transitively implemented (not directly in the implements clause) don't get added to `ValueImportQualifiedNames` by ImportPlanner, so they need manual cross-namespace qualification.
 
 **Algorithm:**
 1. **Print base type name:**
@@ -457,7 +455,7 @@ Different from currentNamespace → needs qualification
 
 **Impact:** Eliminated 1 TS2304 error in System.Collections namespace. Prevents "Cannot find name" errors for transitive interface references in companion views.
 
-**Addition:** This method was added in to handle edge cases where ImportPlanner doesn't track transitive interfaces (interfaces not directly in the class's implements clause but inherited through interface inheritance).
+This method handles edge cases where ImportPlanner doesn't track transitive interfaces (interfaces not directly in the class's implements clause but inherited through interface inheritance).
 
 ### Method: NamespaceUsesSupportTypes - TS2304 FIX
 ```csharp
@@ -465,7 +463,7 @@ private static bool NamespaceUsesSupportTypes(NamespaceSymbol ns)
 ```
 **What it does:**
 - Scans all public types and their ClassSurface/StaticSurface members
-- **Addition:** Also checks constructor parameters for unsafe types
+- Also checks constructor parameters for unsafe types
 - Checks if any use `PointerTypeReference` or `ByRefTypeReference`
 - Returns `true` if support types import needed
 
@@ -483,9 +481,9 @@ foreach (var ctor in type.Members.Constructors)
 }
 ```
 
-**Why needed:** Constructors with pointer/byref parameters need TSUnsafePointer/TSByRef imports, but constructors weren't being checked before . This caused missing import errors.
+Constructors with pointer/byref parameters need ptr/ref imports from @tsonic/types. Without checking constructors, missing import errors occur.
 
-**Impact:** Eliminated 1 TS2304 error for `TSUnsafePointer` in namespaces with unsafe constructor parameters.
+**Impact:** Eliminated 1 TS2304 error for `ptr` in namespaces with unsafe constructor parameters.
 
 ### Method: ContainsUnsafeType
 ```csharp
@@ -509,7 +507,7 @@ export type int = number & { __brand: "int" };
 // ... all primitives ...
 
 // Import support types for unsafe CLR constructs
-import type { TSUnsafePointer, TSByRef } from "../_support/types.js";
+import type { ptr, ref } from "@tsonic/types";
 
 // Import types from other namespaces
 import type { Object, ValueType } from "../System/internal/index.js";
@@ -977,57 +975,22 @@ throw new Error(
 
 ---
 
-## File: SupportTypesEmitter.cs
+## Support Types
 
 ### Purpose
-Generates centralized `_support/types.d.ts` with marker types for unsafe CLR constructs. Emitted once for entire generation, not per-namespace.
+Support types for unsafe CLR constructs are imported from the `@tsonic/types` npm package. No file generation is needed.
 
-### Method: Emit
-```csharp
-public static void Emit(BuildContext ctx, string outputDirectory)
+### Package Contents
 ```
 **What it does:**
-- Creates `_support/` directory
-- Generates content via `GenerateSupportTypes`
-- Writes to `output/_support/types.d.ts`
-
-### Method: GenerateSupportTypes
-```csharp
-private static string GenerateSupportTypes
-```
-**What it does:**
-- Emits `TSUnsafePointer<T>` type for pointer types (void*, int*, T*)
-- Emits `TSByRef<T>` type for ref/out/in parameters
+- Support types imported from @tsonic/types package
+- `ptr<T>` for pointer types (void*, int*, T*)
+- `ref<T>` for ref/out/in parameters
 
 **Key Design:**
-- `TSUnsafePointer<T>` erases to `unknown` for type safety (forces explicit handling)
-- `TSByRef<T>` provides structural access via `.value` property
-- Both use unique symbols for branding (maintains identity for auditing)
-
-### Output Format Example
-
-```typescript
-// Generated by tsbindgen - tsbindgen
-// Support Types Module
-//
-// These are opaque placeholders for CLR constructs that have no TS equivalent.
-// They intentionally erase to `unknown` to keep the API sound.
-
-/**
- * Marker type for C# pointer types (void*, int*, T*, etc.).
- * Erases to `unknown` for type safety - forces explicit handling.
- * The generic parameter preserves information about the pointed-to type.
- * Branded with unique symbol to maintain identity for auditing.
- */
-export type TSUnsafePointer<T> = unknown & { readonly __tsbindgenPtr?: unique symbol };
-
-/**
- * Marker type for C# ref/out/in parameters.
- * Provides structural access via `.value` to match C# semantics.
- * Branded with unique symbol to maintain identity for auditing.
- * Example: `method(arg: TSByRef<int>)` → caller uses `arg.value`
- */
-export type TSByRef<T> = { value: T } & { readonly __tsbindgenByRef?: unique symbol };
+- `ptr<T>` erases to `unknown` for type safety (forces explicit handling)
+- `ref<T>` uses phantom type marker for ergonomics
+- Both use branding (ptr requires unique symbol, ref uses optional never)
 ```
 
 ---
@@ -2066,7 +2029,7 @@ class Array_1<T> {
 
 // TypeScript (VALID after lifting):
 class Array_1<T> {
-    static sort<T, TKey>(keys: T[], items: TKey[]): void;  // ✅ OK: 'T' is now a method generic
+    static sort<T, TKey>(keys: T[], items: TKey[]): void;  // ✅ OK: 'T' is a method generic
 }
 ```
 
@@ -2760,7 +2723,7 @@ private static string PrintArray(ArrayTypeReference arr, TypeNameResolver resolv
 private static string PrintPointer(PointerTypeReference ptr, TypeNameResolver resolver, BuildContext ctx)
 ```
 **What it does:**
-- Returns `TSUnsafePointer<T>` where T is the pointee type
+- Returns `ptr<T>` where T is the pointee type
 - Preserves type information while being type-safe (erases to `unknown`)
 
 ### Method: PrintByRef
@@ -2768,8 +2731,8 @@ private static string PrintPointer(PointerTypeReference ptr, TypeNameResolver re
 private static string PrintByRef(ByRefTypeReference byref, TypeNameResolver resolver, BuildContext ctx)
 ```
 **What it does:**
-- Returns `TSByRef<T>` where T is the referenced type
-- Provides structural access via `.value` property
+- Returns `ref<T>` where T is the referenced type
+- Uses phantom type marker for ergonomics
 
 ### Method: PrintNested
 ```csharp
@@ -3223,7 +3186,7 @@ export type int = number & { __brand: "int" };
 // ... all primitives ...
 
 // Import support types for unsafe CLR constructs
-import type { TSUnsafePointer, TSByRef } from "../_support/types.js";
+import type { ptr, ref } from "@tsonic/types";
 
 // Import types from other namespaces
 import type { Object, ValueType } from "../System/internal/index.js";
@@ -3337,30 +3300,16 @@ throw new Error(
 );
 ```
 
-### 6. _support/types.d.ts
+### 6. Support Types from @tsonic/types Package
+
+Support types are imported from the `@tsonic/types` npm package:
 
 ```typescript
-// Generated by tsbindgen - tsbindgen
-// Support Types Module
-//
-// These are opaque placeholders for CLR constructs that have no TS equivalent.
-// They intentionally erase to `unknown` to keep the API sound.
-
-/**
- * Marker type for C# pointer types (void*, int*, T*, etc.).
- * Erases to `unknown` for type safety - forces explicit handling.
- * The generic parameter preserves information about the pointed-to type.
- * Branded with unique symbol to maintain identity for auditing.
- */
-export type TSUnsafePointer<T> = unknown & { readonly __tsbindgenPtr?: unique symbol };
-
-/**
- * Marker type for C# ref/out/in parameters.
- * Provides structural access via `.value` to match C# semantics.
- * Branded with unique symbol to maintain identity for auditing.
- * Example: `method(arg: TSByRef<int>)` → caller uses `arg.value`
- */
-export type TSByRef<T> = { value: T } & { readonly __tsbindgenByRef?: unique symbol };
+// From @tsonic/types package:
+export type ptr<T> = unknown & { readonly __ptr: unique symbol };
+export type ref<T> = T & { __ref?: never };
+export type out<T> = T & { __out?: never };
+export type In<T> = T & { __in?: never };
 ```
 
 ---
@@ -3399,15 +3348,15 @@ export type TSByRef<T> = { value: T } & { readonly __tsbindgenByRef?: unique sym
 **Problem:** TypeScript has no pointers or ref parameters.
 
 **Solution:**
-- Centralized `_support/types.d.ts` with marker types
-- `TSUnsafePointer<T>` for pointers (erases to `unknown`)
-- `TSByRef<T>` for ref/out/in (structural `{ value: T }`)
+- Import from `@tsonic/types` package for marker types
+- `ptr<T>` for pointers (erases to `unknown` with required unique symbol)
+- `ref<T>` for ref/out/in parameters (phantom type with optional never)
 
 **Benefits:**
-- Type-safe (forces explicit handling)
+- Type-safe (forces explicit handling for ptr, ergonomic for ref)
 - Preserves type information
 - Branded for auditing
-- Single import location
+- Centralized in standard package
 
 ### 4. EmitScope Filtering
 
@@ -3448,7 +3397,6 @@ The **Emit Phase** is the final phase that generates all output files from the v
 3. **MetadataEmitter** - CLR-specific metadata for Tsonic compiler
 4. **BindingEmitter** - CLR-to-TypeScript name mappings for runtime
 5. **ModuleStubEmitter** - JavaScript stubs that prevent execution
-6. **SupportTypesEmitter** - Centralized unsafe type markers
 
 All emitters use:
 - **TypeNameResolver** for consistent type names (single source of truth)
@@ -3461,6 +3409,6 @@ The output includes:
 - **Metadata sidecars** - `.json` files with CLR information
 - **Binding metadata** - `.json` files with name mappings
 - **Module stubs** - `.js` files that throw at runtime
-- **Support types** - Centralized marker types for unsafe constructs
+- **Support types** - From @tsonic/types package for unsafe constructs
 
 All output is deterministic, type-safe, and respects the architecture's guarantees.

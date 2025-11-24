@@ -150,8 +150,7 @@ public static class ScopeFactory
     ///
     /// Use for: GetFinalMemberName, TryGetDecision calls for ViewOnly members
     ///
-    /// M5 FIX: This is what emitters were missing - they were using ClassInstance()/ClassStatic()
-    /// for view members, causing PG_NAME_004 collisions.
+    /// Emitters must use this for ViewOnly members to avoid PG_NAME_004 collisions.
     /// </summary>
     public static TypeScope ViewSurface(TypeSymbol type, string interfaceStableId, bool isStatic)
     {

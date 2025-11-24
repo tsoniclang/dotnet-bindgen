@@ -6,8 +6,6 @@ This document defines the file structure and organization of tsbindgen output.
 
 ```
 <output-dir>/
-  _support/
-    types.d.ts                         # Unsafe CLR construct markers
   <Namespace>/
     internal/
       index.d.ts                       # Internal declarations (full API)
@@ -27,24 +25,25 @@ This document defines the file structure and organization of tsbindgen output.
 
 ## File Purposes
 
-### `_support/types.d.ts`
+### Support Types (from @tsonic/types package)
 **Purpose**: Centralized support types for unsafe CLR constructs.
 
-**Generated when**: Any namespace uses pointer types or ref/out/in parameters.
+**Package**: `@tsonic/types` - separate npm package installed as dependency
 
 **Contents**:
-- `TSUnsafePointer<T>`: Marker type for C# pointer types (`void*`, `int*`, `T*`)
-- `TSByRef<T>`: Structural wrapper for C# ref/out/in parameters
+- `ptr<T>`: Marker type for C# pointer types (`void*`, `int*`, `T*`)
+- `ref<T>`: Phantom type for C# ref/out/in parameters
 
 **Example**:
 ```typescript
-export type TSUnsafePointer<T> = unknown & { readonly __tsbindgenPtr?: unique symbol };
-export type TSByRef<T> = { value: T } & { readonly __tsbindgenByRef?: unique symbol };
+// From @tsonic/types package:
+export type ptr<T> = unknown & { readonly __ptr: unique symbol };
+export type ref<T> = T & { __ref?: never };
 ```
 
 **Imports**: Namespaces import on-demand:
 ```typescript
-import type { TSUnsafePointer, TSByRef } from "../_support/types.js";
+import type { ptr, ref } from "@tsonic/types";
 ```
 
 ### `<Namespace>/internal/index.d.ts`
@@ -54,7 +53,7 @@ import type { TSUnsafePointer, TSByRef } from "../_support/types.js";
 - Namespace declaration wrapping all types
 - Classes, interfaces, enums, delegates
 - Import statements for cross-namespace dependencies
-- Import statements for _support types (if used)
+- Import statements for support types from @tsonic/types (if used)
 
 **Example**:
 ```typescript
@@ -62,7 +61,7 @@ import type { TSUnsafePointer, TSByRef } from "../_support/types.js";
 import type { IEnumerable_1 } from "../../System.Collections.Generic/internal/index.js";
 
 // Import support types (if namespace uses pointers/byrefs)
-import type { TSUnsafePointer, TSByRef } from "../../_support/types.js";
+import type { ptr, ref } from "@tsonic/types";
 
 export namespace System.Linq {
   export class Enumerable {
@@ -140,12 +139,12 @@ export * from "./internal/index.js";
 import type { IEnumerable_1 } from "../../System.Collections.Generic/internal/index.js";
 ```
 
-### Internal → _support
-**Pattern**: Relative path to `_support/types.js`
+### Internal → @tsonic/types
+**Pattern**: Package import from `@tsonic/types`
 
 **Example**: From `System/internal/index.d.ts`:
 ```typescript
-import type { TSUnsafePointer, TSByRef } from "../../_support/types.js";
+import type { ptr, ref } from "@tsonic/types";
 ```
 
 ### Facade → Internal (Same Namespace)
@@ -182,7 +181,6 @@ import type { String, int } from "@dotnet/bcl/System/internal/index.js";
 **No nesting**: `System.Linq` is NOT inside `System/Linq/` directory.
 
 ### Special Directories
-- `_support` – Support types (underscore prefix prevents collision with `Support` namespace)
 - `_root` – Root namespace (if types exist without namespace)
 
 ## File Existence Rules
@@ -194,7 +192,6 @@ For every namespace with public types:
 - `<Namespace>/metadata.json` (always)
 
 ### Conditionally Generated
-- `_support/types.d.ts` (only if any namespace uses pointers/byrefs)
 - `<Namespace>/bindings.json` (only if naming transforms active)
 - `<Namespace>/typelist.json` (only if `--debug-typelist` or Single-Phase pipeline)
 
@@ -215,14 +212,14 @@ For every namespace with public types:
 - Emits ALL types from transitive closure
 - All imports are relative (within output directory)
 - No external package dependencies
-- `_support/types.d.ts` included if any namespace uses unsafe types
+- Support types from @tsonic/types package if any namespace uses unsafe types
 
 ### Lean Mode (User Assembly, Planned)
 **Characteristics**:
 - Emits ONLY seed assembly types
 - BCL types imported from external packages (e.g., `@dotnet/bcl`)
 - Requires `--external-map` for foreign type resolution
-- `_support/types.d.ts` included only if seed assembly uses unsafe types
+- Support types from @tsonic/types package only if seed assembly uses unsafe types
 
 ## Verification Files
 
@@ -258,8 +255,6 @@ For every namespace with public types:
 
 ```
 bcl-types/
-  _support/
-    types.d.ts
   System/
     internal/
       index.d.ts

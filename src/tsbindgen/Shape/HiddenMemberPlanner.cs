@@ -41,7 +41,7 @@ public static class HiddenMemberPlanner
             return 0;
 
         var count = 0;
-        // M5 FIX: Use correct scope format with type: prefix
+        // Use correct scope format with type: prefix
         var typeScope = ScopeFactory.ClassBase(type); // Base scope, ReserveMemberName will add #static or #instance
 
         // Process methods marked with IsNew

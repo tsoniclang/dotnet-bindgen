@@ -96,7 +96,7 @@ public static class ViewPlanner
             return new List<ExplicitView>();
         }
 
-        // M5 FIX: Collect ALL ViewOnly members with SourceInterface (no graph filtering)
+        // Collect ALL ViewOnly members with SourceInterface
         // Every ViewOnly member MUST be represented in an ExplicitView
         var viewOnlyMembers = new List<(TypeReference ifaceRef, object member, ViewMemberKind kind, MemberStableId stableId, string clrName)>();
 

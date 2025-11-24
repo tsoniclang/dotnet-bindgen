@@ -46,7 +46,7 @@
 
 - **[08-phase-emit.md](08-phase-emit.md)** - Phase 5: File generation
   - FacadeEmitter, InternalIndexEmitter, MetadataEmitter
-  - BindingEmitter, ModuleStubEmitter, SupportTypesEmitter
+  - BindingEmitter, ModuleStubEmitter
   - All Printer classes (ClassPrinter, MethodPrinter, TypeRefPrinter)
   - Output format examples for all 6 file types
 

@@ -12,18 +12,17 @@ The **Emit phase** generates all output files from validated EmissionPlan. Uses 
 
 ---
 
-## File: SupportTypesEmitter.cs
+## Support Types from @tsonic/types
 
 ### Purpose
-Emits `_support/types.d.ts` with centralized marker types and utilities.
+Support types are imported from the `@tsonic/types` npm package.
 
-**Output:** `_support/types.d.ts`
+**Package:** `@tsonic/types`
 
 **Contents:**
 - Branded primitive types (int, uint, byte, decimal, etc.)
+- Unsafe marker types (ptr<T>, ref<T>, out<T>, In<T>)
 - CLROf<T> utility type for lifting primitives to generic positions
-- System.Object → object mapping
-- System.Void → void mapping
 
 **Example:**
 ```typescript
@@ -55,14 +54,14 @@ Emits `<namespace>/internal/index.d.ts` with all type declarations (internal sur
 - All type declarations (classes, interfaces, enums, delegates)
 - All members (methods, properties, fields, events, constructors)
 - Imports from other namespaces (with aliases if needed)
-- Triple-slash reference to _support/types.d.ts
+- Import from @tsonic/types package (if needed)
 
 **Plan-Based Emission:**
 Uses EmissionPlan.StaticFlatteningPlan, StaticConflictPlan, OverrideConflictPlan, PropertyOverridePlan
 
 **Example:**
 ```typescript
-import type { TSUnsafePointer, TSByRef } from "../../_support/types.js";
+import type { ptr, ref } from "@tsonic/types";
 import { Stream } from "../System.IO/internal/index.js";
 import { IDisposable } from "../System/internal/index.js";
 
@@ -416,8 +415,6 @@ Resolves type names with imports/aliases.
 
 ```
 output/
-├── _support/
-│   └── types.d.ts                    # Centralized marker types
 ├── System/
 │   ├── internal/
 │   │   └── index.d.ts                # Internal declarations
@@ -472,7 +469,7 @@ The Emit phase uses 4 Shape plans for error-free emission:
 ## Summary
 
 The Emit phase generates all output files with plan-based emission:
-1. **SupportTypesEmitter:** Centralized marker types (_support/types.d.ts)
+1. **Support types:** From @tsonic/types package
 2. **InternalIndexEmitter:** Full declarations (internal/index.d.ts) with plan-based emission
 3. **ExtensionsEmitter:** Extension method buckets (internal/extensions/index.d.ts)
 4. **FacadeEmitter:** Public facade (index.d.ts) with extension method re-export

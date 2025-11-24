@@ -57,7 +57,7 @@ internal static class Reservation
             }
 
             // Check if already renamed by earlier pass (e.g., HiddenMemberPlanner, IndexerPlanner)
-            // M5 FIX: Pass class scope and isStatic to TryGetDecision
+            // Pass class scope and isStatic to TryGetDecision
             var methodCheckScope = ScopeFactory.ClassSurface(type, method.IsStatic);
             if (ctx.Renamer.TryGetDecision(method.StableId, methodCheckScope, out var existingDecision))
             {
@@ -107,7 +107,7 @@ internal static class Reservation
             }
 
             // Check if already renamed (e.g., IndexerPlanner)
-            // M5 FIX: Pass class scope and isStatic to TryGetDecision
+            // Pass class scope and isStatic to TryGetDecision
             var propertyCheckScope = ScopeFactory.ClassSurface(type, property.IsStatic);
             if (ctx.Renamer.TryGetDecision(property.StableId, propertyCheckScope, out var existingDecision))
             {
@@ -139,7 +139,7 @@ internal static class Reservation
             }
 
             // Check if already renamed
-            // M5 FIX: Pass class scope and isStatic to TryGetDecision
+            // Pass class scope and isStatic to TryGetDecision
             var fieldCheckScope = ScopeFactory.ClassSurface(type, field.IsStatic);
             if (ctx.Renamer.TryGetDecision(field.StableId, fieldCheckScope, out var existingDecision))
             {
@@ -171,7 +171,7 @@ internal static class Reservation
             }
 
             // Check if already renamed
-            // M5 FIX: Pass class scope and isStatic to TryGetDecision
+            // Pass class scope and isStatic to TryGetDecision
             var eventCheckScope = ScopeFactory.ClassSurface(type, ev.IsStatic);
             if (ctx.Renamer.TryGetDecision(ev.StableId, eventCheckScope, out var existingDecision))
             {
@@ -187,7 +187,7 @@ internal static class Reservation
         foreach (var ctor in type.Members.Constructors)
         {
             // Check if already renamed
-            // M5 FIX: Pass class scope and isStatic to TryGetDecision
+            // Pass class scope and isStatic to TryGetDecision
             var ctorCheckScope = ScopeFactory.ClassSurface(type, ctor.IsStatic);
             if (ctx.Renamer.TryGetDecision(ctor.StableId, ctorCheckScope, out var existingDecision))
             {
@@ -258,7 +258,7 @@ internal static class Reservation
                     ctx.Log("trace:resv:view", $"[trace:resv:view] ENTER loop: member={viewMember.ClrName} stableId={viewMember.StableId}");
                 }
 
-                // M5 FIX: DO NOT skip! ViewOnly members need separate view-scoped decisions
+                // DO NOT skip! ViewOnly members need separate view-scoped decisions
                 // even if they also exist on ClassSurface with the same StableId.
                 // The collision detection below will apply $view suffix if needed.
 

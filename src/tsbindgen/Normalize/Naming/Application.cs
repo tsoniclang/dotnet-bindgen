@@ -58,7 +58,7 @@ internal static class Application
         var tsEmitName = ctx.Renamer.GetFinalTypeName(type);
 
         // Update members
-        // M5 FIX: Pass declaringType so ViewOnly members can use view scopes
+        // Pass declaringType so ViewOnly members can use view scopes
         var updatedMembers = ApplyNamesToMembers(ctx, type, type.Members, typeScope);
 
         // Return new type with updated names
@@ -71,13 +71,13 @@ internal static class Application
 
     /// <summary>
     /// Apply reserved names to type members.
-    /// M5 FIX: ViewOnly members use view scope, others use class scope.
+    /// ViewOnly members use view scope, others use class scope.
     /// Handles methods, properties, fields, events.
     /// Returns new TypeMembers with updated TsEmitName on all members.
     /// </summary>
     private static TypeMembers ApplyNamesToMembers(BuildContext ctx, TypeSymbol declaringType, TypeMembers members, TypeScope typeScope)
     {
-        // M5 FIX: ViewOnly members use view scope, others use class scope
+        // ViewOnly members use view scope, others use class scope
         var updatedMethods = members.Methods.Select(m =>
         {
             string tsEmitName;
