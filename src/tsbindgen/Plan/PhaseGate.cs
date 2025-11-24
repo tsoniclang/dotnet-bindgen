@@ -221,12 +221,6 @@ public static class PhaseGate
         {
             ctx.Log("PhaseGate", diagnostic);
         }
-
-        // Step 3: Write detailed diagnostics file with full conformance issues
-        VCtx.WriteDiagnosticsFile(ctx, validationContext);
-
-        // Write summary JSON for CI/snapshot comparison
-        VCtx.WriteSummaryJson(ctx, validationContext);
     }
 
     /// <summary>
