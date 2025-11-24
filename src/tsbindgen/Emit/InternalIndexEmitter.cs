@@ -82,9 +82,8 @@ public static class InternalIndexEmitter
         var needsSupportTypes = NamespaceUsesSupportTypes(nsOrder.Namespace);
         if (needsSupportTypes)
         {
-            sb.AppendLine("// Import support types for unsafe CLR constructs");
-            // Internal files are at Namespace/internal/index.d.ts, _support is at root level
-            sb.AppendLine("import type { TSUnsafePointer, TSByRef } from \"../../_support/types.js\";");
+            sb.AppendLine("// Import support types from @tsonic/types");
+            sb.AppendLine("import type { ptr, ref } from \"@tsonic/types\";");
             sb.AppendLine();
         }
 
@@ -528,8 +527,8 @@ public static class InternalIndexEmitter
             numericInterfaces.Contains("ITrigonometricFunctions"))
         {
             sb.AppendLine($"    ToString(format: string, formatProvider: {Qualified("IFormatProvider")}): string;");
-            // TSByRef is from _support/types, so never qualify it
-            sb.AppendLine($"    TryFormat(destination: {Qualified("Span_1")}<{Qualified("CLROf")}<string>>, charsWritten: {{ value: TSByRef<int> }}, format: {Qualified("ReadOnlySpan_1")}<{Qualified("CLROf")}<string>>, provider: {Qualified("IFormatProvider")}): boolean;");
+            // ref is from @tsonic/types, so never qualify it
+            sb.AppendLine($"    TryFormat(destination: {Qualified("Span_1")}<{Qualified("CLROf")}<string>>, charsWritten: {{ value: ref<int> }}, format: {Qualified("ReadOnlySpan_1")}<{Qualified("CLROf")}<string>>, provider: {Qualified("IFormatProvider")}): boolean;");
         }
 
         // IBinaryInteger<TSelf> - GetByteCount
