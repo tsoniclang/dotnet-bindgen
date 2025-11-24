@@ -128,6 +128,7 @@ Metadata sidecars preserve this information for the Tsonic→C# emitter.
   "isAbstract": false,
   "isOverride": false,
   "isSealed": false,
+  "isExtensionMethod": true,
   "returnType": "System.Collections.Generic.IEnumerable`1",
   "genericParameters": ["TSource", "TResult"],
   "parameters": [
@@ -153,6 +154,7 @@ Metadata sidecars preserve this information for the Tsonic→C# emitter.
 | `isAbstract` | boolean | Abstract method (must be overridden) |
 | `isOverride` | boolean | Overrides base method |
 | `isSealed` | boolean | Sealed override (cannot be further overridden) |
+| `isExtensionMethod` | boolean | C# extension method (first param is `this`) |
 | `returnType` | string | Return type full name (CLR, with backtick arity) |
 | `genericParameters` | string[] | Method-level generic parameters |
 | `parameters` | ParameterMetadata[] | Method parameters |
