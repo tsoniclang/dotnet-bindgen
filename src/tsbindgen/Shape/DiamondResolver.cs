@@ -127,7 +127,7 @@ public static class DiamondResolver
 
     private static void EnsureMethodRenamed(BuildContext ctx, TypeSymbol type, MethodSymbol method)
     {
-        // M5 FIX: Base scope without #static/#instance suffix - ReserveMemberName will add it
+        // Base scope without #static/#instance suffix - ReserveMemberName will add it
         var typeScope = ScopeFactory.ClassBase(type);
 
         // Reserve through renamer with DiamondResolved reason

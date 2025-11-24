@@ -264,7 +264,7 @@ public static class ExplicitImplSynthesizer
             isMethod: true,
             ctx);
 
-        // M5 FIX: Use interface member's StableId, mark as ViewOnly
+        // Use interface member's StableId, mark as ViewOnly
         // EII members aren't accessible via the class in C#, only through the interface
         var stableId = method.StableId;
 
@@ -309,7 +309,7 @@ public static class ExplicitImplSynthesizer
             isMethod: false,
             ctx);
 
-        // M5 FIX: Use interface property's StableId, mark as ViewOnly
+        // Use interface property's StableId, mark as ViewOnly
         var stableId = property.StableId;
 
         ctx.Log("explicit-impl",

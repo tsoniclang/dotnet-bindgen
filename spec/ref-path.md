@@ -50,8 +50,6 @@ Each external tsbindgen package MUST follow this structure:
       index.d.ts
     index.d.ts
     metadata.json
-  _support/
-    types.d.ts                 # Support markers (if used)
 ```
 
 **Key requirement**: Must have `tsbindgen.manifest.json` in package root.
@@ -227,15 +225,15 @@ tsbindgen generate -a MyCompany.Feature.dll \
 import type { IEnumerable_1 } from "@dotnet/bcl/System.Collections.Generic/internal/index.js";
 import type { CancellationToken } from "@dotnet/bcl/System.Threading/internal/index.js";
 
-// Support type imports (from local _support)
-import type { TSByRef } from "../../_support/types.js";
+// Support type imports (from @tsonic/types package)
+import type { ref } from "@tsonic/types";
 
 export namespace MyCompany.Feature {
   export class Uploader {
     upload(
       items: IEnumerable_1<string>,
       cancel: CancellationToken,
-      result: TSByRef<int>
+      result: ref<int>
     ): void;
   }
 }
@@ -243,8 +241,8 @@ export namespace MyCompany.Feature {
 
 **Notes**:
 - `IEnumerable_1` and `CancellationToken` imported from `@dotnet/bcl` package
-- `TSByRef` imported from local `_support/types.d.ts`
-- `int` is a branded type (defined in _support or imported from BCL)
+- `ref` imported from `@tsonic/types` package
+- `int` is a branded type imported from `@tsonic/types`
 
 ## Bundle Mode vs Lean Mode
 
@@ -310,8 +308,7 @@ tsbindgen automatically generates `tsbindgen.manifest.json` during emit:
      "types": "index.d.ts",
      "files": [
        "**/*.d.ts",
-       "**/*.json",
-       "_support/**"
+       "**/*.json"
      ]
    }
    ```

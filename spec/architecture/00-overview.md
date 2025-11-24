@@ -370,11 +370,6 @@ Scopes enable:
         ┌────────────────────────────────────────┐
         │      PHASE 5: Emit (File Generation)   │
         │  ┌──────────────────────────────────┐  │
-        │  │  SupportTypesEmit                │  │
-        │  │  - _support/types.d.ts           │  │
-        │  └────────────┬─────────────────────┘  │
-        │               ▼                         │
-        │  ┌──────────────────────────────────┐  │
         │  │  InternalIndexEmitter            │  │
         │  │  - internal/index.d.ts per NS    │  │
         │  └────────────┬─────────────────────┘  │
@@ -834,7 +829,6 @@ src/tsbindgen/
 │       └── Context.cs           # Validation context
 │
 └── Emit/                        # Phase 5: File generation
-    ├── SupportTypesEmitter.cs   # _support/types.d.ts
     ├── InternalIndexEmitter.cs  # internal/index.d.ts per namespace
     ├── ExtensionsEmitter.cs     # internal/extensions/index.d.ts (extension methods)
     ├── FacadeEmitter.cs         # facade/index.d.ts per namespace

@@ -36,8 +36,6 @@ tsbindgen --assemblies MyApp.dll \
 ### Output Structure
 ```
 output/
-  _support/
-    types.d.ts              # Unsafe CLR markers (TSUnsafePointer, TSByRef)
   System/
     internal/
       index.d.ts            # Internal declarations

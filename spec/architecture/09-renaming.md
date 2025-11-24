@@ -27,7 +27,7 @@ Central renaming service with dual-scope algorithm. Manages name reservations ac
 - `_typeStyleTransform` - `Func<string, string>` - Style transform for type names (e.g., PascalCase)
 - `_memberStyleTransform` - `Func<string, string>` - Style transform for member names (e.g., camelCase)
 
-**M5 CRITICAL FIX**: The `_decisions` dictionary was changed from keying by `StableId` alone to `(StableId, ScopeKey)` to support dual-scope reservations. This allows the same member to have different final names in class scope vs view scope.
+The `_decisions` dictionary is keyed by `(StableId, ScopeKey)` to support dual-scope reservations. This allows the same member to have different final names in class scope vs view scope.
 
 ### Method: ApplyExplicitOverrides
 
@@ -237,7 +237,7 @@ Gets the final TypeScript name for a type (INTERNAL CORE - do not call directly)
 public string GetFinalMemberName(StableId stableId, RenameScope scope)
 ```
 
-Gets the final TypeScript name for a member. **M5 FIX**: Now scope-aware - different scopes (class vs view) return different names.
+Gets the final TypeScript name for a member. Scope-aware - different scopes (class vs view) return different names.
 
 **CRITICAL**: Scope must be a SURFACE scope (with `#static` or `#instance` suffix). Use `ScopeFactory.ClassSurface/ViewSurface` for lookups.
 
@@ -281,7 +281,7 @@ string viewName = renamer.GetFinalMemberName(
 public bool TryGetDecision(StableId stableId, RenameScope scope, out RenameDecision? decision)
 ```
 
-Tries to get the rename decision for a StableId in a specific scope. **M5 FIX**: Now requires scope parameter since members can be reserved in multiple scopes.
+Tries to get the rename decision for a StableId in a specific scope. Requires scope parameter since members can be reserved in multiple scopes.
 
 **CRITICAL**: Scope must be a SURFACE scope (with `#static` or `#instance` suffix).
 
@@ -504,7 +504,7 @@ Core name resolution algorithm with collision handling.
 private void RecordDecision(RenameDecision decision)
 ```
 
-Records a rename decision in the `_decisions` dictionary. **M5 FIX**: Keys by `(StableId, ScopeKey)` to support dual-scope reservations.
+Records a rename decision in the `_decisions` dictionary. Keys by `(StableId, ScopeKey)` to support dual-scope reservations.
 
 ### Private Method: ExtractOriginalName
 
@@ -783,7 +783,7 @@ Creates FULL view scope for explicit interface view member lookups.
 
 **Use for**: `GetFinalMemberName`, `TryGetDecision` calls for ViewOnly members
 
-**M5 FIX**: This is what emitters were missing - they were using `ClassInstance`/`ClassStatic` for view members, causing PG_NAME_004 collisions.
+This is critical for emitters - they must use the correct scope for view members to avoid PG_NAME_004 collisions.
 
 **Example**:
 ```csharp
@@ -1227,7 +1227,7 @@ class MyClass : IComparable
 - Emitting class body → use `ClassSurface(type, isStatic)`
 - Emitting view members → use `ViewSurface(type, interfaceStableId, isStatic)`
 
-**M5 Fix**: Changed `_decisions` dictionary from keying by `StableId` alone to `(StableId, ScopeKey)` tuple.
+The `_decisions` dictionary uses `(StableId, ScopeKey)` tuple as key.
 
 ### 2. Collision Detection and Numeric Suffix
 

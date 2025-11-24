@@ -403,8 +403,7 @@ private static void AnalyzeNamespaceDependencies(
 For each **public type** in namespace:
 
 1. **TS2304 FIX:** Call `AnalyzeTypeAndNestedRecursively` to analyze the type AND all its public nested types
-   - Previously only analyzed top-level types
-   - Now recursively processes nested types (e.g., `ImmutableArray<T>.Builder`)
+   - Recursively processes nested types (e.g., `ImmutableArray<T>.Builder`)
    - Ensures nested type members are scanned for cross-namespace dependencies
 
 **Result:**

@@ -114,7 +114,7 @@ The **Shape phase** transforms CLR semantics → TypeScript semantics through 22
 
 **Purpose:** Add base class method overloads for interface compatibility
 
-**Updated:** Now uses topological sort and walks full hierarchy (not just immediate base)
+**Updated:** Uses topological sort and walks full hierarchy (not just immediate base)
 
 **Algorithm:**
 1. Build type hierarchy graph

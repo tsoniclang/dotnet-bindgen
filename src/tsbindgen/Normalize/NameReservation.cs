@@ -67,7 +67,7 @@ public static class NameReservation
                 // Use the exact same scope construction as ReserveMemberNamesOnly
                 var classScope = ScopeFactory.ClassBase(type);
 
-                // CRITICAL FIX: Rebuild class-surface name sets by checking ALL ClassSurface members
+                // Rebuild class-surface name sets by checking ALL ClassSurface members
                 // This catches members that had pre-existing decisions from other passes
                 var classInstanceNames = new HashSet<string>(StringComparer.Ordinal);
                 var classStaticNames = new HashSet<string>(StringComparer.Ordinal);

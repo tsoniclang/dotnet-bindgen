@@ -1319,7 +1319,7 @@ class Foo {
 
 **What it validates:**
 - **PG_TYPEMAP_001:** No unsupported special forms (function pointers, etc.)
-- **NOTE:** Pointers and byrefs are NOW supported via branded markers (TSUnsafePointer<T>, TSByRef<T>)
+- Pointers and byrefs are supported via types from @tsonic/types (ptr<T>, ref<T>)
 
 **Error codes:**
 - `TBG870` (UnsupportedClrSpecialForm) - Unsupported special form (PG_TYPEMAP_001)
@@ -1342,8 +1342,8 @@ delegate* unmanaged<int, void> fp;  // ERROR: TBG870 (function pointers not supp
    - ByRef referenced types (allowed - recurse into referenced)
 
 **Special handling:**
-- Pointers: NOW allowed (mapped to `TSUnsafePointer<T>`) - recurse into pointee
-- ByRefs: NOW allowed (mapped to `TSByRef<T>`) - recurse into referenced
+- Pointers: Allowed (mapped to `ptr<T>` from @tsonic/types) - recurse into pointee
+- ByRefs: Allowed (mapped to `ref<T>` from @tsonic/types) - recurse into referenced
 
 ---
 

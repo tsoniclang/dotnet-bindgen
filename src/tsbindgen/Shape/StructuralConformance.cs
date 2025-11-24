@@ -113,7 +113,7 @@ public static class StructuralConformance
             // Check each interface method
             foreach (var (ifaceMethod, declaringIface) in interfaceSurface.Methods)
             {
-                // M5 FIX: Check TypeScript-level assignability against class surface
+                // Check TypeScript-level assignability against class surface
                 // Only synthesize if the class doesn't already satisfy the interface in TS
                 bool satisfied = classSurface.IsTsAssignableMethod(ifaceMethod);
 
@@ -156,7 +156,7 @@ public static class StructuralConformance
                 if (ifaceProperty.IsIndexer)
                     continue;
 
-                // M5 FIX: Check TypeScript-level assignability against class surface
+                // Check TypeScript-level assignability against class surface
                 bool satisfied = classSurface.IsTsAssignableProperty(ifaceProperty);
 
                 if (satisfied)
@@ -342,7 +342,7 @@ public static class StructuralConformance
         MethodSymbol ifaceMethod,
         TypeReference declaringInterface)
     {
-        // M5 FIX: Use interface member's StableId, NOT class StableId
+        // Use interface member's StableId, NOT class StableId
         // This ensures class members (ClassSurface) and view clones (ViewOnly) never share IDs
         var stableId = ifaceMethod.StableId;
 
@@ -371,7 +371,7 @@ public static class StructuralConformance
         PropertySymbol ifaceProperty,
         TypeReference declaringInterface)
     {
-        // M5 FIX: Use interface property's StableId, NOT class StableId
+        // Use interface property's StableId, NOT class StableId
         var stableId = ifaceProperty.StableId;
 
         return new PropertySymbol

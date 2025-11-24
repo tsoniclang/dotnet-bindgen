@@ -15,7 +15,7 @@ namespace tsbindgen.Renaming;
 public sealed class SymbolRenamer
 {
     private readonly Dictionary<string, NameReservationTable> _tablesByScope = new();
-    // M5 FIX: Key by (StableId, ScopeKey) to support dual-scope reservations (class + view)
+    // Key by (StableId, ScopeKey) to support dual-scope reservations (class + view)
     private readonly Dictionary<(StableId Id, string ScopeKey), RenameDecision> _decisions = new();
     private readonly Dictionary<StableId, string> _explicitOverrides = new();
     // Per-kind transforms: types and members can have different styles
@@ -199,7 +199,7 @@ public sealed class SymbolRenamer
     {
         AssertNamespaceScope(scope);
 
-        // M5 FIX: Look up by (StableId, ScopeKey) tuple
+        // Look up by (StableId, ScopeKey) tuple
         if (_decisions.TryGetValue((stableId, scope.ScopeKey), out var decision))
             return decision.Final;
 
@@ -210,7 +210,7 @@ public sealed class SymbolRenamer
 
     /// <summary>
     /// Get the final TypeScript name for a member.
-    /// M5 FIX: Now scope-aware - different scopes (class vs view) return different names.
+    /// Scope-aware - different scopes (class vs view) return different names.
     /// CRITICAL: Scope must be a SURFACE scope (with #static or #instance suffix).
     /// Use ScopeFactory.ClassSurface/ViewSurface for lookups.
     /// </summary>
@@ -233,7 +233,7 @@ public sealed class SymbolRenamer
 #endif
         }
 
-        // M5 FIX: Members may be reserved in multiple scopes (class + view)
+        // Members may be reserved in multiple scopes (class + view)
         if (_decisions.TryGetValue((stableId, scope.ScopeKey), out var decision))
             return decision.Final;
 
@@ -255,7 +255,7 @@ public sealed class SymbolRenamer
 
     /// <summary>
     /// Try to get the rename decision for a StableId in a specific scope.
-    /// M5 FIX: Now requires scope parameter since members can be reserved in multiple scopes.
+    /// Requires scope parameter since members can be reserved in multiple scopes.
     /// CRITICAL: Scope must be a SURFACE scope (with #static or #instance suffix).
     /// </summary>
     public bool TryGetDecision(StableId stableId, RenameScope scope, out RenameDecision? decision)
@@ -488,7 +488,7 @@ public sealed class SymbolRenamer
 
     private void RecordDecision(RenameDecision decision)
     {
-        // M5 FIX: Key by (StableId, ScopeKey) to support dual-scope reservations
+        // Key by (StableId, ScopeKey) to support dual-scope reservations
         _decisions[(decision.Id, decision.ScopeKey)] = decision;
     }
 

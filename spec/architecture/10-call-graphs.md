@@ -947,7 +947,7 @@ graph = NameReservation.ReserveAllNames(ctx, graph)
         │   Retrieve reserved member name
         │
         └─→ Set member.TsEmitName
-            Now every symbol has TsEmitName populated
+            Every symbol has TsEmitName populated
   ↓
   Returns: New SymbolGraph with all TsEmitName fields populated
   ↓
@@ -1580,15 +1580,12 @@ EmitPhase(ctx, plan, outputDirectory)
 │ Step 1: Emit Support Types (once per build)           │
 └────────────────────────────────────────────────────────┘
   ↓
-SupportTypesEmit.Emit(ctx, outputDirectory)
-  Location: src/tsbindgen/Emit/SupportTypesEmitter.cs
-  ↓
-  Generate: _support/types.d.ts
+Support types from @tsonic/types package
+  No file generation - types imported from npm package
+  Package provides:
     Branded numeric types (int, uint, byte, etc.)
-    Unsafe marker types (UnsafePointer, UnsafeByRef, etc.)
+    Unsafe marker types (ptr<T>, ref<T>, etc.)
     Common type aliases
-  ↓
-  Write to disk
   ↓
 ┌────────────────────────────────────────────────────────┐
 │ Step 2: Emit Internal Index Files (per namespace)     │
@@ -1603,7 +1600,7 @@ InternalIndexEmitter.Emit(ctx, plan, outputDirectory)
     ↓
     ├─→ EmitFileHeader(builder)
     │   Add file-level comments
-    │   Add reference to _support/types.d.ts
+    │   Add imports from @tsonic/types if needed
     │
     ├─→ EmitImports(builder, imports)
     │   Location: InternalIndexEmitter.cs
@@ -1757,7 +1754,7 @@ ExtensionsEmitter.Emit(ctx, plan.ExtensionMethods, plan.Graph, outputDirectory)
     │   import type { int, uint, byte, ... } from '@tsonic/types';
     │
     ├─→ Import support types
-    │   import type { TSByRef, TSUnsafePointer } from '../../_support/types.js';
+    │   import type { ptr, ref } from '@tsonic/types';
     │
     ├─→ Emit bucket interfaces (one per target type)
     │   For each bucket in plan.ExtensionMethods.Buckets:
@@ -1920,8 +1917,6 @@ namespace/
 **Root Output:**
 ```
 out/
-  ├── _support/
-  │   └── types.d.ts        # Branded types, unsafe markers
   └── namespace1/
       └── ... (files above)
 ```
@@ -2555,12 +2550,8 @@ PlanPhase(ctx, graph)
   ↓
 EmitPhase(ctx, plan, "out")
   ↓
-  SupportTypesEmit.Emit(ctx, "out")
-    Writes: out/_support/types.d.ts
-    Content:
-      export type int = number & { __brand: "int" };
-      export type uint = number & { __brand: "uint" };
-      ...
+  Support types from @tsonic/types package
+    No file generation needed
   ↓
   InternalIndexEmitter.Emit(ctx, plan, "out")
     ↓
