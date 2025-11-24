@@ -147,7 +147,8 @@ public static class MetadataEmitter
             IsSealed = method.IsSealed,
             Arity = method.Arity,
             ParameterCount = method.Parameters.Length,
-            SourceInterface = method.SourceInterface != null ? GetTypeRefName(method.SourceInterface) : null
+            SourceInterface = method.SourceInterface != null ? GetTypeRefName(method.SourceInterface) : null,
+            IsExtensionMethod = method.IsExtensionMethod
         };
     }
 
@@ -324,6 +325,7 @@ public sealed record MethodMetadata
     public required int Arity { get; init; }
     public required int ParameterCount { get; init; }
     public string? SourceInterface { get; init; }
+    public bool IsExtensionMethod { get; init; }
 }
 
 /// <summary>

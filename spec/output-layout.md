@@ -106,17 +106,22 @@ export * from "./internal/index.js";
 
 **Used by**: Tsonic compiler for name resolution.
 
-**See**: [bindings-consumer.md](bindings-consumer.md) for complete schema.
+**See**: [bindings.md](bindings.md) for complete schema.
 
 **Example**:
 ```json
 {
-  "SelectMany": {
-    "kind": "method",
-    "name": "SelectMany",
-    "alias": "selectMany",
-    "fullName": "System.Linq.Enumerable.SelectMany"
-  }
+  "namespace": "System.Linq",
+  "types": [{
+    "stableId": "System.Linq:System.Linq.Enumerable",
+    "clrName": "System.Linq.Enumerable",
+    "tsEmitName": "Enumerable",
+    "methods": [{
+      "clrName": "Where",
+      "tsEmitName": "Where",
+      "isExtensionMethod": true
+    }]
+  }]
 }
 ```
 
