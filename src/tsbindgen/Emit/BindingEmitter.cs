@@ -160,7 +160,8 @@ public static class BindingEmitter
             ParameterCount = method.Parameters.Length,
             // V2: Add declaring type information from StableId
             DeclaringClrType = method.StableId.DeclaringClrFullName,
-            DeclaringAssemblyName = method.StableId.AssemblyName
+            DeclaringAssemblyName = method.StableId.AssemblyName,
+            IsExtensionMethod = method.IsExtensionMethod
         };
     }
 
@@ -723,6 +724,7 @@ public sealed record MethodBinding
     // V2: Declaring type information
     public string? DeclaringClrType { get; init; }
     public string? DeclaringAssemblyName { get; init; }
+    public bool IsExtensionMethod { get; init; }
 }
 
 /// <summary>
