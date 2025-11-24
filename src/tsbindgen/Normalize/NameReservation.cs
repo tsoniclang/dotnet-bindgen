@@ -173,24 +173,6 @@ public static class NameReservation
                     }
                 }
 
-                // DEBUG: Write to file for System.Decimal and System.Boolean to diagnose
-                if (type.ClrFullName == "System.Decimal" || type.ClrFullName == "System.Boolean")
-                {
-                    var debugPath = System.IO.Path.Combine(System.Environment.CurrentDirectory, ".tests", "decimal-debug.txt");
-                    System.IO.Directory.CreateDirectory(System.IO.Path.GetDirectoryName(debugPath));
-
-                    var staticToMethods = type.Members.Methods
-                        .Where(m => m.IsStatic && m.ClrName.StartsWith("To"))
-                        .Select(m => $"{m.ClrName}({m.EmitScope})")
-                        .ToList();
-
-                    System.IO.File.AppendAllText(debugPath,
-                        $"{type.ClrFullName} static To* methods ({staticToMethods.Count} items): {string.Join(", ", staticToMethods)}\n" +
-                        $"{type.ClrFullName} classInstanceNames ({classInstanceNames.Count} items): {string.Join(", ", classInstanceNames)}\n" +
-                        $"{type.ClrFullName} classStaticNames ({classStaticNames.Count} items): {string.Join(", ", classStaticNames)}\n" +
-                        $"{type.ClrFullName} classAllNames ({classAllNames.Count} items): {string.Join(", ", classAllNames)}\n\n");
-                }
-
                 ctx.Log("name-resv:class", $"type={type.StableId} classAll=[{string.Join(",", classAllNames)}]");
 
                 // M5: Reserve view-scoped member names (separate scope per interface)
