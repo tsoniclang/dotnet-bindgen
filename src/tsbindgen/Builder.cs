@@ -389,8 +389,7 @@ public static class Builder
         EmissionPlan plan,
         string outputDirectory)
     {
-        // Emit _support/types.d.ts (centralized marker types - emitted once)
-        SupportTypesEmit.Emit(ctx, outputDirectory);
+        // Note: _support/types.d.ts no longer generated - using @tsonic/types package instead
 
         // Emit internal/extensions/index.d.ts (extension method buckets)
         ExtensionsEmitter.Emit(ctx, plan.ExtensionMethods, plan.Graph, outputDirectory);

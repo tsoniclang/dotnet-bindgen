@@ -180,8 +180,8 @@ internal static class Types
 
     /// <summary>
     /// PG_TYPEMAP_001: Validates that no type references use unsupported special forms.
-    /// NOTE: Pointers and byrefs are now properly handled via branded marker types
-    /// (TSUnsafePointer<T>, TSByRef<T>) and no longer trigger validation errors.
+    /// NOTE: Pointers and byrefs are now properly handled via types from @tsonic/types
+    /// (ptr<T>, ref<T>) and no longer trigger validation errors.
     /// This guard currently detects function pointers and other unsupported forms.
     /// </summary>
     internal static void ValidateTypeMapCompliance(BuildContext ctx, SymbolGraph graph, ValidationContext validationCtx)
@@ -198,13 +198,13 @@ internal static class Types
             switch (typeRef)
             {
                 case PointerTypeReference ptr:
-                    // Pointer types are now properly handled by TypeRefPrinter → TSUnsafePointer<T>
+                    // Pointer types are now properly handled by TypeRefPrinter → ptr<T>
                     // Recursively check the pointee type
                     CheckTypeReference(ptr.PointeeType, ownerContext);
                     break;
 
                 case ByRefTypeReference byref:
-                    // ByRef types are now properly handled by TypeRefPrinter → TSByRef<T>
+                    // ByRef types are now properly handled by TypeRefPrinter → ref<T>
                     // Recursively check the referenced type
                     CheckTypeReference(byref.ReferencedType, ownerContext);
                     break;

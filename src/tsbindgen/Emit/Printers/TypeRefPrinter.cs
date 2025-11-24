@@ -175,10 +175,10 @@ public static class TypeRefPrinter
         bool forValuePosition = false)
     {
         // TypeScript has no pointer types
-        // Use branded marker type: TSUnsafePointer<T> = unknown
+        // Use ptr<T> from @tsonic/types (branded as unknown)
         // This preserves type information while being type-safe (forces explicit handling)
         var pointeeType = Print(ptr.PointeeType, resolver, ctx, allowedTypeParameterNames, forValuePosition);
-        return $"TSUnsafePointer<{pointeeType}>";
+        return $"ptr<{pointeeType}>";
     }
 
     private static string PrintByRef(
@@ -189,10 +189,10 @@ public static class TypeRefPrinter
         bool forValuePosition = false)
     {
         // TypeScript has no ref types (ref/out/in parameters)
-        // Use branded marker type: TSByRef<T> = unknown
-        // This preserves type information while being type-safe
+        // Use ref<T> from @tsonic/types (phantom type marker)
+        // Note: We can't distinguish ref/out/in at this level - would need parameter context
         var referencedType = Print(byref.ReferencedType, resolver, ctx, allowedTypeParameterNames, forValuePosition);
-        return $"TSByRef<{referencedType}>";
+        return $"ref<{referencedType}>";
     }
 
     private static string PrintNested(

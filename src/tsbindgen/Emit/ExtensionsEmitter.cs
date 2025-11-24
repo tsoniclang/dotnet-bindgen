@@ -103,9 +103,9 @@ public static class ExtensionsEmitter
         sb.AppendLine("import type { CLROf } from '../../System/internal/index.js';");
         sb.AppendLine();
 
-        // Import TSByRef and TSUnsafePointer support types (needed for ref/out parameters and pointers)
+        // Import ptr and ref from @tsonic/types (needed for ref/out parameters and pointers)
         sb.AppendLine("// Import unsafe type markers");
-        sb.AppendLine("import type { TSByRef, TSUnsafePointer } from '../../_support/types.js';");
+        sb.AppendLine("import type { ptr, ref } from '@tsonic/types';");
         sb.AppendLine();
 
         // Create TypeNameResolver for this file
