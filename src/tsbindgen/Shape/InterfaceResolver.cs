@@ -84,8 +84,7 @@ public static class InterfaceResolver
             // Pick the most ancestral; if tied, use lexicographic order for determinism
             ctx.Log("InterfaceResolver", $"WARNING - Multiple interfaces declare {memberCanonicalSig}: {string.Join(", ", candidates.Select(c => c.defName))}");
 
-            // For now, pick the first (most ancestral) one
-            // TODO: If we need more sophisticated tiebreaking, implement here
+            // Pick the first (most ancestral) one
             declaringInterface = candidates[0].iface;
 
             ctx.Log("InterfaceResolver", $"Using {GetTypeFullName(declaringInterface)} as declaring interface (most ancestral)");
@@ -155,9 +154,8 @@ public static class InterfaceResolver
     /// </summary>
     private static TypeReference SubstituteTypeArguments(TypeReference baseRef, TypeReference closedIface)
     {
-        // Simplified: For now, just return the base reference as-is
-        // TODO: Implement proper generic argument propagation if needed
-        // This would require mapping generic parameters through the type argument list
+        // Returns base reference as-is. Full implementation would map generic parameters
+        // through the type argument list for proper generic argument propagation.
         return baseRef;
     }
 

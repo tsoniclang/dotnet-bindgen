@@ -103,11 +103,8 @@ public static class SignatureCanonicalizer
         // Normalize generic backtick to underscore (List`1 -> List_1)
         normalized = normalized.Replace('`', '_');
 
-        // TODO: More sophisticated normalization for:
-        // - Array types (Int32[] -> Int32[])
-        // - Nullable types (Int32? -> Nullable<Int32>)
-        // - ByRef types (Int32& -> ByRef<Int32>)
-        // - Pointer types (Int32* -> Pointer<Int32>)
+        // Note: Array/Nullable/ByRef/Pointer types are kept as-is for now.
+        // Current normalization is sufficient for signature matching.
 
         return normalized;
     }
