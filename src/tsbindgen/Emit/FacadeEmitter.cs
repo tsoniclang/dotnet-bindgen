@@ -168,44 +168,44 @@ public static class FacadeEmitter
                     _ => "type"
                 };
 
-                    // TS2315 FIX: Skip facade exports for types that lose their generics during emission
-                    // Static classes with generic static members are emitted as non-generic classes
-                    // (TypeScript doesn't support class-level generics for static-only classes)
-                    if (export.SourceType.Kind == Model.Symbols.TypeKind.StaticNamespace &&
-                        export.SourceType.GenericParameters.Length > 0)
+                // TS2315 FIX: Skip facade exports for types that lose their generics during emission
+                // Static classes with generic static members are emitted as non-generic classes
+                // (TypeScript doesn't support class-level generics for static-only classes)
+                if (export.SourceType.Kind == Model.Symbols.TypeKind.StaticNamespace &&
+                    export.SourceType.GenericParameters.Length > 0)
+                {
+                    ctx.Log("TS2315Fix", $"Skipping facade export for {export.ExportName} (static class with generics - emitted without generic parameters)");
+                    continue;
+                }
+
+                // Apply rename for non-generic when sharing stem with generic
+                var aliasName = nonGenericRenames.TryGetValue(export.ExportName, out var renamed)
+                    ? renamed
+                    : export.ExportName;
+
+                // Emit primary export (uses unified helper)
+                EmitFacadeExport(sb, aliasName, export.SourceType, export.ExportName, resolver, ctx);
+
+                // FRIENDLY GENERIC ALIAS: Provide arity-less name (List instead of List_1)
+                if (export.SourceType.GenericParameters.Length > 0)
+                {
+                    var suffix = $"_{export.SourceType.GenericParameters.Length}";
+                    if (export.ExportName.EndsWith(suffix, StringComparison.Ordinal))
                     {
-                        ctx.Log("TS2315Fix", $"Skipping facade export for {export.ExportName} (static class with generics - emitted without generic parameters)");
-                        continue;
-                    }
-
-                    // Apply rename for non-generic when sharing stem with generic
-                    var aliasName = nonGenericRenames.TryGetValue(export.ExportName, out var renamed)
-                        ? renamed
-                        : export.ExportName;
-
-                    // Emit primary export (uses unified helper)
-                    EmitFacadeExport(sb, aliasName, export.SourceType, export.ExportName, resolver, ctx);
-
-                    // FRIENDLY GENERIC ALIAS: Provide arity-less name (List instead of List_1)
-                    if (export.SourceType.GenericParameters.Length > 0)
-                    {
-                        var suffix = $"_{export.SourceType.GenericParameters.Length}";
-                        if (export.ExportName.EndsWith(suffix, StringComparison.Ordinal))
+                        var friendlyName = export.ExportName.Substring(0, export.ExportName.Length - suffix.Length);
+                        // Skip if we've already emitted or name collides with imports/reserved helpers
+                        if (!string.IsNullOrWhiteSpace(friendlyName) &&
+                            !skipFriendlyNames.Contains(friendlyName) &&
+                            friendlyAliases.Add(friendlyName))
                         {
-                            var friendlyName = export.ExportName.Substring(0, export.ExportName.Length - suffix.Length);
-                            // Skip if we've already emitted or name collides with imports/reserved helpers
-                            if (!string.IsNullOrWhiteSpace(friendlyName) &&
-                                !skipFriendlyNames.Contains(friendlyName) &&
-                                friendlyAliases.Add(friendlyName))
-                            {
-                                // Emit friendly alias (uses same unified helper)
-                                EmitFacadeExport(sb, friendlyName, export.SourceType, export.ExportName, resolver, ctx);
-                            }
+                            // Emit friendly alias (uses same unified helper)
+                            EmitFacadeExport(sb, friendlyName, export.SourceType, export.ExportName, resolver, ctx);
                         }
                     }
                 }
-
             }
+
+        }
 
 
         // Delegate convenience aliases (Action/Func) with callable compatibility
