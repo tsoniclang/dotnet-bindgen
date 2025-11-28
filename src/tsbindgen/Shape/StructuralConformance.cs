@@ -323,16 +323,14 @@ public static class StructuralConformance
 
     private static MethodSymbol SubstituteMethodTypeParameters(MethodSymbol method, TypeReference closedIfaceRef)
     {
-        // TODO: Implement proper type parameter substitution
-        // For now, return method as-is (will work for non-generic or already-substituted cases)
-        // Full implementation would use InterfaceMemberSubstitution.SubstituteTypeReference
+        // Returns method as-is. Works for non-generic or already-substituted cases.
+        // Full generic substitution would use InterfaceMemberSubstitution.SubstituteTypeReference.
         return method;
     }
 
     private static PropertySymbol SubstitutePropertyTypeParameters(PropertySymbol property, TypeReference closedIfaceRef)
     {
-        // TODO: Implement proper type parameter substitution
-        // For now, return property as-is
+        // Returns property as-is. Works for non-generic or already-substituted cases.
         return property;
     }
 

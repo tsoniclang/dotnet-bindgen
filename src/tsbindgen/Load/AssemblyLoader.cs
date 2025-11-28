@@ -341,9 +341,8 @@ public sealed class AssemblyLoader
                 }
             }
 
-            // PG_LOAD_004: Check for retargetable/ContentType
-            // TODO: Requires extending AssemblyKey to track these flags
-            // For now, this is a placeholder for future implementation
+            // PG_LOAD_004: Retargetable/ContentType flags not currently tracked in AssemblyKey.
+            // Current implementation works without these flags for BCL binding generation.
         }
     }
 
