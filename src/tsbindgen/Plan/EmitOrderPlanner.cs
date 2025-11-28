@@ -96,7 +96,8 @@ public sealed class EmitOrderPlanner
         var orderedFields = type.Members.Fields
             .Where(f => f.EmitScope == EmitScope.ClassSurface || f.EmitScope == EmitScope.StaticSurface)
             .OrderBy(f => f.IsStatic)
-            .ThenBy(f => {
+            .ThenBy(f =>
+            {
                 var scope = ScopeFactory.ClassSurface(type, f.IsStatic);
                 return _ctx.Renamer.GetFinalMemberName(f.StableId, scope);
             })
@@ -105,7 +106,8 @@ public sealed class EmitOrderPlanner
         var orderedProperties = type.Members.Properties
             .Where(p => p.EmitScope == EmitScope.ClassSurface || p.EmitScope == EmitScope.StaticSurface)
             .OrderBy(p => p.IsStatic)
-            .ThenBy(p => {
+            .ThenBy(p =>
+            {
                 var scope = ScopeFactory.ClassSurface(type, p.IsStatic);
                 return _ctx.Renamer.GetFinalMemberName(p.StableId, scope);
             })
@@ -115,7 +117,8 @@ public sealed class EmitOrderPlanner
         var orderedEvents = type.Members.Events
             .Where(e => e.EmitScope == EmitScope.ClassSurface || e.EmitScope == EmitScope.StaticSurface)
             .OrderBy(e => e.IsStatic)
-            .ThenBy(e => {
+            .ThenBy(e =>
+            {
                 var scope = ScopeFactory.ClassSurface(type, e.IsStatic);
                 return _ctx.Renamer.GetFinalMemberName(e.StableId, scope);
             })
@@ -124,7 +127,8 @@ public sealed class EmitOrderPlanner
         var orderedMethods = type.Members.Methods
             .Where(m => m.EmitScope == EmitScope.ClassSurface || m.EmitScope == EmitScope.StaticSurface)
             .OrderBy(m => m.IsStatic)
-            .ThenBy(m => {
+            .ThenBy(m =>
+            {
                 var scope = ScopeFactory.ClassSurface(type, m.IsStatic);
                 return _ctx.Renamer.GetFinalMemberName(m.StableId, scope);
             })

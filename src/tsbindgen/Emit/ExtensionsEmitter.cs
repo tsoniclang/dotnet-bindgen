@@ -301,7 +301,9 @@ public static class ExtensionsEmitter
         {
             // Use TypeRefPrinter to print parameter types properly
             var paramType = TypeRefPrinter.Print(param.Type, resolver, ctx, allowedTypeParams);
-            paramStrings.Add($"{param.Name}: {paramType}");
+            // Sanitize reserved words (break → break_, finally → finally_)
+            var paramName = TypeScriptReservedWords.SanitizeParameterName(param.Name);
+            paramStrings.Add($"{paramName}: {paramType}");
         }
         sb.Append(string.Join(", ", paramStrings));
         sb.Append(')');

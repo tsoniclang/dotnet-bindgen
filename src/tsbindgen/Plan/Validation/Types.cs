@@ -508,46 +508,46 @@ internal static class Types
             {
                 var typeId = $"{type.Namespace}.{type.ClrName}";
 
-            // Check base type
-            if (type.BaseType != null)
-            {
-                CheckTypeReference(type.BaseType, typeId);
-            }
-
-            // Check interfaces
-            foreach (var iface in type.Interfaces)
-            {
-                CheckTypeReference(iface, typeId);
-            }
-
-            // Check method signatures
-            foreach (var method in type.Members.Methods)
-            {
-                CheckTypeReference(method.ReturnType, $"{typeId}.{method.ClrName}");
-
-                foreach (var param in method.Parameters)
+                // Check base type
+                if (type.BaseType != null)
                 {
-                    CheckTypeReference(param.Type, $"{typeId}.{method.ClrName}");
+                    CheckTypeReference(type.BaseType, typeId);
                 }
-            }
 
-            // Check properties
-            foreach (var prop in type.Members.Properties)
-            {
-                CheckTypeReference(prop.PropertyType, $"{typeId}.{prop.ClrName}");
-            }
+                // Check interfaces
+                foreach (var iface in type.Interfaces)
+                {
+                    CheckTypeReference(iface, typeId);
+                }
 
-            // Check fields
-            foreach (var field in type.Members.Fields)
-            {
-                CheckTypeReference(field.FieldType, $"{typeId}.{field.ClrName}");
-            }
+                // Check method signatures
+                foreach (var method in type.Members.Methods)
+                {
+                    CheckTypeReference(method.ReturnType, $"{typeId}.{method.ClrName}");
 
-            // Check events
-            foreach (var evt in type.Members.Events)
-            {
-                CheckTypeReference(evt.EventHandlerType, $"{typeId}.{evt.ClrName}");
-            }
+                    foreach (var param in method.Parameters)
+                    {
+                        CheckTypeReference(param.Type, $"{typeId}.{method.ClrName}");
+                    }
+                }
+
+                // Check properties
+                foreach (var prop in type.Members.Properties)
+                {
+                    CheckTypeReference(prop.PropertyType, $"{typeId}.{prop.ClrName}");
+                }
+
+                // Check fields
+                foreach (var field in type.Members.Fields)
+                {
+                    CheckTypeReference(field.FieldType, $"{typeId}.{field.ClrName}");
+                }
+
+                // Check events
+                foreach (var evt in type.Members.Events)
+                {
+                    CheckTypeReference(evt.EventHandlerType, $"{typeId}.{evt.ClrName}");
+                }
             }
         }
 

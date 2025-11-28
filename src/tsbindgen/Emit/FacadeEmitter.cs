@@ -168,63 +168,44 @@ public static class FacadeEmitter
                     _ => "type"
                 };
 
-                    // TS2315 FIX: Skip facade exports for types that lose their generics during emission
-                    // Static classes with generic static members are emitted as non-generic classes
-                    // (TypeScript doesn't support class-level generics for static-only classes)
-                    if (export.SourceType.Kind == Model.Symbols.TypeKind.StaticNamespace &&
-                        export.SourceType.GenericParameters.Length > 0)
+                // TS2315 FIX: Skip facade exports for types that lose their generics during emission
+                // Static classes with generic static members are emitted as non-generic classes
+                // (TypeScript doesn't support class-level generics for static-only classes)
+                if (export.SourceType.Kind == Model.Symbols.TypeKind.StaticNamespace &&
+                    export.SourceType.GenericParameters.Length > 0)
+                {
+                    ctx.Log("TS2315Fix", $"Skipping facade export for {export.ExportName} (static class with generics - emitted without generic parameters)");
+                    continue;
+                }
+
+                // Apply rename for non-generic when sharing stem with generic
+                var aliasName = nonGenericRenames.TryGetValue(export.ExportName, out var renamed)
+                    ? renamed
+                    : export.ExportName;
+
+                // Emit primary export (uses unified helper)
+                EmitFacadeExport(sb, aliasName, export.SourceType, export.ExportName, resolver, ctx);
+
+                // FRIENDLY GENERIC ALIAS: Provide arity-less name (List instead of List_1)
+                if (export.SourceType.GenericParameters.Length > 0)
+                {
+                    var suffix = $"_{export.SourceType.GenericParameters.Length}";
+                    if (export.ExportName.EndsWith(suffix, StringComparison.Ordinal))
                     {
-                        ctx.Log("TS2315Fix", $"Skipping facade export for {export.ExportName} (static class with generics - emitted without generic parameters)");
-                        continue;
-                    }
-
-                    // FACADE CONSTRAINTS: Use unified alias emitter with constraints
-                    // STEP 1 RE-EXPORT FIX: Reference the top-level type aliases from internal/index.d.ts
-                    // internal/index.d.ts exports: export type Console = Internal.Console$instance;
-                    // So facade should use: Internal.Console (the top-level alias, not Internal.Internal.Console)
-                    // This follows Option A from architect spec: facade points through top-level aliases
-                    var rhsBase = $"Internal.{export.ExportName}";
-
-                    // Apply rename for non-generic when sharing stem with generic
-                    var aliasName = nonGenericRenames.TryGetValue(export.ExportName, out var renamed)
-                        ? renamed
-                        : export.ExportName;
-
-                    AliasEmit.EmitGenericAlias(
-                        sb,
-                        aliasName: aliasName,
-                        sourceType: export.SourceType,
-                        rhsExpression: rhsBase,
-                        resolver,
-                        ctx,
-                        withConstraints: true); // Facade preserves constraints
-
-                    // FRIENDLY GENERIC ALIAS: Provide arity-less name (List instead of List_1)
-                    if (export.SourceType.GenericParameters.Length > 0)
-                    {
-                        var suffix = $"_{export.SourceType.GenericParameters.Length}";
-                        if (export.ExportName.EndsWith(suffix, StringComparison.Ordinal))
+                        var friendlyName = export.ExportName.Substring(0, export.ExportName.Length - suffix.Length);
+                        // Skip if we've already emitted or name collides with imports/reserved helpers
+                        if (!string.IsNullOrWhiteSpace(friendlyName) &&
+                            !skipFriendlyNames.Contains(friendlyName) &&
+                            friendlyAliases.Add(friendlyName))
                         {
-                            var friendlyName = export.ExportName.Substring(0, export.ExportName.Length - suffix.Length);
-                            // Skip if we've already emitted or name collides with imports/reserved helpers
-                            if (!string.IsNullOrWhiteSpace(friendlyName) &&
-                                !skipFriendlyNames.Contains(friendlyName) &&
-                                friendlyAliases.Add(friendlyName))
-                            {
-                                AliasEmit.EmitGenericAlias(
-                                    sb,
-                                    aliasName: friendlyName,
-                                    sourceType: export.SourceType,
-                                    rhsExpression: rhsBase,
-                                    resolver,
-                                    ctx,
-                                    withConstraints: true);
-                            }
+                            // Emit friendly alias (uses same unified helper)
+                            EmitFacadeExport(sb, friendlyName, export.SourceType, export.ExportName, resolver, ctx);
                         }
                     }
                 }
-
             }
+
+        }
 
 
         // Delegate convenience aliases (Action/Func) with callable compatibility
@@ -472,5 +453,111 @@ public static class FacadeEmitter
         }
 
         return name;
+    }
+
+    /// <summary>
+    /// UNIFIED FACADE EXPORT HELPER
+    ///
+    /// Emits a single facade export for a type, choosing between value re-export and type alias
+    /// based on the type kind. This ensures consistent behavior for both primary exports and
+    /// friendly aliases (arity-less names like List instead of List_1).
+    ///
+    /// FACADE EXPORT STRATEGY:
+    /// Types that need VALUE exports (for static access, construction, or enum values):
+    ///   - StaticNamespace: Console.writeLine(), Math.abs() - static method access
+    ///   - Class: new List<T>(), Exception.message - construction + instance/static access
+    ///   - Struct: new Point(), DateTime.now - construction + static access
+    ///   - Enum: ConsoleColor.red, FileMode.open - enum member access
+    ///
+    /// Types that need TYPE-ONLY exports (no runtime value needed):
+    ///   - Interface: IEnumerable<T> - purely type-level
+    ///   - Delegate: Action<T>, Func<T> - function type signatures
+    ///
+    /// Internal value name differs by kind:
+    ///   - Classes/Structs/StaticNamespace: use $instance suffix (Console$instance)
+    ///   - Enums: use final name directly (ConsoleColor - no $instance)
+    /// </summary>
+    private static void EmitFacadeExport(
+        StringBuilder sb,
+        string aliasName,
+        Model.Symbols.TypeSymbol sourceType,
+        string exportName,
+        TypeNameResolver resolver,
+        BuildContext ctx)
+    {
+        var needsValueExport = NeedsValueExport(sourceType.Kind);
+
+        if (needsValueExport)
+        {
+            var internalValueName = GetInternalValueName(sourceType, ctx);
+
+            // Value re-export: enables static access, construction, and enum values
+            // Example: export { Console$instance as Console } from './internal/index.js';
+            sb.Append("export { ");
+            sb.Append(internalValueName);
+            sb.Append(" as ");
+            sb.Append(aliasName);
+            sb.AppendLine(" } from './internal/index.js';");
+        }
+        else
+        {
+            // Type alias for interfaces and delegates (type-only, no runtime value)
+            // Example: export type IEnumerable_1<T> = Internal.IEnumerable_1<T>;
+            var rhsBase = $"Internal.{exportName}";
+            AliasEmit.EmitGenericAlias(
+                sb,
+                aliasName: aliasName,
+                sourceType: sourceType,
+                rhsExpression: rhsBase,
+                resolver,
+                ctx,
+                withConstraints: true);
+        }
+    }
+
+    /// <summary>
+    /// Determines if a type kind needs a VALUE export (vs type-only export) in the facade.
+    ///
+    /// Value exports are needed for types with runtime presence:
+    ///   - StaticNamespace: Static method access (Console.writeLine())
+    ///   - Class: Construction and static/instance access (new List(), Exception.message)
+    ///   - Struct: Construction and static access (new Point(), DateTime.now)
+    ///   - Enum: Enum member access (ConsoleColor.red)
+    ///
+    /// Type-only exports are sufficient for purely type-level entities:
+    ///   - Interface: No runtime value (IEnumerable<T>)
+    ///   - Delegate: Function type signature (Action<T>, Func<T>)
+    /// </summary>
+    private static bool NeedsValueExport(Model.Symbols.TypeKind kind)
+    {
+        return kind switch
+        {
+            Model.Symbols.TypeKind.StaticNamespace => true,  // Static method access
+            Model.Symbols.TypeKind.Class => true,            // Construction + static/instance access
+            Model.Symbols.TypeKind.Struct => true,           // Construction + static access
+            Model.Symbols.TypeKind.Enum => true,             // Enum member access
+            Model.Symbols.TypeKind.Interface => false,       // Type-only (no runtime value)
+            Model.Symbols.TypeKind.Delegate => false,        // Type-only (function signature)
+            _ => false                                        // Unknown: default to type-only (safe)
+        };
+    }
+
+    /// <summary>
+    /// Gets the internal module's exported value name for a type.
+    ///
+    /// Different type kinds have different internal naming patterns:
+    ///   - Classes/Structs/StaticNamespace: Use $instance suffix (Console$instance)
+    ///   - Enums: Use final name directly (ConsoleColor - no $instance)
+    /// </summary>
+    private static string GetInternalValueName(Model.Symbols.TypeSymbol type, BuildContext ctx)
+    {
+        // Enums are exported directly by their final name (no $instance suffix)
+        if (type.Kind == Model.Symbols.TypeKind.Enum)
+        {
+            return ctx.Renamer.GetFinalTypeName(type);
+        }
+
+        // Classes, Structs, StaticNamespace use $instance suffix
+        return ctx.Renamer.GetInstanceTypeName(type);
     }
 }

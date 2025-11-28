@@ -1,10 +1,41 @@
 {
-  "name": "tsbindgen",
-  "version": "1.0.0",
+  "name": "@tsonic/tsbindgen",
+  "version": "0.1.2",
   "description": "Generate TypeScript declarations from .NET assemblies",
   "type": "module",
-  "private": true,
+  "bin": {
+    "tsbindgen": "./bin.js"
+  },
+  "main": "./index.js",
+  "exports": {
+    ".": "./index.js"
+  },
+  "files": [
+    "bin.js",
+    "index.js",
+    "README.md"
+  ],
   "scripts": {
-    "validate": "cd .tests && npm install && cd .. && node scripts/validate.js"
+    "build": "./scripts/build-native.sh"
+  },
+  "optionalDependencies": {
+    "@tsonic/tsbindgen-darwin-arm64": "0.1.0",
+    "@tsonic/tsbindgen-darwin-x64": "0.1.0",
+    "@tsonic/tsbindgen-linux-arm64": "0.1.0",
+    "@tsonic/tsbindgen-linux-x64": "0.1.0"
+  },
+  "keywords": [
+    "tsonic",
+    "typescript",
+    "dotnet",
+    "csharp",
+    "codegen",
+    "bindings"
+  ],
+  "author": "Tsonic Team",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/tsoniclang/tsbindgen.git"
   }
 }

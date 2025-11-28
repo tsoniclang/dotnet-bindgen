@@ -251,6 +251,10 @@ public static class InternalIndexEmitter
                 // With namespace blocks removed, the stem name (GetFinalTypeName) must be exported
                 // so facade/type-position references resolve. Skip static classes that lost generics
                 // to avoid TS2315 (non-generic emitted type referenced as generic).
+                //
+                // NOTE: We use type aliases here (not value re-exports) because type aliases are
+                // HOISTED in TypeScript, enabling forward references within the file. Value exports
+                // for static access are added in the facade layer (see FacadeEmitter.cs).
                 var isClassLike = typeOrder.Type.Kind is Model.Symbols.TypeKind.Class or Model.Symbols.TypeKind.Struct or Model.Symbols.TypeKind.StaticNamespace;
                 var needsAlias = isClassLike && finalName != instanceName && !isStaticClass;
                 if (needsAlias)

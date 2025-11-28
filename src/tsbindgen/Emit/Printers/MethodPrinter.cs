@@ -191,8 +191,8 @@ public static class MethodPrinter
     {
         var sb = new StringBuilder();
 
-        // Parameter name
-        sb.Append(param.Name);
+        // Parameter name - sanitize reserved words (break → break_, finally → finally_)
+        sb.Append(TypeScriptReservedWords.SanitizeParameterName(param.Name));
 
         // Optional parameter: name?
         if (param.HasDefaultValue)
@@ -288,7 +288,7 @@ public static class MethodPrinter
         // Params parameter with ... prefix
         var paramsParam = method.Parameters[^1];
         sb.Append("...");
-        sb.Append(paramsParam.Name);
+        sb.Append(TypeScriptReservedWords.SanitizeParameterName(paramsParam.Name));
         sb.Append(": ");
         sb.Append(TypeRefPrinter.Print(paramsParam.Type, resolver, ctx, allowedTypeParams));
 
