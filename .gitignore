@@ -64,3 +64,6 @@ package-lock.json
 .tests/
 .analysis/
 .codespin/
+
+# NPM packaging artifacts (native binaries)
+npm/
