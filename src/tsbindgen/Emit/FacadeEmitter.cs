@@ -183,45 +183,8 @@ public static class FacadeEmitter
                         ? renamed
                         : export.ExportName;
 
-                    // FACADE EXPORT STRATEGY:
-                    // Types that need VALUE exports (for static access, construction, or enum values):
-                    //   - StaticNamespace: Console.writeLine(), Math.abs() - static method access
-                    //   - Class: new List<T>(), Exception.message - construction + instance/static access
-                    //   - Struct: new Point(), DateTime.now - construction + static access
-                    //   - Enum: ConsoleColor.red, FileMode.open - enum member access
-                    //
-                    // Types that need TYPE-ONLY exports (no runtime value needed):
-                    //   - Interface: IEnumerable<T> - purely type-level
-                    //   - Delegate: Action<T>, Func<T> - function type signatures
-                    //
-                    // Internal value name differs by kind:
-                    //   - Classes/Structs/StaticNamespace: use $instance suffix (Console$instance)
-                    //   - Enums: use final name directly (ConsoleColor - no $instance)
-                    var needsValueExport = NeedsValueExport(export.SourceType.Kind);
-                    var internalValueName = GetInternalValueName(export.SourceType, ctx);
-
-                    if (needsValueExport)
-                    {
-                        // Value re-export: enables static access, construction, and enum values
-                        sb.Append("export { ");
-                        sb.Append(internalValueName);
-                        sb.Append(" as ");
-                        sb.Append(aliasName);
-                        sb.AppendLine(" } from './internal/index.js';");
-                    }
-                    else
-                    {
-                        // Type alias for interfaces and delegates (type-only, no runtime value)
-                        var rhsBase = $"Internal.{export.ExportName}";
-                        AliasEmit.EmitGenericAlias(
-                            sb,
-                            aliasName: aliasName,
-                            sourceType: export.SourceType,
-                            rhsExpression: rhsBase,
-                            resolver,
-                            ctx,
-                            withConstraints: true);
-                    }
+                    // Emit primary export (uses unified helper)
+                    EmitFacadeExport(sb, aliasName, export.SourceType, export.ExportName, resolver, ctx);
 
                     // FRIENDLY GENERIC ALIAS: Provide arity-less name (List instead of List_1)
                     if (export.SourceType.GenericParameters.Length > 0)
@@ -235,26 +198,8 @@ public static class FacadeEmitter
                                 !skipFriendlyNames.Contains(friendlyName) &&
                                 friendlyAliases.Add(friendlyName))
                             {
-                                if (needsValueExport)
-                                {
-                                    sb.Append("export { ");
-                                    sb.Append(internalValueName);
-                                    sb.Append(" as ");
-                                    sb.Append(friendlyName);
-                                    sb.AppendLine(" } from './internal/index.js';");
-                                }
-                                else
-                                {
-                                    var rhsBase = $"Internal.{export.ExportName}";
-                                    AliasEmit.EmitGenericAlias(
-                                        sb,
-                                        aliasName: friendlyName,
-                                        sourceType: export.SourceType,
-                                        rhsExpression: rhsBase,
-                                        resolver,
-                                        ctx,
-                                        withConstraints: true);
-                                }
+                                // Emit friendly alias (uses same unified helper)
+                                EmitFacadeExport(sb, friendlyName, export.SourceType, export.ExportName, resolver, ctx);
                             }
                         }
                     }
@@ -508,6 +453,66 @@ public static class FacadeEmitter
         }
 
         return name;
+    }
+
+    /// <summary>
+    /// UNIFIED FACADE EXPORT HELPER
+    ///
+    /// Emits a single facade export for a type, choosing between value re-export and type alias
+    /// based on the type kind. This ensures consistent behavior for both primary exports and
+    /// friendly aliases (arity-less names like List instead of List_1).
+    ///
+    /// FACADE EXPORT STRATEGY:
+    /// Types that need VALUE exports (for static access, construction, or enum values):
+    ///   - StaticNamespace: Console.writeLine(), Math.abs() - static method access
+    ///   - Class: new List<T>(), Exception.message - construction + instance/static access
+    ///   - Struct: new Point(), DateTime.now - construction + static access
+    ///   - Enum: ConsoleColor.red, FileMode.open - enum member access
+    ///
+    /// Types that need TYPE-ONLY exports (no runtime value needed):
+    ///   - Interface: IEnumerable<T> - purely type-level
+    ///   - Delegate: Action<T>, Func<T> - function type signatures
+    ///
+    /// Internal value name differs by kind:
+    ///   - Classes/Structs/StaticNamespace: use $instance suffix (Console$instance)
+    ///   - Enums: use final name directly (ConsoleColor - no $instance)
+    /// </summary>
+    private static void EmitFacadeExport(
+        StringBuilder sb,
+        string aliasName,
+        Model.Symbols.TypeSymbol sourceType,
+        string exportName,
+        TypeNameResolver resolver,
+        BuildContext ctx)
+    {
+        var needsValueExport = NeedsValueExport(sourceType.Kind);
+
+        if (needsValueExport)
+        {
+            var internalValueName = GetInternalValueName(sourceType, ctx);
+
+            // Value re-export: enables static access, construction, and enum values
+            // Example: export { Console$instance as Console } from './internal/index.js';
+            sb.Append("export { ");
+            sb.Append(internalValueName);
+            sb.Append(" as ");
+            sb.Append(aliasName);
+            sb.AppendLine(" } from './internal/index.js';");
+        }
+        else
+        {
+            // Type alias for interfaces and delegates (type-only, no runtime value)
+            // Example: export type IEnumerable_1<T> = Internal.IEnumerable_1<T>;
+            var rhsBase = $"Internal.{exportName}";
+            AliasEmit.EmitGenericAlias(
+                sb,
+                aliasName: aliasName,
+                sourceType: sourceType,
+                rhsExpression: rhsBase,
+                resolver,
+                ctx,
+                withConstraints: true);
+        }
     }
 
     /// <summary>

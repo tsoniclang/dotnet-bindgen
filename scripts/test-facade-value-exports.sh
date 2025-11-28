@@ -1,0 +1,225 @@
+#!/bin/bash
+# Test that facade value exports work correctly
+# This validates that classes, enums, and structs are exported as values (not type-only)
+# so that static methods, enum values, and constructors are accessible.
+#
+# NOTE: These tests use PascalCase member names because the validation output
+# is generated with default casing (PascalCase). The @tsonic/dotnet npm package
+# uses camelCase, but validation uses PascalCase.
+
+set -e
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+ROOT_DIR="$(dirname "$SCRIPT_DIR")"
+TEST_DIR="$ROOT_DIR/.tests/facade-value-exports"
+VALIDATE_DIR="$ROOT_DIR/.tests/validate"
+
+echo "================================================================"
+echo "Testing Facade Value Exports"
+echo "================================================================"
+
+# Check if validation output exists
+if [ ! -d "$VALIDATE_DIR" ]; then
+    echo "Error: Validation output not found at $VALIDATE_DIR"
+    echo "Run 'node scripts/validate.js' first to generate the test package."
+    exit 1
+fi
+
+# Clean and create test directory
+rm -rf "$TEST_DIR"
+mkdir -p "$TEST_DIR"
+
+# Create package.json for the test project
+cat > "$TEST_DIR/package.json" << 'EOF'
+{
+  "name": "facade-value-exports-test",
+  "type": "module",
+  "private": true
+}
+EOF
+
+# Create tsconfig.json
+cat > "$TEST_DIR/tsconfig.json" << EOF
+{
+  "compilerOptions": {
+    "target": "ES2022",
+    "module": "ESNext",
+    "moduleResolution": "bundler",
+    "strict": true,
+    "noEmit": true,
+    "skipLibCheck": true,
+    "paths": {
+      "@tsonic/dotnet/*": ["$VALIDATE_DIR/*"]
+    }
+  },
+  "include": ["*.ts"]
+}
+EOF
+
+# Test 1: Static method access (Console.WriteLine)
+echo "Creating test: static-method-access.ts"
+cat > "$TEST_DIR/static-method-access.ts" << 'EOF'
+// Test: Static method access on a static class
+// This verifies that Console is exported as a VALUE, not just a type.
+// If exported as type-only, this would fail with "Console only refers to a type"
+
+import { Console } from "@tsonic/dotnet/System";
+
+// Access static method - requires value export
+Console.WriteLine("Hello from static method test");
+Console.Write("Writing without newline");
+
+// Also test other static classes
+import { GC, Environment } from "@tsonic/dotnet/System";
+
+// GC.Collect() with no args works
+GC.Collect();
+
+// Static property access
+const osVersion = Environment.OSVersion;
+
+// NOTE: We skip Math.Abs(-5) etc. because those require branded int types.
+// The goal of this test is to verify VALUE EXPORTS work (static access),
+// not to test branded type compatibility.
+EOF
+
+# Test 2: Enum value access (ConsoleColor.Red)
+echo "Creating test: enum-value-access.ts"
+cat > "$TEST_DIR/enum-value-access.ts" << 'EOF'
+// Test: Enum member access
+// This verifies that enums are exported as VALUES, not just types.
+// If exported as type-only, this would fail with "ConsoleColor only refers to a type"
+
+import { ConsoleColor, ConsoleKey, DayOfWeek } from "@tsonic/dotnet/System";
+
+// Access enum members - requires value export
+const color = ConsoleColor.Red;
+const key = ConsoleKey.Enter;
+const day = DayOfWeek.Monday;
+
+// Use in switch
+function getColorName(c: ConsoleColor): string {
+    switch (c) {
+        case ConsoleColor.Red: return "Red";
+        case ConsoleColor.Green: return "Green";
+        case ConsoleColor.Blue: return "Blue";
+        default: return "Unknown";
+    }
+}
+
+import { FileMode, FileAccess } from "@tsonic/dotnet/System.IO";
+
+const mode = FileMode.Create;
+const access = FileAccess.ReadWrite;
+EOF
+
+# Test 3: Generic class construction (new List_1<string>())
+echo "Creating test: generic-class-construction.ts"
+cat > "$TEST_DIR/generic-class-construction.ts" << 'EOF'
+// Test: Generic class construction and static access
+// This verifies that generic classes are exported as VALUES.
+// Note: The friendly alias (List) and the arity name (List_1) should both work.
+
+import { List_1, Dictionary_2 } from "@tsonic/dotnet/System.Collections.Generic";
+
+// Construction requires value export
+const stringList = new List_1<string>();
+const numberList = new List_1<number>();
+const dict = new Dictionary_2<string, number>();
+
+// Instance method access
+stringList.Add("hello");
+stringList.Add("world");
+const count = stringList.Count;
+
+// Also test Exception (a common non-generic class)
+import { Exception } from "@tsonic/dotnet/System";
+const err = new Exception();
+const msg = err.Message;
+EOF
+
+# Test 4: Interface remains type-only (regression test)
+echo "Creating test: interface-type-only.ts"
+cat > "$TEST_DIR/interface-type-only.ts" << 'EOF'
+// Test: Interfaces should remain type-only exports
+// This is a regression test to ensure we don't accidentally value-export interfaces.
+// Interfaces have no runtime value, so type-only is correct.
+
+import type { IEnumerable_1, IList_1, IDictionary_2 } from "@tsonic/dotnet/System.Collections.Generic";
+import type { IDisposable, IComparable_1 } from "@tsonic/dotnet/System";
+
+// Use as type annotations - this should always work
+function process(items: IEnumerable_1<string>): void {
+    // Implementation
+}
+
+function acceptList(list: IList_1<number>): void {
+    // Implementation
+}
+
+let disposable: IDisposable;
+let comparable: IComparable_1<string>;
+
+// Note: We can't do "new IEnumerable_1()" because interfaces have no constructor.
+// This test just verifies the types are usable as type annotations.
+EOF
+
+# Test 5: Struct value export (DateTime, Point, etc.)
+echo "Creating test: struct-value-export.ts"
+cat > "$TEST_DIR/struct-value-export.ts" << 'EOF'
+// Test: Struct value export
+// Structs in our model are emitted as classes, so they need value exports
+// for construction and static member access.
+
+import { DateTime, TimeSpan, Guid } from "@tsonic/dotnet/System";
+
+// Static property access - requires value export
+const now = DateTime.Now;
+const utcNow = DateTime.UtcNow;
+const minValue = DateTime.MinValue;
+
+// Static method access (with string args to avoid branded type issues)
+const parsed = DateTime.Parse("2025-01-01");
+const newGuid = Guid.NewGuid();
+
+// TimeSpan static property access
+const zero = TimeSpan.Zero;
+
+// NOTE: We skip TimeSpan.FromHours(1) because it requires branded double type.
+// The goal is to verify VALUE EXPORTS work (static access is visible),
+// not to test branded type compatibility.
+EOF
+
+echo ""
+echo "Running TypeScript compiler (tsc --noEmit)..."
+echo ""
+
+cd "$TEST_DIR"
+
+# Run tsc and capture output
+if npx tsc --noEmit 2>&1; then
+    echo ""
+    echo "================================================================"
+    echo "✓ ALL FACADE VALUE EXPORT TESTS PASSED"
+    echo "================================================================"
+    echo ""
+    echo "Verified:"
+    echo "  - Static method access (Console.WriteLine)"
+    echo "  - Enum value access (ConsoleColor.Red)"
+    echo "  - Generic class construction (new List_1<T>())"
+    echo "  - Interface type-only usage (IEnumerable_1<T>)"
+    echo "  - Struct value export (DateTime.Now)"
+    exit 0
+else
+    echo ""
+    echo "================================================================"
+    echo "✗ FACADE VALUE EXPORT TESTS FAILED"
+    echo "================================================================"
+    echo ""
+    echo "TypeScript compilation failed. This indicates that either:"
+    echo "  1. A class/enum/struct is incorrectly exported as type-only"
+    echo "  2. An internal value name doesn't exist in the internal module"
+    echo "  3. The facade export path is incorrect"
+    echo ""
+    exit 1
+fi
