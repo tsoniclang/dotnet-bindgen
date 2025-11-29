@@ -13,11 +13,11 @@ namespace tsbindgen.Plan;
 /// </summary>
 public static class InterfaceConformanceAnalyzer
 {
-    public static Dictionary<string, List<string>> AnalyzeConformance(BuildContext ctx, SymbolGraph graph)
+    public static Dictionary<string, List<ConformanceIssue>> AnalyzeConformance(BuildContext ctx, SymbolGraph graph)
     {
         ctx.Log("InterfaceConformanceAnalyzer", "Analyzing interface conformance (pre-validation)...");
 
-        var conformanceIssuesByType = new Dictionary<string, List<string>>();
+        var conformanceIssuesByType = new Dictionary<string, List<ConformanceIssue>>();
         int typesWithIssues = 0;
 
         foreach (var ns in graph.Namespaces)
@@ -32,19 +32,23 @@ public static class InterfaceConformanceAnalyzer
                     .Select(v => GetTypeFullName(v.InterfaceReference))
                     .ToHashSet();
 
-                var conformanceIssues = new List<string>();
+                var conformanceIssues = new List<ConformanceIssue>();
 
                 // Check that all claimed interfaces have corresponding members
                 foreach (var ifaceRef in type.Interfaces)
                 {
                     var ifaceFullName = GetTypeFullName(ifaceRef);
+                    var ifaceShortName = GetInterfaceName(ifaceRef);
 
                     // Interfaces with explicit views have members moved to companion interfaces.
                     // Therefore they are unsatisfiable for a TS `implements` clause.
                     if (plannedInterfaces.Contains(ifaceFullName))
                     {
-                        conformanceIssues.Add(
-                            $"  Explicit interface implementation (members in view) from {GetInterfaceName(ifaceRef)}");
+                        conformanceIssues.Add(new ConformanceIssue(
+                            InterfaceClrFullName: ifaceFullName,
+                            InterfaceShortName: ifaceShortName,
+                            Reason: UnsatisfiableReason.ExplicitImplementationMovedToView,
+                            Details: "Members moved to companion view interface"));
                         continue; // no need to check members; it's already unsatisfiable
                     }
 
@@ -67,13 +71,21 @@ public static class InterfaceConformanceAnalyzer
 
                         if (matchingMethod == null)
                         {
-                            conformanceIssues.Add($"  Missing method {methodSig} from {GetInterfaceName(ifaceRef)}");
+                            conformanceIssues.Add(new ConformanceIssue(
+                                InterfaceClrFullName: ifaceFullName,
+                                InterfaceShortName: ifaceShortName,
+                                Reason: UnsatisfiableReason.MissingOrIncompatibleMembers,
+                                Details: $"Missing method {methodSig}"));
                         }
                         else
                         {
                             if (IsRepresentableConformanceBreak(matchingMethod, requiredMethod))
                             {
-                                conformanceIssues.Add($"  Method {methodSig} from {GetInterfaceName(ifaceRef)} has incompatible TS signature");
+                                conformanceIssues.Add(new ConformanceIssue(
+                                    InterfaceClrFullName: ifaceFullName,
+                                    InterfaceShortName: ifaceShortName,
+                                    Reason: UnsatisfiableReason.MissingOrIncompatibleMembers,
+                                    Details: $"Method {methodSig} has incompatible TS signature"));
                             }
                         }
                     }
@@ -90,7 +102,11 @@ public static class InterfaceConformanceAnalyzer
 
                         if (matchingProperty == null)
                         {
-                            conformanceIssues.Add($"  Missing property {requiredProperty.ClrName} from {GetInterfaceName(ifaceRef)}");
+                            conformanceIssues.Add(new ConformanceIssue(
+                                InterfaceClrFullName: ifaceFullName,
+                                InterfaceShortName: ifaceShortName,
+                                Reason: UnsatisfiableReason.MissingOrIncompatibleMembers,
+                                Details: $"Missing property {requiredProperty.ClrName}"));
                         }
                         // Note: We don't check property type differences here - those are covariance issues (TBG310, not TBG203)
                     }
