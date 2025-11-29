@@ -593,7 +593,7 @@ internal static class ImportExport
     /// <summary>
     /// PG_EXT_IMPORT_001: Validates extension import completeness.
     /// Any foreign type referenced by extension bucket signatures must be resolvable/importable.
-    /// Treats internal/extensions as a synthetic namespace for import validation.
+    /// Treats __internal/extensions as a synthetic namespace for import validation.
     /// </summary>
     internal static void ValidateExtensionImportCompleteness(
         BuildContext ctx,
