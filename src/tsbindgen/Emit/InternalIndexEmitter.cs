@@ -386,27 +386,25 @@ public static class InternalIndexEmitter
 
         sb.AppendLine(" {");
 
-        // Emit view properties
+        // Emit view accessor methods (not properties - methods are the stable API)
         foreach (var view in views)
         {
-            sb.Append("    readonly ");
+            sb.Append("    ");
             sb.Append(view.ViewPropertyName);
-            sb.Append(": ");
+            sb.Append("(): ");
 
             // FIX D: Match view's interface reference to type's actual interface implementation
             // to get correct type arguments (fixes generic "T" leaks in view interfaces)
             var matchedInterface = FindMatchingInterface(type, view.InterfaceReference);
             var interfaceToEmit = matchedInterface ?? view.InterfaceReference;
 
-            // TS2344 FIX: Detect numeric self-referential interfaces and omit type arguments
-            // to avoid circular constraint checking during type definition
-            var isNumericSelfReferential = IsNumericSelfReferentialInterface(interfaceToEmit);
-
             // TS2304 FIX: View interfaces need namespace qualification
             // Some view interfaces (like IEnumerable) are transitively implemented and not in
             // ValueImportQualifiedNames, so we need to manually qualify cross-namespace types
-            var viewTypeName = QualifyViewInterface(interfaceToEmit, type.Namespace, resolver, ctx,
-                omitTypeArguments: isNumericSelfReferential);
+            // NOTE: Always emit actual CLR type arguments (e.g., INumberBase_1<int> for Int32).
+            // Never substitute 'any' - that breaks type safety. The real self-type satisfies
+            // recursive constraints because Int32 genuinely implements INumberBase_1<Int32>.
+            var viewTypeName = QualifyViewInterface(interfaceToEmit, type.Namespace, resolver, ctx);
             sb.Append(viewTypeName);
             sb.AppendLine(";");
         }
@@ -518,7 +516,7 @@ public static class InternalIndexEmitter
         // IComparable.CompareTo
         if (numericInterfaces.Contains("IComparable"))
         {
-            sb.AppendLine("    CompareTo(obj: any): int;");
+            sb.AppendLine("    CompareTo(obj: unknown): int;");
         }
 
         // INumberBase<TSelf>, INumber<TSelf>, IBinaryInteger<TSelf>, IFloatingPoint<TSelf>, etc.
@@ -532,20 +530,32 @@ public static class InternalIndexEmitter
         {
             sb.AppendLine($"    ToString(format: string, formatProvider: {Qualified("IFormatProvider")}): string;");
             // ref is from @tsonic/types, so never qualify it
-            sb.AppendLine($"    TryFormat(destination: {Qualified("Span_1")}<{Qualified("CLROf")}<string>>, charsWritten: {{ value: ref<int> }}, format: {Qualified("ReadOnlySpan_1")}<{Qualified("CLROf")}<string>>, provider: {Qualified("IFormatProvider")}): boolean;");
+            sb.AppendLine($"    TryFormat(destination: {Qualified("Span_1")}<{Qualified("CLROf")}<char>>, charsWritten: {{ value: ref<int> }}, format: {Qualified("ReadOnlySpan_1")}<{Qualified("CLROf")}<char>>, provider: {Qualified("IFormatProvider")}): boolean;");
         }
 
-        // IBinaryInteger<TSelf> - GetByteCount
+        // IBinaryInteger<TSelf> - GetByteCount, TryWriteBigEndian, WriteBigEndian
         if (numericInterfaces.Contains("IBinaryInteger"))
         {
             sb.AppendLine("    GetByteCount(): int;");
+            // TryWriteBigEndian with out parameter
+            sb.AppendLine($"    TryWriteBigEndian(destination: {Qualified("Span_1")}<{Qualified("CLROf")}<byte>>, bytesWritten: {{ value: ref<int> }}): boolean;");
+            // WriteBigEndian overloads
+            sb.AppendLine("    WriteBigEndian(destination: byte[], startIndex: int): int;");
+            sb.AppendLine("    WriteBigEndian(destination: byte[]): int;");
+            sb.AppendLine($"    WriteBigEndian(destination: {Qualified("Span_1")}<{Qualified("CLROf")}<byte>>): int;");
         }
 
-        // IFloatingPoint<TSelf> - GetExponentByteCount, GetExponentShortestBitLength
+        // IFloatingPoint<TSelf> - GetExponentByteCount, GetExponentShortestBitLength, TryWriteExponentBigEndian, WriteExponentBigEndian
         if (numericInterfaces.Contains("IFloatingPoint"))
         {
             sb.AppendLine("    GetExponentByteCount(): int;");
             sb.AppendLine("    GetExponentShortestBitLength(): int;");
+            // TryWriteExponentBigEndian with out parameter
+            sb.AppendLine($"    TryWriteExponentBigEndian(destination: {Qualified("Span_1")}<{Qualified("CLROf")}<byte>>, bytesWritten: {{ value: ref<int> }}): boolean;");
+            // WriteExponentBigEndian overloads
+            sb.AppendLine("    WriteExponentBigEndian(destination: byte[], startIndex: int): int;");
+            sb.AppendLine("    WriteExponentBigEndian(destination: byte[]): int;");
+            sb.AppendLine($"    WriteExponentBigEndian(destination: {Qualified("Span_1")}<{Qualified("CLROf")}<byte>>): int;");
         }
     }
 
@@ -583,30 +593,6 @@ public static class InternalIndexEmitter
     }
 
     /// <summary>
-    /// TS2344 FIX: Detect numeric self-referential interfaces that use TSelf pattern.
-    /// These interfaces have circular constraints (TSelf extends IFoo<TSelf>) which cause
-    /// TypeScript to fail constraint checking during type definition.
-    /// </summary>
-    private static bool IsNumericSelfReferentialInterface(Model.Types.TypeReference interfaceRef)
-    {
-        if (interfaceRef is not Model.Types.NamedTypeReference named)
-            return false;
-
-        var baseName = named.Name;
-
-        // Check if it's a numeric interface with self-referential constraint pattern
-        return baseName.StartsWith("I") && (
-            baseName.Contains("Number") ||
-            baseName.Contains("Binary") ||
-            baseName.Contains("Floating") ||
-            baseName.Contains("MinMaxValue") ||
-            baseName.Contains("Additive") ||
-            baseName.Contains("Multiplicative") ||
-            baseName.Contains("Parsable") ||
-            baseName.Contains("Formattable"));
-    }
-
-    /// <summary>
     /// TS2304 FIX: Qualify view interface types with namespace alias if cross-namespace.
     /// View interfaces that are transitively implemented (not directly in implements clause)
     /// don't get added to ValueImportQualifiedNames, so we need manual qualification.
@@ -615,44 +601,14 @@ public static class InternalIndexEmitter
         Model.Types.TypeReference interfaceRef,
         string currentNamespace,
         TypeNameResolver resolver,
-        BuildContext ctx,
-        bool omitTypeArguments = false)
+        BuildContext ctx)
     {
-        // TS2344 FIX: For numeric self-referential interfaces, omit type arguments to avoid circular constraints
-        // For other interfaces, use instance interface type (forValuePosition=true)
-        string baseName;
-
-        if (omitTypeArguments && interfaceRef is Model.Types.NamedTypeReference namedRef)
-        {
-            // Replace type arguments with 'any' to avoid circular constraint checking
-            // e.g., "IFoo<T>" → "IFoo$instance<any>"
-            // Get the base instance name without type arguments
-            var baseInstanceName = resolver.For(namedRef, forValuePosition: true);
-
-            // Strip any existing type arguments
-            var bracketIndex = baseInstanceName.IndexOf('<');
-            var nameWithoutArgs = bracketIndex >= 0
-                ? baseInstanceName.Substring(0, bracketIndex)
-                : baseInstanceName;
-
-            // Add 'any' type arguments if the interface is generic
-            if (namedRef.TypeArguments.Count > 0)
-            {
-                var anyArgs = string.Join(", ", Enumerable.Repeat("any", namedRef.TypeArguments.Count));
-                baseName = $"{nameWithoutArgs}<{anyArgs}>";
-            }
-            else
-            {
-                // Not generic, use as-is
-                baseName = nameWithoutArgs;
-            }
-        }
-        else
-        {
-            // Normal path: include type arguments
-            baseName = Printers.TypeRefPrinter.Print(interfaceRef, resolver, ctx,
-                forValuePosition: true);
-        }
+        // Always emit actual CLR type arguments using the normal type printer.
+        // For self-referential interfaces (e.g., INumberBase_1<Int32>), this emits
+        // the real instantiation which satisfies the recursive constraint correctly.
+        // NEVER substitute 'any' - that breaks type safety and poisons downstream inference.
+        var baseName = Printers.TypeRefPrinter.Print(interfaceRef, resolver, ctx,
+            forValuePosition: true);
 
         // If it's a NamedTypeReference, check if it's cross-namespace
         if (interfaceRef is Model.Types.NamedTypeReference named)

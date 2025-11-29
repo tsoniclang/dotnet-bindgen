@@ -33,9 +33,9 @@ public static class TypeMap
                 tsType = "string";
                 return true;
 
-            // Object (map to any for maximum compatibility)
+            // Object (map to unknown - safer than any, forces explicit type narrowing)
             case "System.Object":
-                tsType = "any";
+                tsType = "unknown";
                 return true;
 
             // Signed integers (branded types)
@@ -92,14 +92,14 @@ public static class TypeMap
                 tsType = "decimal";
                 return true;
 
-            // Char (map to string - TypeScript doesn't have char)
+            // Char (branded type - distinct from string for CLROf resolution)
             case "System.Char":
-                tsType = "string";
+                tsType = "char";
                 return true;
 
             // Value type base
             case "System.ValueType":
-                tsType = "any";
+                tsType = "unknown";
                 return true;
 
             // Enum base
@@ -138,11 +138,11 @@ public static class TypeMap
         {
             throw new InvalidOperationException(
                 $"Unsupported special form: {fullName} (isPointer={isPointer}, isByRef={isByRef}, isFunctionPointer={isFunctionPointer}). " +
-                $"Use --allow-unsafe-maps to substitute with 'any'.");
+                $"Use --allow-unsafe-maps to substitute with 'unknown'.");
         }
 
-        // When unsafe maps are allowed, substitute with 'any'
-        return "any";
+        // When unsafe maps are allowed, substitute with 'unknown'
+        return "unknown";
     }
 
     /// <summary>
@@ -169,6 +169,7 @@ public static class TypeMap
             "System.Single" => true,
             "System.Double" => true,
             "System.Decimal" => true,
+            "System.Char" => true,
             _ => false
         };
     }

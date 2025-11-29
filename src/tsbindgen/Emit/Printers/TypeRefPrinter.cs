@@ -41,7 +41,7 @@ public static class TypeRefPrinter
             PointerTypeReference ptr => PrintPointer(ptr, resolver, ctx, allowedTypeParameterNames, forValuePosition),
             ByRefTypeReference byref => PrintByRef(byref, resolver, ctx, allowedTypeParameterNames, forValuePosition),
             NestedTypeReference nested => PrintNested(nested, resolver, ctx, allowedTypeParameterNames, forValuePosition),
-            _ => "any" // Fallback for unknown types
+            _ => "unknown" // Fallback for unknown types (never use 'any' - breaks type safety)
         };
     }
 
@@ -52,9 +52,9 @@ public static class TypeRefPrinter
         ctx.Diagnostics.Warning(
             Core.Diagnostics.DiagnosticCodes.UnresolvedType,
             $"Placeholder type reached output: {placeholder.DebugName}. " +
-            $"This indicates a cycle that wasn't resolved. Emitting 'any'.");
+            $"This indicates a cycle that wasn't resolved. Emitting 'unknown'.");
 
-        return "any";
+        return "unknown";
     }
 
     private static string PrintNamed(
