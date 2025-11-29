@@ -79,17 +79,8 @@ public static class MetadataEmitter
         // Get final TypeScript name from Renamer
         var tsEmitName = ctx.Renamer.GetFinalTypeName(type);
 
-        // PR C: Get unsatisfiable interfaces for this type (if any)
-        List<UnsatisfiableInterfaceMetadata>? unsatisfiableInterfaces = null;
-        if (honestEmission.UnsatisfiableInterfaces.TryGetValue(type.ClrFullName, out var unsatisfiableList))
-        {
-            unsatisfiableInterfaces = unsatisfiableList.Select(u => new UnsatisfiableInterfaceMetadata
-            {
-                InterfaceClrName = u.InterfaceClrName,
-                Reason = u.Reason.ToString(),
-                IssueCount = u.IssueCount
-            }).ToList();
-        }
+        // NOTE: Unsatisfiable interfaces are NOT included in consumer-facing metadata.
+        // They are planning/diagnostics artifacts available via HonestEmissionPlan for validation builds.
 
         return new TypeMetadata
         {
@@ -106,8 +97,7 @@ public static class MetadataEmitter
             Properties = type.Members.Properties.Select(p => GeneratePropertyMetadata(p, type, ctx)).ToList(),
             Fields = type.Members.Fields.Select(f => GenerateFieldMetadata(f, type, ctx)).ToList(),
             Events = type.Members.Events.Select(e => GenerateEventMetadata(e, type, ctx)).ToList(),
-            Constructors = type.Members.Constructors.Select(c => GenerateConstructorMetadata(c, type, ctx)).ToList(),
-            UnsatisfiableInterfaces = unsatisfiableInterfaces
+            Constructors = type.Members.Constructors.Select(c => GenerateConstructorMetadata(c, type, ctx)).ToList()
         };
     }
 
@@ -287,23 +277,6 @@ public sealed record TypeMetadata
     public required List<FieldMetadata> Fields { get; init; }
     public required List<EventMetadata> Events { get; init; }
     public required List<ConstructorMetadata> Constructors { get; init; }
-
-    /// <summary>
-    /// PR C: Interfaces that this type claims to implement in CLR but cannot satisfy in TypeScript.
-    /// These are omitted from TypeScript 'implements' clause but preserved here for truth.
-    /// Null if no unsatisfiable interfaces.
-    /// </summary>
-    public List<UnsatisfiableInterfaceMetadata>? UnsatisfiableInterfaces { get; init; }
-}
-
-/// <summary>
-/// PR C: Metadata for an unsatisfiable interface omitted from TypeScript 'implements' clause.
-/// </summary>
-public sealed record UnsatisfiableInterfaceMetadata
-{
-    public required string InterfaceClrName { get; init; }
-    public required string Reason { get; init; }
-    public required int IssueCount { get; init; }
 }
 
 /// <summary>
