@@ -56,6 +56,12 @@ public enum UnsatisfiableReason
     MissingOrIncompatibleMembers,
 
     /// <summary>
+    /// Interface members are implemented explicitly and routed to companion "views" interface.
+    /// Views are not on the class surface, so TS `implements` cannot claim them.
+    /// </summary>
+    ExplicitImplementationMovedToView,
+
+    /// <summary>
     /// Other TypeScript language limitations.
     /// </summary>
     LanguageLimitation

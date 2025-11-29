@@ -1477,11 +1477,8 @@ public static class ClassPrinter
         if (ifaceRef is not NamedTypeReference named)
             return true; // Non-named types (generic parameters, etc.) are always allowed
 
-        // Build StableId: "AssemblyName:FullName"
-        var stableId = $"{named.AssemblyName}:{named.FullName}";
-
-        // Check if type exists in graph (public types only)
-        return graph.TypeIndex.TryGetValue(stableId, out _);
+        // TypeIndex uses ClrFullName as key (not StableId format with assembly prefix)
+        return graph.TypeIndex.TryGetValue(named.FullName, out _);
     }
 
     /// <summary>

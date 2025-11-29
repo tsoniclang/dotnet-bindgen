@@ -356,7 +356,7 @@ public static class Builder
         // PR C: Analyze interface conformance and plan honest emission
         ctx.Log("Build", "\n--- Phase 4.13: Honest Emission Planning ---");
         var conformanceIssues = Plan.InterfaceConformanceAnalyzer.AnalyzeConformance(ctx, graph);
-        var honestEmissionPlan = Plan.HonestEmissionPlanner.PlanHonestEmission(ctx, graph, conformanceIssues);
+        var honestEmissionPlan = Plan.HonestEmissionPlanner.PlanHonestEmission(ctx, conformanceIssues);
         ctx.Log("Build", $"Planned {honestEmissionPlan.TotalUnsatisfiableCount} unsatisfiable interfaces across {honestEmissionPlan.UnsatisfiableInterfaces.Count} types");
 
         // Build emission plan
