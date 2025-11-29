@@ -1111,6 +1111,149 @@ Returns subdirectory name for internal declarations:
 
 ---
 
+## File: InterfaceConformanceAnalyzer.cs
+
+### Purpose
+Analyzes interface conformance to identify unsatisfiable interfaces for TypeScript `implements` clauses. This is a pre-validation analysis that runs before PhaseGate. Determines which interfaces a class can honestly claim to `implement` in TypeScript.
+
+### Class: InterfaceConformanceAnalyzer
+
+Static class with conformance analysis logic.
+
+#### Method: AnalyzeConformance
+
+```csharp
+public static Dictionary<string, List<ConformanceIssue>> AnalyzeConformance(
+    BuildContext ctx,
+    SymbolGraph graph)
+```
+
+**Algorithm:**
+
+1. For each class/struct in graph:
+   - Build set of interfaces with planned explicit views
+   - For each implemented interface:
+     - **If interface has explicit views:** Mark unsatisfiable (members moved to views)
+     - **Otherwise:** Check structural conformance
+
+2. **Structural conformance checks:**
+   - Method presence: Does class have method with same name and parameter count?
+   - Method assignability: Is class method's TS signature compatible with interface?
+   - Property presence: Does class have property with same name?
+
+3. **Return:** Dictionary mapping type CLR name → list of `ConformanceIssue` records
+
+**ConformanceIssue record:**
+
+```csharp
+public sealed record ConformanceIssue(
+    string InterfaceClrFullName,  // e.g., "System.Collections.Generic.IEnumerable`1"
+    string InterfaceShortName,    // e.g., "IEnumerable`1"
+    UnsatisfiableReason Reason,   // ExplicitImplementationMovedToView or MissingOrIncompatibleMembers
+    string? Details               // Optional diagnostic details (for logging only)
+);
+```
+
+**Why structured issues matter:**
+- Previous implementation used string parsing (brittle)
+- Structured issues enable direct reason lookup without parsing
+- Details are for diagnostics only, not for logic
+
+---
+
+## File: HonestEmissionPlanner.cs
+
+### Purpose
+Plans honest TypeScript emission by aggregating conformance issues into an emission plan. Ensures TypeScript `implements` clauses only appear when provably satisfiable.
+
+### Class: HonestEmissionPlanner
+
+Static class with planning logic.
+
+#### Method: PlanHonestEmission
+
+```csharp
+public static HonestEmissionPlan PlanHonestEmission(
+    BuildContext ctx,
+    Dictionary<string, List<ConformanceIssue>> conformanceIssuesByType)
+```
+
+**Algorithm:**
+
+1. For each type with conformance issues:
+   - Call `AggregateByInterface` to group issues by interface
+   - Build `UnsatisfiableInterface` records with reason and count
+
+2. Return `HonestEmissionPlan` with:
+   - `UnsatisfiableInterfaces`: Map of type → list of unsatisfiable interfaces
+   - `TotalUnsatisfiableCount`: Total count for logging
+
+**UnsatisfiableReason enum:**
+
+```csharp
+public enum UnsatisfiableReason
+{
+    MissingOrIncompatibleMembers,        // Interface members missing or incompatible
+    ExplicitImplementationMovedToView,   // Members in views, not class surface
+    LanguageLimitation                   // TypeScript language limitation
+}
+```
+
+**Usage in ClassPrinter:**
+
+```csharp
+// Before emitting implements clause:
+if (IsUnsatisfiableInterface(type, interfaceRef, honestEmissionPlan))
+{
+    // Skip this interface in implements clause
+    continue;
+}
+```
+
+**Result:**
+- Classes only claim `implements` for interfaces they truly satisfy
+- Interfaces with explicit views are omitted (members in views)
+- Zero TS2420/TS2416 errors from honest emission
+
+---
+
+## File: HonestEmissionPlan.cs
+
+### Purpose
+Data structure containing honest emission planning results.
+
+### Record: HonestEmissionPlan
+
+```csharp
+public sealed record HonestEmissionPlan
+{
+    public required IReadOnlyDictionary<string, IReadOnlyList<UnsatisfiableInterface>>
+        UnsatisfiableInterfaces { get; init; }
+    public required int TotalUnsatisfiableCount { get; init; }
+}
+```
+
+### Record: UnsatisfiableInterface
+
+```csharp
+public sealed record UnsatisfiableInterface
+{
+    public required string InterfaceClrName { get; init; }
+    public required UnsatisfiableReason Reason { get; init; }
+    public required int IssueCount { get; init; }
+}
+```
+
+**Method: IsUnsatisfiable**
+
+```csharp
+public bool IsUnsatisfiable(string typeClrName, string interfaceClrName)
+```
+
+Returns true if the given type cannot satisfy the given interface in TypeScript.
+
+---
+
 ## File: InterfaceConstraintAuditor.cs
 
 ### Purpose
