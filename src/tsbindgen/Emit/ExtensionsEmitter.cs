@@ -1,3 +1,4 @@
+using System.Collections.Immutable;
 using System.Text;
 using tsbindgen.Analysis;
 using tsbindgen.Emit.Printers;
@@ -236,7 +237,8 @@ public static class ExtensionsEmitter
 
         sb.AppendLine(" {");
 
-        // Emit methods
+        // Emit methods as proper TypeScript overloads (no numeric suffixes)
+        // Group by base CLR name and emit multiple signatures with same name
         foreach (var method in bucket.Methods)
         {
             EmitExtensionMethod(sb, ctx, method, resolver, targetType.GenericParameters);
@@ -248,7 +250,8 @@ public static class ExtensionsEmitter
     /// <summary>
     /// Emit an extension method as an instance method in the bucket interface.
     /// Drops the first 'this' parameter and emits remaining parameters.
-    /// Collapses method-level generics that match the target type's generics.
+    /// Unifies method-level generics with target type's generics BY POSITION (not name).
+    /// Example: Where&lt;TSource&gt;(this IEnumerable&lt;TSource&gt;, ...) becomes Where(...) using bucket's T.
     /// </summary>
     private static void EmitExtensionMethod(
         StringBuilder sb,
@@ -262,57 +265,168 @@ public static class ExtensionsEmitter
 
         sb.Append("  ");
 
-        // Method name (use TsEmitName)
-        var methodName = !string.IsNullOrEmpty(method.TsEmitName) ? method.TsEmitName : method.ClrName;
+        // Method name: use CLR name (no numeric suffixes)
+        var methodName = method.ClrName;
         sb.Append(methodName);
 
-        // Determine which method generic parameters to emit
-        // Collapse method generics that match target type generics (by name)
-        var targetGenericNames = new HashSet<string>(targetGenericParameters.Select(p => p.Name));
+        // Build generic substitution map and unified generics set BY POSITION from receiver type
+        // Example: IEnumerable<TSource> receiver → target IEnumerable<T> means TSource→T
+        // unifiedGenerics includes ALL method generics that map to bucket (even if same name)
+        var (genericSubstitution, unifiedGenerics) = BuildGenericSubstitution(method, targetGenericParameters);
+
+        // Determine which method generics remain after unification
+        // Method generics that map to bucket generics are removed (shouldn't shadow bucket's T)
         var methodGenericsToEmit = method.GenericParameters
-            .Where(p => !targetGenericNames.Contains(p.Name))
+            .Where(p => !unifiedGenerics.Contains(p.Name))
             .ToList();
 
-        // Build allowed type parameter names for TypeRefPrinter
-        // Include both target generics AND method generics (whether emitted or collapsed)
-        var allowedTypeParams = new HashSet<string>(targetGenericNames);
-        foreach (var param in method.GenericParameters)
+        // Build allowed type parameter names (bucket generics + remaining method generics)
+        var allowedTypeParams = new HashSet<string>(targetGenericParameters.Select(p => p.Name));
+        foreach (var param in methodGenericsToEmit)
         {
             allowedTypeParams.Add(param.Name);
         }
 
-        // Only emit method-level generics if there are non-collapsed ones
+        // Only emit method-level generics if there are non-unified ones
         if (methodGenericsToEmit.Count > 0)
         {
             sb.Append('<');
-            var genericParams = new List<string>();
-            foreach (var param in methodGenericsToEmit)
-            {
-                genericParams.Add(param.Name);
-            }
-            sb.Append(string.Join(", ", genericParams));
+            sb.Append(string.Join(", ", methodGenericsToEmit.Select(p => p.Name)));
             sb.Append('>');
         }
 
-        // Parameters
+        // Parameters - apply generic substitution
         sb.Append('(');
         var paramStrings = new List<string>();
         foreach (var param in instanceParams)
         {
-            // Use TypeRefPrinter to print parameter types properly
-            var paramType = TypeRefPrinter.Print(param.Type, resolver, ctx, allowedTypeParams);
-            // Sanitize reserved words (break → break_, finally → finally_)
+            var paramType = PrintTypeWithSubstitution(param.Type, resolver, ctx, allowedTypeParams, genericSubstitution);
             var paramName = TypeScriptReservedWords.SanitizeParameterName(param.Name);
             paramStrings.Add($"{paramName}: {paramType}");
         }
         sb.Append(string.Join(", ", paramStrings));
         sb.Append(')');
 
-        // Return type - use TypeRefPrinter
-        var returnType = TypeRefPrinter.Print(method.ReturnType, resolver, ctx, allowedTypeParams);
+        // Return type - apply generic substitution
+        var returnType = PrintTypeWithSubstitution(method.ReturnType, resolver, ctx, allowedTypeParams, genericSubstitution);
         sb.Append($": {returnType}");
 
         sb.AppendLine(";");
+    }
+
+    /// <summary>
+    /// Build generic unification info from method generics to bucket generics BY POSITION.
+    /// Analyzes the receiver type (first param) and matches its type arguments to target type params.
+    /// Returns:
+    ///   - substitution: Name mappings where method and bucket names differ (e.g., "TSource" → "T")
+    ///   - unifiedGenerics: ALL method generic names that map to bucket generics (including same names)
+    ///
+    /// Example: Where&lt;TSource&gt;(this IEnumerable&lt;TSource&gt;) with bucket IEnumerable&lt;T&gt;
+    ///          returns substitution: { "TSource" → "T" }, unifiedGenerics: { "TSource" }
+    ///
+    /// Example: Contains&lt;T&gt;(this IEnumerable&lt;T&gt;) with bucket IEnumerable&lt;T&gt;
+    ///          returns substitution: {}, unifiedGenerics: { "T" }  (no rename needed, but T is unified)
+    /// </summary>
+    private static (Dictionary<string, string> substitution, HashSet<string> unifiedGenerics) BuildGenericSubstitution(
+        MethodSymbol method,
+        IReadOnlyList<Model.Symbols.GenericParameterSymbol> targetGenericParameters)
+    {
+        var substitution = new Dictionary<string, string>();
+        var unifiedGenerics = new HashSet<string>();
+
+        if (method.Parameters.Length == 0 || targetGenericParameters.Count == 0)
+            return (substitution, unifiedGenerics);
+
+        // Get receiver type (first 'this' parameter)
+        var receiverType = method.Parameters[0].Type;
+
+        // Extract type arguments from receiver if it's a generic named type
+        if (receiverType is Model.Types.NamedTypeReference namedReceiver && namedReceiver.TypeArguments.Count > 0)
+        {
+            // Match type arguments by position to target generic parameters
+            var minCount = Math.Min(namedReceiver.TypeArguments.Count, targetGenericParameters.Count);
+            for (int i = 0; i < minCount; i++)
+            {
+                var receiverArg = namedReceiver.TypeArguments[i];
+
+                // If the receiver's type argument is a generic parameter reference,
+                // this method generic is unified with the bucket's corresponding parameter
+                if (receiverArg is Model.Types.GenericParameterReference gpRef)
+                {
+                    var targetParamName = targetGenericParameters[i].Name;
+
+                    // Always mark this method generic as unified (shouldn't be emitted on method)
+                    unifiedGenerics.Add(gpRef.Name);
+
+                    // Only add to substitution if names differ (actual rename needed)
+                    // Example: TSource (method) → T (bucket)
+                    if (gpRef.Name != targetParamName)
+                    {
+                        substitution[gpRef.Name] = targetParamName;
+                    }
+                }
+            }
+        }
+
+        return (substitution, unifiedGenerics);
+    }
+
+    /// <summary>
+    /// Print a type reference with generic substitutions applied.
+    /// Replaces generic parameter names according to the substitution map.
+    /// </summary>
+    private static string PrintTypeWithSubstitution(
+        Model.Types.TypeReference typeRef,
+        TypeNameResolver resolver,
+        BuildContext ctx,
+        HashSet<string> allowedTypeParams,
+        Dictionary<string, string> genericSubstitution)
+    {
+        // First, apply substitution to the type reference
+        var substitutedRef = ApplySubstitution(typeRef, genericSubstitution);
+
+        // Then print using TypeRefPrinter
+        return TypeRefPrinter.Print(substitutedRef, resolver, ctx, allowedTypeParams);
+    }
+
+    /// <summary>
+    /// Apply generic substitutions to a type reference, returning a new type reference.
+    /// Uses `with` expressions to properly copy all required properties from originals.
+    /// </summary>
+    private static Model.Types.TypeReference ApplySubstitution(
+        Model.Types.TypeReference typeRef,
+        Dictionary<string, string> genericSubstitution)
+    {
+        if (genericSubstitution.Count == 0)
+            return typeRef;
+
+        return typeRef switch
+        {
+            // Rename generic parameter references if in substitution map
+            Model.Types.GenericParameterReference gpRef when genericSubstitution.TryGetValue(gpRef.Name, out var newName) =>
+                gpRef with { Name = newName },
+
+            // Recursively apply substitution to type arguments in named type references
+            Model.Types.NamedTypeReference named when named.TypeArguments.Count > 0 =>
+                named with
+                {
+                    TypeArguments = named.TypeArguments.Select(arg => ApplySubstitution(arg, genericSubstitution)).ToImmutableList()
+                },
+
+            // Recursively apply substitution to element type in arrays
+            Model.Types.ArrayTypeReference arr =>
+                arr with { ElementType = ApplySubstitution(arr.ElementType, genericSubstitution) },
+
+            // Recursively apply substitution to referenced type in byrefs
+            Model.Types.ByRefTypeReference byRef =>
+                byRef with { ReferencedType = ApplySubstitution(byRef.ReferencedType, genericSubstitution) },
+
+            // Recursively apply substitution to pointee type in pointers
+            Model.Types.PointerTypeReference ptr =>
+                ptr with { PointeeType = ApplySubstitution(ptr.PointeeType, genericSubstitution) },
+
+            _ => typeRef // No substitution needed
+        };
     }
 
     /// <summary>

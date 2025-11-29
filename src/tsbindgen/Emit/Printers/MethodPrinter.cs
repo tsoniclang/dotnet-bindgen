@@ -166,8 +166,8 @@ public static class MethodPrinter
 
             if (printedConstraints.Length == 0)
             {
-                // All constraints were "any" - just use "any"
-                sb.Append("any");
+                // All constraints were unrepresentable - use "unknown" (never "any")
+                sb.Append("unknown");
             }
             else if (printedConstraints.Length == 1)
             {
@@ -358,7 +358,7 @@ public static class MethodPrinter
             if (method.Parameters.Length > 0)
                 sb.Append(TypeRefPrinter.Print(method.Parameters[0].Type, resolver, ctx, allowedTypeParams));
             else
-                sb.Append("any"); // Fallback
+                sb.Append("unknown"); // Fallback (never use 'any')
         }
 
         return sb.ToString();

@@ -223,9 +223,9 @@ public static class ViewPlanner
 
     private static string CreateViewName(TypeReference ifaceRef)
     {
-        // Create: As_IInterface for non-generic interfaces
-        // Create: As_IEnumerable_1_of_string for IEnumerable<string>
-        // Create: As_IDictionary_2_of_string_and_int for IDictionary<string, int>
+        // Create stable view names: As_IInterface_N where N is the generic arity
+        // Example: As_IEnumerable_1 for IEnumerable<T>
+        // NO type argument suffixes (_of_Char, etc.) - these create unstable API names
 
         var baseName = ifaceRef switch
         {
@@ -237,36 +237,8 @@ public static class ViewPlanner
         // Sanitize: replace backtick with underscore (IEnumerable`1 → IEnumerable_1)
         baseName = baseName.Replace('`', '_');
 
-        // Build view name with type arguments for disambiguation
-        var viewName = $"As_{baseName}";
-
-        // TS2344 FIX: Skip type argument suffix for numeric self-referential interfaces
-        // These interfaces use TSelf pattern and including type args creates wrong names
-        var isNumericSelfReferentialInterface = baseName.StartsWith("I") && (
-            baseName.Contains("Number") ||
-            baseName.Contains("Binary") ||
-            baseName.Contains("Floating") ||
-            baseName.Contains("MinMaxValue") ||
-            baseName.Contains("Additive") ||
-            baseName.Contains("Multiplicative"));
-
-        // Add type arguments if generic (unless it's a numeric self-referential interface)
-        if (!isNumericSelfReferentialInterface &&
-            ifaceRef is NamedTypeReference { TypeArguments.Count: > 0 } namedType)
-        {
-            var typeArgNames = namedType.TypeArguments
-                .Select(arg => GetTypeArgumentName(arg))
-                .Where(name => name != null) // Filter out null (generic parameters)
-                .ToList();
-
-            // Only add type argument suffix if we have concrete type arguments
-            if (typeArgNames.Count > 0)
-            {
-                viewName += "_of_" + string.Join("_and_", typeArgNames);
-            }
-        }
-
-        return viewName;
+        // Simple, stable view name - just As_ + interface name (with arity already in name)
+        return $"As_{baseName}";
     }
 
     private static string? GetTypeArgumentName(TypeReference typeRef)

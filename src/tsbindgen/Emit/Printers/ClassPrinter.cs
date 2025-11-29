@@ -850,8 +850,8 @@ public static class ClassPrinter
 
             if (printedConstraints.Length == 0)
             {
-                // All constraints were "any" - just use "any"
-                sb.Append("any");
+                // All constraints were unrepresentable - use "unknown" (never "any")
+                sb.Append("unknown");
             }
             else if (printedConstraints.Length == 1)
             {
