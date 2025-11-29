@@ -13,6 +13,7 @@
  *   node scripts/validate.js              # Full validation
  *   node scripts/validate.js --skip-tsc   # Skip TypeScript compilation
  *   node scripts/validate.js --verbose    # Enable verbose logging from tsbindgen
+ *   node scripts/validate.js --strict     # Fail on ANY TypeScript error (not just syntax)
  */
 
 import { execSync, spawn } from 'child_process';
@@ -269,6 +270,7 @@ async function main() {
     // Check for command-line flags
     const skipTsc = process.argv.includes('--skip-tsc');
     const verbose = process.argv.includes('--verbose');
+    const strict = process.argv.includes('--strict');
 
     try {
         // Step 1: Clean and prepare
@@ -325,24 +327,44 @@ async function main() {
         console.log(`  Validation directory: ${VALIDATION_DIR}`);
         console.log('');
 
-        // Success criteria: zero syntax errors
-        if (result.syntaxErrors === 0) {
-            console.log('  ✓ VALIDATION PASSED - No TypeScript syntax errors');
-            console.log('');
-            console.log('  Note: Semantic errors are expected and documented.');
-            console.log('  See improvement-roadmap.md for details.');
-            console.log('');
-            process.exit(0);
+        // Success criteria depends on --strict flag
+        if (strict) {
+            // Strict mode: fail on ANY TypeScript error
+            if (result.totalErrors === 0) {
+                console.log('  ✓ STRICT VALIDATION PASSED - Zero TypeScript errors!');
+                console.log('');
+                process.exit(0);
+            } else {
+                console.log(`  ✗ STRICT VALIDATION FAILED - ${result.totalErrors} TypeScript errors found`);
+                console.log('');
+                console.log('  First 10 errors:');
+                const errorLines = result.output.split('\n')
+                    .filter(line => /error TS\d{4}:/.test(line))
+                    .slice(0, 10);
+                errorLines.forEach(line => console.log(`    ${line}`));
+                console.log('');
+                process.exit(1);
+            }
         } else {
-            console.log(`  ✗ VALIDATION FAILED - ${result.syntaxErrors} syntax errors found`);
-            console.log('');
-            console.log('  First 10 syntax errors:');
-            const syntaxLines = result.output.split('\n')
-                .filter(line => /error TS1\d{3}:/.test(line))
-                .slice(0, 10);
-            syntaxLines.forEach(line => console.log(`    ${line}`));
-            console.log('');
-            process.exit(1);
+            // Normal mode: only fail on syntax errors
+            if (result.syntaxErrors === 0) {
+                console.log('  ✓ VALIDATION PASSED - No TypeScript syntax errors');
+                console.log('');
+                console.log('  Note: Semantic errors are expected and documented.');
+                console.log('  See improvement-roadmap.md for details.');
+                console.log('');
+                process.exit(0);
+            } else {
+                console.log(`  ✗ VALIDATION FAILED - ${result.syntaxErrors} syntax errors found`);
+                console.log('');
+                console.log('  First 10 syntax errors:');
+                const syntaxLines = result.output.split('\n')
+                    .filter(line => /error TS1\d{3}:/.test(line))
+                    .slice(0, 10);
+                syntaxLines.forEach(line => console.log(`    ${line}`));
+                console.log('');
+                process.exit(1);
+            }
         }
 
     } catch (err) {
