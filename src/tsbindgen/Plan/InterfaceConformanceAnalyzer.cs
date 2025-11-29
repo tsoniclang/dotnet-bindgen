@@ -39,10 +39,13 @@ public static class InterfaceConformanceAnalyzer
                 {
                     var ifaceFullName = GetTypeFullName(ifaceRef);
 
-                    // Skip interfaces that have explicit views
+                    // Interfaces with explicit views have members moved to companion interfaces.
+                    // Therefore they are unsatisfiable for a TS `implements` clause.
                     if (plannedInterfaces.Contains(ifaceFullName))
                     {
-                        continue;
+                        conformanceIssues.Add(
+                            $"  Explicit interface implementation (members in view) from {GetInterfaceName(ifaceRef)}");
+                        continue; // no need to check members; it's already unsatisfiable
                     }
 
                     var iface = FindInterface(graph, ifaceRef);

@@ -52,10 +52,12 @@ public static class HonestEmissionPlanner
         string typeClrName,
         List<string> issues)
     {
-        var unsatisfiableInterfaces = new Dictionary<string, int>(); // Interface name → issue count
+        // Track interface name → (issue count, reason)
+        var unsatisfiableInterfaces = new Dictionary<string, (int count, UnsatisfiableReason reason)>();
 
         // Parse issue strings to extract interface names
         // Format: "  Missing method Foo(2) from IBar" or "  Method Bar(1) from IBaz has incompatible TS signature"
+        // New format: "  Explicit interface implementation (members in view) from IFoo"
         foreach (var issue in issues)
         {
             var fromIndex = issue.IndexOf(" from ");
@@ -69,18 +71,28 @@ public static class HonestEmissionPlanner
                     ? interfaceNameRaw.Substring(0, spaceIndex).Trim()
                     : interfaceNameRaw.Trim();
 
+                // Determine reason based on issue string pattern
+                var reason = issue.Contains("Explicit interface implementation (members in view)")
+                    ? UnsatisfiableReason.ExplicitImplementationMovedToView
+                    : UnsatisfiableReason.MissingOrIncompatibleMembers;
+
                 if (!unsatisfiableInterfaces.ContainsKey(interfaceName))
                 {
-                    unsatisfiableInterfaces[interfaceName] = 0;
+                    unsatisfiableInterfaces[interfaceName] = (0, reason);
                 }
-                unsatisfiableInterfaces[interfaceName]++;
+                var current = unsatisfiableInterfaces[interfaceName];
+                // Keep the more specific reason (ExplicitImplementationMovedToView takes precedence)
+                var finalReason = reason == UnsatisfiableReason.ExplicitImplementationMovedToView
+                    ? reason
+                    : current.reason;
+                unsatisfiableInterfaces[interfaceName] = (current.count + 1, finalReason);
             }
         }
 
         // Build list of UnsatisfiableInterface records
         var result = new List<UnsatisfiableInterface>();
 
-        foreach (var (interfaceName, issueCount) in unsatisfiableInterfaces)
+        foreach (var (interfaceName, (issueCount, reason)) in unsatisfiableInterfaces)
         {
             // Try to find the full CLR name of the interface
             var interfaceClrName = FindInterfaceClrName(graph, typeClrName, interfaceName);
@@ -90,7 +102,7 @@ public static class HonestEmissionPlanner
                 result.Add(new UnsatisfiableInterface
                 {
                     InterfaceClrName = interfaceClrName,
-                    Reason = UnsatisfiableReason.MissingOrIncompatibleMembers,
+                    Reason = reason,
                     IssueCount = issueCount
                 });
             }
