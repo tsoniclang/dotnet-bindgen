@@ -396,7 +396,7 @@ public static class Builder
         EmissionPlan plan,
         string outputDirectory)
     {
-        // Emit internal/extensions/index.d.ts (extension method buckets)
+        // Emit __internal/extensions/index.d.ts (extension method buckets)
         ExtensionsEmitter.Emit(ctx, plan.ExtensionMethods, plan.Graph, outputDirectory);
 
         // Emit internal/index.d.ts for each namespace

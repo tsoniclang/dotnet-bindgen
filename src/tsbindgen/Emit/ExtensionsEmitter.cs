@@ -9,14 +9,14 @@ using tsbindgen.Model;
 namespace tsbindgen.Emit;
 
 /// <summary>
-/// Emits extension method bucket interfaces to internal/extensions/index.d.ts.
+/// Emits extension method bucket interfaces to __internal/extensions/index.d.ts.
 /// Each bucket contains all extension methods for a specific target type.
 /// Example: __Ext_IEnumerable_1&lt;T&gt; contains Select, Where, etc.
 /// </summary>
 public static class ExtensionsEmitter
 {
     /// <summary>
-    /// Emit the internal/extensions/index.d.ts file containing all bucket interfaces.
+    /// Emit the __internal/extensions/index.d.ts file containing all bucket interfaces.
     /// </summary>
     /// <param name="ctx">Build context</param>
     /// <param name="plan">Extension methods plan with all buckets</param>
@@ -32,8 +32,8 @@ public static class ExtensionsEmitter
 
         ctx.Log("ExtensionsEmitter", $"Emitting extension method buckets: {plan.Buckets.Length} buckets");
 
-        // Create internal/extensions directory
-        var extensionsDir = Path.Combine(outputDirectory, "internal", "extensions");
+        // Create __internal/extensions directory
+        var extensionsDir = Path.Combine(outputDirectory, "__internal", "extensions");
         Directory.CreateDirectory(extensionsDir);
 
         // Generate file content
@@ -80,7 +80,7 @@ public static class ExtensionsEmitter
         }
 
         // Generate namespace imports
-        // Extension methods file is at internal/extensions/index.d.ts
+        // Extension methods file is at __internal/extensions/index.d.ts
         // Namespaces are at ../../{Namespace}/internal/index.js
         if (namespacesUsed.Count > 0)
         {
@@ -111,9 +111,9 @@ public static class ExtensionsEmitter
 
         // Create TypeNameResolver for this file
         // Extension methods file needs all cross-namespace types to be fully qualified
-        // Use a dummy namespace "internal.extensions" and enable facade mode
+        // Use a dummy namespace "__internal.extensions" and enable facade mode
         // This triggers cross-namespace qualification for all type references
-        var resolver = new TypeNameResolver(ctx, graph, importPlan: null, currentNamespace: "internal.extensions", facadeMode: true);
+        var resolver = new TypeNameResolver(ctx, graph, importPlan: null, currentNamespace: "__internal.extensions", facadeMode: true);
 
         // Emit each bucket interface
         foreach (var bucket in plan.Buckets)
