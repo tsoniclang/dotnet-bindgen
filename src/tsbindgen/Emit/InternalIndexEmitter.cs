@@ -39,7 +39,7 @@ public static class InternalIndexEmitter
             ctx.Log("InternalIndexEmitter", $"  Emitting namespace: {ns.Name}");
 
             // Generate .d.ts content
-            var content = GenerateNamespaceDeclaration(ctx, plan.Graph, plan.Imports, nsOrder, plan.StaticFlattening, plan.StaticConflicts, plan.OverrideConflicts, plan.PropertyOverrides, plan.HonestEmission);
+            var content = GenerateNamespaceDeclaration(ctx, plan, nsOrder);
 
             // Write to file: output/Namespace.Name/internal/index.d.ts (or _root for empty namespace)
             var namespacePath = Path.Combine(outputDirectory, ns.Name);
@@ -58,8 +58,18 @@ public static class InternalIndexEmitter
         ctx.Log("InternalIndexEmitter", $"Generated {emittedCount} declaration files");
     }
 
-    private static string GenerateNamespaceDeclaration(BuildContext ctx, SymbolGraph graph, ImportPlan importPlan, NamespaceEmitOrder nsOrder, Shape.StaticFlatteningPlan staticFlattening, Shape.StaticConflictPlan staticConflicts, Shape.OverrideConflictPlan overrideConflicts, Plan.PropertyOverridePlan propertyOverrides, Plan.HonestEmissionPlan honestEmission)
+    private static string GenerateNamespaceDeclaration(BuildContext ctx, EmissionPlan plan, NamespaceEmitOrder nsOrder)
     {
+        // Extract plan components
+        var graph = plan.Graph;
+        var importPlan = plan.Imports;
+        var staticFlattening = plan.StaticFlattening;
+        var staticConflicts = plan.StaticConflicts;
+        var overrideConflicts = plan.OverrideConflicts;
+        var propertyOverrides = plan.PropertyOverrides;
+        var honestEmission = plan.HonestEmission;
+        var safeToExtend = plan.SafeToExtend;
+
         // Create TypeNameResolver - single source of truth for type names
         // TS2693 FIX: Pass ImportPlan and current namespace for qualified name resolution
         var resolver = new TypeNameResolver(ctx, graph, importPlan, nsOrder.Namespace.Name);
@@ -203,6 +213,19 @@ public static class InternalIndexEmitter
                 var typeAlias = EmitIntersectionTypeAlias(typeOrder.Type, resolver, ctx);
                 var indentedAlias = Indent(typeAlias, indent);
 
+                // LINQ ASSIGNABILITY: Emit merged interface extends for type-level assignability
+                // This allows List_1$instance<T> to be assignable to IEnumerable_1$instance<T>
+                // without requiring "implements" (which would trigger TS2420 compliance)
+                // Uses SafeToExtend analysis to only extend interfaces that won't cause TS2430/TS2320
+                var mergedInterface = EmitMergedInterfaceExtends(typeOrder.Type, resolver, ctx, graph, safeToExtend);
+                if (!string.IsNullOrEmpty(mergedInterface))
+                {
+                    var indentedMerged = Indent(mergedInterface, indent);
+                    sb.Append("export ");
+                    sb.AppendLine(indentedMerged);
+                    sb.AppendLine();
+                }
+
                 // Type alias already includes "export" keyword
                 sb.AppendLine(indentedAlias);
                 sb.AppendLine();
@@ -227,6 +250,21 @@ public static class InternalIndexEmitter
                 var instanceName = ctx.Renamer.GetInstanceTypeName(typeOrder.Type);
                 var isInterface = typeOrder.Type.Kind == Model.Symbols.TypeKind.Interface;
                 var isStaticClass = typesWithoutGenerics != null && typesWithoutGenerics.Contains(finalName);
+
+                // LINQ ASSIGNABILITY: Emit merged interface extends for interfaces too
+                // This ensures IEnumerator_1$instance<T> extends IDisposable$instance, etc.
+                // Uses SafeToExtend analysis to only extend interfaces that won't cause TS2430/TS2320
+                if (isInterface)
+                {
+                    var mergedInterface = EmitMergedInterfaceExtends(typeOrder.Type, resolver, ctx, graph, safeToExtend);
+                    if (!string.IsNullOrEmpty(mergedInterface))
+                    {
+                        var indentedMerged = Indent(mergedInterface, indent);
+                        sb.Append("export ");
+                        sb.AppendLine(indentedMerged);
+                        sb.AppendLine();
+                    }
+                }
 
                 // Only emit alias for interfaces that aren't static classes
                 if (isInterface && finalName != instanceName && !isStaticClass)
@@ -360,6 +398,227 @@ public static class InternalIndexEmitter
 
         sb.AppendLine("    T; // Identity fallback for non-primitive types");
         sb.AppendLine();
+    }
+
+    /// <summary>
+    /// LINQ ASSIGNABILITY: Emit a merged interface declaration that extends safe interfaces.
+    /// This uses TypeScript declaration merging to make T$instance assignable to interface types
+    /// without requiring "implements" (which would trigger TS2420 member compliance checks).
+    ///
+    /// Example output:
+    ///   export interface List_1$instance&lt;T&gt; extends IEnumerable_1$instance&lt;T&gt;, ICollection_1$instance&lt;T&gt; {}
+    ///
+    /// This enables:
+    ///   declare function takeEnum&lt;T&gt;(x: IEnumerable_1&lt;T&gt;): void;
+    ///   const list = new List_1&lt;int&gt;();
+    ///   takeEnum(list);  // ✓ type-checks without .As_IEnumerable_1()
+    ///
+    /// Uses SafeToExtend analysis to only extend interfaces that won't cause TS2430/TS2320.
+    /// Interfaces that would create member signature conflicts are accessible via views instead.
+    /// </summary>
+    private static string? EmitMergedInterfaceExtends(
+        TypeSymbol type,
+        TypeNameResolver resolver,
+        BuildContext ctx,
+        SymbolGraph graph,
+        Dictionary<string, Plan.SafeToExtendAnalyzer.SafeToExtendResult> safeToExtend)
+    {
+        // Get assignable interfaces from SafeToExtend analysis
+        var typeStableId = type.StableId.ToString();
+        if (!safeToExtend.TryGetValue(typeStableId, out var safeToExtendResult))
+        {
+            // No analysis for this type - no extends to emit
+            return null;
+        }
+
+        var interfaces = safeToExtendResult.AssignableInterfaces;
+        if (interfaces.Count == 0)
+            return null;
+
+        var sb = new StringBuilder();
+
+        // Get the instance type name
+        var instanceName = ctx.Renamer.GetInstanceTypeName(type);
+
+        sb.Append($"interface {instanceName}");
+
+        // Add generic parameters with constraints
+        if (type.GenericParameters.Length > 0)
+        {
+            sb.Append('<');
+            sb.Append(string.Join(", ", type.GenericParameters.Select(gp =>
+                PrintGenericParameterWithConstraints(gp, resolver, ctx))));
+            sb.Append('>');
+        }
+
+        sb.Append(" extends ");
+
+        // Interfaces are already sorted by CLR full name from SafeToExtend analyzer (deterministic)
+        // Emit extends list with correct $instance suffix and type arguments
+        var extendsList = new List<string>();
+        foreach (var iface in interfaces)
+        {
+            var interfaceName = PrintInterfaceForExtends(iface, type.Namespace, resolver, ctx, graph);
+            extendsList.Add(interfaceName);
+        }
+
+        sb.Append(string.Join(", ", extendsList));
+        sb.Append(" {}");
+
+        return sb.ToString();
+    }
+
+    /// <summary>
+    /// Check if an interface is in the symbol graph (exists in emitted output).
+    /// </summary>
+    private static bool IsInterfaceInGraph(TypeReference ifaceRef, SymbolGraph graph)
+    {
+        if (ifaceRef is not NamedTypeReference named)
+            return true; // Non-named types (generic parameters, etc.) are always allowed
+
+        // TypeIndex uses ClrFullName as key
+        return graph.TypeIndex.TryGetValue(named.FullName, out _);
+    }
+
+    /// <summary>
+    /// Check if an interface is a non-generic System.Collections interface that conflicts
+    /// with its generic counterpart. These interfaces have methods like GetEnumerator()
+    /// that return different types (IEnumerator vs IEnumerator&lt;T&gt;), causing TS2430 errors
+    /// when both are extended.
+    ///
+    /// C# handles this via explicit interface implementation, but TypeScript cannot express
+    /// this pattern, so we filter them out from the merged extends.
+    /// </summary>
+    private static bool IsConflictingNonGenericInterface(TypeReference ifaceRef)
+    {
+        if (ifaceRef is not NamedTypeReference named)
+            return false;
+
+        var fullName = named.FullName;
+
+        // List of non-generic System.Collections interfaces that conflict with generic ones
+        return fullName switch
+        {
+            "System.Collections.IEnumerable" => true,
+            "System.Collections.IEnumerator" => true,
+            "System.Collections.ICollection" => true,
+            "System.Collections.IList" => true,
+            "System.Collections.IDictionary" => true,
+            "System.Collections.IDictionaryEnumerator" => true,
+            "System.Collections.IComparer" => true,
+            "System.Collections.IEqualityComparer" => true,
+            "System.Collections.IStructuralComparable" => true,
+            "System.Collections.IStructuralEquatable" => true,
+            _ => false
+        };
+    }
+
+    /// <summary>
+    /// Get the CLR full name from an interface reference for sorting.
+    /// </summary>
+    private static string GetInterfaceFullName(TypeReference ifaceRef)
+    {
+        return ifaceRef switch
+        {
+            NamedTypeReference named => named.FullName,
+            NestedTypeReference nested => nested.FullReference.FullName,
+            _ => ifaceRef.ToString() ?? ""
+        };
+    }
+
+    /// <summary>
+    /// Print an interface reference for use in the extends clause of merged interface.
+    /// Ensures correct $instance suffix and cross-namespace qualification.
+    /// </summary>
+    private static string PrintInterfaceForExtends(
+        TypeReference ifaceRef,
+        string currentNamespace,
+        TypeNameResolver resolver,
+        BuildContext ctx,
+        SymbolGraph graph)
+    {
+        // Print the interface using TypeRefPrinter (handles type args correctly)
+        var baseName = Printers.TypeRefPrinter.Print(ifaceRef, resolver, ctx,
+            allowedTypeParameterNames: null, forValuePosition: true);
+
+        // Apply $instance suffix for same-namespace interfaces that have views
+        baseName = ApplyInstanceSuffixForExtends(baseName, ifaceRef, currentNamespace, graph, ctx);
+
+        // If cross-namespace, ensure it's qualified
+        if (ifaceRef is NamedTypeReference named)
+        {
+            var interfaceNamespace = ExtractNamespace(named.FullName);
+
+            if (!string.IsNullOrEmpty(interfaceNamespace) &&
+                interfaceNamespace != currentNamespace &&
+                !baseName.Contains('.'))
+            {
+                var namespaceAlias = interfaceNamespace.Replace('.', '_') + "_Internal";
+                return $"{namespaceAlias}.{baseName}";
+            }
+        }
+
+        return baseName;
+    }
+
+    /// <summary>
+    /// Apply $instance suffix to interface names for extends clause.
+    /// Interfaces don't have views, so we use $instance suffix to match the emitted type name.
+    /// </summary>
+    private static string ApplyInstanceSuffixForExtends(
+        string typeName,
+        TypeReference ifaceRef,
+        string currentNamespace,
+        SymbolGraph graph,
+        BuildContext ctx)
+    {
+        if (ifaceRef is not NamedTypeReference named)
+            return typeName;
+
+        // Find the interface in the graph
+        if (!graph.TypeIndex.TryGetValue(named.FullName, out var ifaceSymbol))
+            return typeName;
+
+        // Check if it's an interface and in the same namespace
+        if (ifaceSymbol.Kind != TypeKind.Interface)
+            return typeName;
+
+        var interfaceNamespace = ExtractNamespace(named.FullName);
+        if (interfaceNamespace != currentNamespace)
+            return typeName; // Cross-namespace already handled by qualification
+
+        // Check if name already has $instance suffix (avoid double-suffix)
+        var genericStart = typeName.IndexOf('<');
+        var basePart = genericStart >= 0 ? typeName.Substring(0, genericStart) : typeName;
+
+        if (basePart.EndsWith("$instance"))
+            return typeName; // Already has suffix
+
+        // For same-namespace interfaces, add $instance suffix
+        if (genericStart >= 0)
+        {
+            var typeArgsPart = typeName.Substring(genericStart);
+            return $"{basePart}$instance{typeArgsPart}";
+        }
+        else
+        {
+            return $"{typeName}$instance";
+        }
+    }
+
+    /// <summary>
+    /// Extract namespace from CLR full name.
+    /// </summary>
+    private static string ExtractNamespace(string fullName)
+    {
+        // Remove assembly qualification if present
+        var commaIndex = fullName.IndexOf(',');
+        if (commaIndex >= 0)
+            fullName = fullName.Substring(0, commaIndex).Trim();
+
+        // Extract namespace (everything before the last dot)
+        var lastDot = fullName.LastIndexOf('.');
+        return lastDot >= 0 ? fullName.Substring(0, lastDot) : "";
     }
 
     private static string EmitCompanionViewsInterface(TypeSymbol type, ImmutableArray<Shape.ViewPlanner.ExplicitView> views, TypeNameResolver resolver, BuildContext ctx)

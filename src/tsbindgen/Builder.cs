@@ -359,6 +359,12 @@ public static class Builder
         var honestEmissionPlan = Plan.HonestEmissionPlanner.PlanHonestEmission(ctx, conformanceIssues);
         ctx.Log("Build", $"Planned {honestEmissionPlan.TotalUnsatisfiableCount} unsatisfiable interfaces across {honestEmissionPlan.UnsatisfiableInterfaces.Count} types");
 
+        // SafeToExtend analysis: determine which interfaces are safe for TS declaration merge extends
+        ctx.Log("Build", "\n--- Phase 4.14: SafeToExtend Analysis ---");
+        // Use a resolver with null importPlan since we're just analyzing signatures (same as PropertyOverrideUnifier)
+        var analysisResolver = new Emit.TypeNameResolver(ctx, graph, importPlan: null, currentNamespace: "");
+        var safeToExtend = Plan.SafeToExtendAnalyzer.Analyze(ctx, graph, analysisResolver);
+
         // Build emission plan
         var emissionPlan = new EmissionPlan
         {
@@ -371,7 +377,8 @@ public static class Builder
             PropertyOverrides = propertyOverrides,
             ExtensionMethods = extensionMethods,
             SCCBuckets = sccPlan,
-            HonestEmission = honestEmissionPlan
+            HonestEmission = honestEmissionPlan,
+            SafeToExtend = safeToExtend
         };
 
         // Phase 4.7: PhaseGate Validation - validate complete emission plan before emission
@@ -519,6 +526,12 @@ public sealed record EmissionPlan
     /// Tracks interfaces that cannot be fully expressed in TypeScript (TBG203).
     /// </summary>
     public required Plan.HonestEmissionPlan HonestEmission { get; init; }
+
+    /// <summary>
+    /// Safe-to-extend analysis: tracks which interfaces are safe to extend in TS declaration merging.
+    /// Prevents TS2430 (interface incorrectly extends) and TS2320 (cannot simultaneously extend).
+    /// </summary>
+    public required Dictionary<string, Plan.SafeToExtendAnalyzer.SafeToExtendResult> SafeToExtend { get; init; }
 
     public int NamespaceCount => Graph.Namespaces.Length;
 }

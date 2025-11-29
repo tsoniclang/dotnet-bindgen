@@ -119,11 +119,14 @@ public static class InterfaceInliner
 
         ctx.Log("InterfaceInliner", $"Inlined {iface.ClrFullName} - {uniqueMethods.Count} methods, {uniqueProperties.Count} properties");
 
-        // Create updated type with inlined members and cleared interfaces (immutably)
+        // Create updated type with inlined members
+        // NOTE: We preserve the Interfaces list for merged interface extends (LINQ assignability).
+        // The interfaces are needed so we can emit "interface IFoo$instance<T> extends IBar$instance<T> {}"
+        // to make types assignable to their base interfaces in TypeScript.
         return graph.WithUpdatedType(iface.StableId.ToString(), t => t with
         {
-            Members = newMembers,
-            Interfaces = ImmutableArray<TypeReference>.Empty
+            Members = newMembers
+            // Interfaces intentionally NOT cleared - needed for merged interface extends
         });
     }
 
