@@ -184,6 +184,23 @@ const zero = TimeSpan.Zero;
 // not to test branded type compatibility.
 EOF
 
+# Test 6: Abstract class non-instantiability (Stream cannot be new'd)
+echo "Creating test: abstract-class-not-instantiable.ts"
+cat > "$TEST_DIR/abstract-class-not-instantiable.ts" << 'EOF'
+// Test: Abstract classes should NOT be instantiable
+// This is a negative test - we expect TypeScript to reject "new Stream()"
+// because Stream is abstract and has no new() signature in its const export.
+
+import { Stream } from "@tsonic/dotnet/System.IO";
+
+// This should fail to compile because Stream is abstract
+// @ts-expect-error - Stream is abstract, cannot be instantiated
+const stream = new Stream();
+
+// But static access should work
+const nullStream = Stream.Null;
+EOF
+
 echo ""
 echo "Running TypeScript compiler (tsc --noEmit)..."
 echo ""
@@ -203,6 +220,7 @@ if run_tsc --noEmit 2>&1; then
     echo "  - Generic class construction (new List_1<T>())"
     echo "  - Interface type-only usage (IEnumerable_1<T>)"
     echo "  - Struct value export (DateTime.Now)"
+    echo "  - Abstract class non-instantiability (new Stream() fails)"
     exit 0
 else
     echo ""
@@ -214,6 +232,7 @@ else
     echo "  1. A class/enum/struct is incorrectly exported as type-only"
     echo "  2. An internal value name doesn't exist in the internal module"
     echo "  3. The facade export path is incorrect"
+    echo "  4. @ts-expect-error didn't catch an expected error"
     echo ""
     exit 1
 fi

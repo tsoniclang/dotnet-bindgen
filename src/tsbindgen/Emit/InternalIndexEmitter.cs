@@ -200,6 +200,16 @@ public static class InternalIndexEmitter
                 sb.AppendLine(indentedInstance);
                 sb.AppendLine();
 
+                // STATIC-SIDE FIX: Emit value export for constructors and static members
+                // This is a const declaration that replaces the static side of the class
+                var valueExport = ClassPrinter.PrintValueExport(typeOrder.Type, resolver, ctx, graph, staticConflicts);
+                if (!string.IsNullOrEmpty(valueExport))
+                {
+                    var indentedValue = Indent(valueExport, indent);
+                    sb.AppendLine(indentedValue);
+                    sb.AppendLine();
+                }
+
                 // Emit companion views interface - PUBLIC TYPES GET export KEYWORD
                 var viewsInterface = EmitCompanionViewsInterface(typeOrder.Type, views, resolver, ctx);
                 var indentedViews = Indent(viewsInterface, indent);
@@ -241,6 +251,15 @@ public static class InternalIndexEmitter
                 sb.Append("export ");
                 sb.AppendLine(indented);
                 sb.AppendLine();
+
+                // STATIC-SIDE FIX: Emit value export for constructors and static members (classes/structs only)
+                var valueExport = ClassPrinter.PrintValueExport(typeOrder.Type, resolver, ctx, graph, staticConflicts);
+                if (!string.IsNullOrEmpty(valueExport))
+                {
+                    var indentedValue = Indent(valueExport, indent);
+                    sb.AppendLine(indentedValue);
+                    sb.AppendLine();
+                }
 
                 // C.5.2 FIX: For interfaces without views, emit alias pointing to $instance
                 // This allows cross-namespace references like System.Collections.IEnumerable to work

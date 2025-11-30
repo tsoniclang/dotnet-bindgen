@@ -81,6 +81,32 @@ else
     FAILED=1
 fi
 
+# Test 6: Delegate const must NOT have "new()" (abstract class, not instantiable)
+echo -n "  Test 6: Delegate const has no new()... "
+# Extract just the Delegate const block (up to the closing };)
+DELEGATE_CONST=$(sed -n '/^export const Delegate:/,/^};$/p' "$INDEX_FILE" 2>/dev/null || true)
+if echo "$DELEGATE_CONST" | grep -q "    new("; then
+    echo -e "${RED}FAIL${NC}"
+    echo "    Delegate const should not have new() - it's abstract:"
+    echo "$DELEGATE_CONST" | grep "new(" | head -3 | sed 's/^/      /'
+    FAILED=1
+else
+    echo -e "${GREEN}PASS${NC}"
+fi
+
+# Test 7: MulticastDelegate const must NOT have "new()" (abstract class, not instantiable)
+echo -n "  Test 7: MulticastDelegate const has no new()... "
+# Extract just the MulticastDelegate const block (up to the closing };)
+MCAST_CONST=$(sed -n '/^export const MulticastDelegate:/,/^};$/p' "$INDEX_FILE" 2>/dev/null || true)
+if echo "$MCAST_CONST" | grep -q "    new("; then
+    echo -e "${RED}FAIL${NC}"
+    echo "    MulticastDelegate const should not have new() - it's abstract:"
+    echo "$MCAST_CONST" | grep "new(" | head -3 | sed 's/^/      /'
+    FAILED=1
+else
+    echo -e "${GREEN}PASS${NC}"
+fi
+
 echo ""
 if [ $FAILED -eq 0 ]; then
     echo -e "${GREEN}All delegate tests passed!${NC}"
