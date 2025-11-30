@@ -30,8 +30,8 @@ const DOTNET_VERSION = '10.0.0-rc.1.25451.107';
 const DOTNET_HOME = os.homedir() + '/dotnet';
 const DOTNET_RUNTIME_PATH = `${DOTNET_HOME}/shared/Microsoft.NETCore.App/${DOTNET_VERSION}`;
 
-const VALIDATION_DIR = path.join(__dirname, '..', '.tests', 'validate');
-const PROJECT_ROOT = path.join(__dirname, '..');
+const PROJECT_ROOT = path.join(__dirname, '..', '..');  // Go up two levels: validate/ -> scripts/ -> project root
+const VALIDATION_DIR = path.join(PROJECT_ROOT, '.tests', 'validate');
 
 function log(message) {
     console.log(`[validate] ${message}`);
@@ -237,7 +237,7 @@ function validateMetadataFiles() {
         if (!fs.statSync(nsPath).isDirectory()) continue;
 
         // Skip internal subdirectories (not real namespaces)
-        if (ns === 'internal' || ns === '_root' || ns === '_support') continue;
+        if (ns === 'internal' || ns === '_root' || ns === '_support' || ns === '__internal') continue;
 
         const indexPath = path.join(nsPath, 'internal', 'index.d.ts');
         const metadataPath = path.join(nsPath, 'internal', 'metadata.json');

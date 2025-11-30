@@ -76,6 +76,7 @@ internal static class Names
                 var staticMemberNames = new HashSet<string>();
 
                 // Validate method names (ClassSurface only - ViewOnly members may have duplicate names in different views)
+                // Use FULL canonical TypeScript signature for collision detection
                 foreach (var method in type.Members.Methods.Where(m => m.EmitScope == EmitScope.ClassSurface))
                 {
                     totalMembers++;
@@ -96,16 +97,21 @@ internal static class Names
                     var scopeSet = method.IsStatic ? staticMemberNames : instanceMemberNames;
                     var scopeName = method.IsStatic ? "static" : "instance";
 
-                    // Methods can have overloads, so we use signature for uniqueness
-                    var signature = $"{finalName}({method.Parameters.Length})";
+                    // Use FULL canonical TypeScript signature for uniqueness
+                    // This includes: finalName, genericArity, canonicalParamTypes, canonicalReturnType
+                    var canonicalParams = TypeSignatureCanon.ComputeMethodSignature(method.Arity, method.Parameters.Select(p => p.Type));
+                    var canonicalReturn = TypeSignatureCanon.CanonicalizeType(method.ReturnType);
+                    var fullSignature = $"{finalName}{canonicalParams}:{canonicalReturn}";
 
-                    if (!scopeSet.Add(signature))
+                    if (!scopeSet.Add(fullSignature))
                     {
-                        // This is a warning, not an error (overloads are allowed)
+                        // TRUE duplicate - same name, same arity, same param types, same return type
+                        // This should not happen after Reservation.cs disambiguation
                         validationCtx.RecordDiagnostic(
                             DiagnosticCodes.AmbiguousOverload,
-                            "WARNING",
-                            $"Duplicate {scopeName} method signature '{signature}' in {type.ClrFullName} (on class surface)");
+                            "ERROR",
+                            $"Duplicate {scopeName} TypeScript signature '{fullSignature}' in {type.ClrFullName}");
+                        duplicateMembers++;
                     }
                 }
 
