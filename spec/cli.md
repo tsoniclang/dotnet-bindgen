@@ -88,71 +88,35 @@ Comma-separated list of namespaces to include (whitelist filter).
 tsbindgen generate -a Assembly.dll --namespaces System.Linq,System.Collections
 ```
 
-## Naming Transform Options
+## Naming Style Option
 
-All naming transforms support `camelCase` (or `camel-case`, `camel`). If not specified, original CLR names are used.
+### `--naming`
+Set the member naming style for generated TypeScript declarations.
 
-### `--namespace-names`
-Transform namespace names.
+**Values**: `clr` (default), `js`
 
-**Values**: `none` (default), `camelCase`
-
-**Example**:
+**`clr`**: Preserve original C# names as-is.
 ```bash
---namespace-names camelCase
-# System.Linq → systemLinq
+--naming clr
+# GetValue → GetValue
+# Count → Count
+# CC_CDECL → CC_CDECL
 ```
 
-### `--class-names`
-Transform class names.
-
-**Values**: `none` (default), `camelCase`
-
-**Example**:
+**`js`**: JavaScript-style lowerFirst for pure PascalCase members.
 ```bash
---class-names camelCase
-# Enumerable → enumerable
+--naming js
+# GetValue → getValue
+# HelloWorld → helloWorld
+# HTTPSConnection → httpsConnection
 ```
 
-### `--interface-names`
-Transform interface names.
+**Important**: The `js` style only transforms pure PascalCase. These patterns are preserved unchanged:
+- ALL-UPPERCASE: `CC_CDECL` → `CC_CDECL`
+- Underscore names: `Hello_World` → `Hello_World`
+- CLR-reserved: `value__` → `value__`
 
-**Values**: `none` (default), `camelCase`
-
-### `--method-names`
-Transform method names.
-
-**Values**: `none` (default), `camelCase`
-
-**Example**:
-```bash
---method-names camelCase
-# SelectMany → selectMany
-```
-
-### `--property-names`
-Transform property names.
-
-**Values**: `none` (default), `camelCase`
-
-**Example**:
-```bash
---property-names camelCase
-# Length → length
-```
-
-### `--enum-member-names`
-Transform enum member names.
-
-**Values**: `none` (default), `camelCase`
-
-**Example**:
-```bash
---enum-member-names camelCase
-# DayOfWeek.Monday → DayOfWeek.monday
-```
-
-**Note**: When any naming transform is active, a `*.bindings.json` file is generated containing CLR name → TypeScript name mappings.
+**Note**: When `--naming js` is used, a `*.bindings.json` file is generated containing CLR name → TypeScript name mappings.
 
 ## Logging & Debug Options
 
@@ -265,17 +229,16 @@ tsbindgen generate \
 
 **Behavior**: Emits only `MyCompany.Feature.dll` types, imports BCL types from `@dotnet/bcl`.
 
-### Generate with camelCase Transforms
+### Generate with JavaScript-Style Naming
 ```bash
 tsbindgen generate \
   --assembly MyApp.dll \
-  --method-names camelCase \
-  --property-names camelCase \
+  --naming js \
   --out-dir ./types \
   --use-new-pipeline
 ```
 
-**Output**: Methods and properties use camelCase, bindings file created.
+**Output**: Members use JavaScript-style naming (lowerFirst), bindings file created.
 
 ### Generate with Verbose Logging
 ```bash
