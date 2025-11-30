@@ -191,11 +191,21 @@ public sealed class ReflectionReader
     }
 
     /// <summary>
-    /// Check if a type is a delegate using name-based comparison.
+    /// Check if a type is a concrete delegate using name-based comparison.
     /// CRITICAL: typeof(Delegate) comparison fails with MetadataLoadContext types.
+    /// NOTE: System.Delegate and System.MulticastDelegate themselves are NOT delegates
+    /// for our purposes - they don't have a proper Invoke method signature.
+    /// Only concrete delegate types (Func, Action, custom delegates) should be classified
+    /// as TypeKind.Delegate.
     /// </summary>
     private static bool IsDelegate(Type type)
     {
+        // System.Delegate and System.MulticastDelegate are NOT concrete delegates -
+        // they're the abstract base types that don't have an Invoke signature.
+        // They should be emitted as classes, not callable function types.
+        if (type.FullName == "System.Delegate" || type.FullName == "System.MulticastDelegate")
+            return false;
+
         // Walk the inheritance chain looking for Delegate or MulticastDelegate
         var baseType = type.BaseType;
         while (baseType != null)

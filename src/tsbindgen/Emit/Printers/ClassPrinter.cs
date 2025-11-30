@@ -343,20 +343,23 @@ public static class ClassPrinter
 
         sb.Append(" = ");
 
-        // Find Invoke method
+        // Find Invoke method - this is REQUIRED for delegate printing.
+        // Concrete delegates (Func, Action, custom delegates) always have Invoke.
+        // If Invoke is missing, this type was incorrectly classified as a delegate.
         var invokeMethod = type.Members.Methods.FirstOrDefault(m => m.ClrName == "Invoke");
-        if (invokeMethod != null)
+        if (invokeMethod == null)
         {
-            // Emit function signature: (a: int, b: string) => void
-            sb.Append('(');
-            sb.Append(string.Join(", ", invokeMethod.Parameters.Select(p => $"{p.Name}: {TypeRefPrinter.Print(p.Type, resolver, ctx)}")));
-            sb.Append(") => ");
-            sb.Append(TypeRefPrinter.Print(invokeMethod.ReturnType, resolver, ctx));
+            throw new InvalidOperationException(
+                $"Delegate type '{type.ClrFullName}' has no Invoke method. " +
+                $"This type should not have been classified as TypeKind.Delegate. " +
+                $"System.Delegate and System.MulticastDelegate must be excluded from delegate classification.");
         }
-        else
-        {
-            sb.Append("Function"); // Fallback
-        }
+
+        // Emit function signature: (arg1: T1, arg2: T2) => TResult
+        sb.Append('(');
+        sb.Append(string.Join(", ", invokeMethod.Parameters.Select(p => $"{p.Name}: {TypeRefPrinter.Print(p.Type, resolver, ctx)}")));
+        sb.Append(") => ");
+        sb.Append(TypeRefPrinter.Print(invokeMethod.ReturnType, resolver, ctx));
 
         sb.AppendLine(";");
 
