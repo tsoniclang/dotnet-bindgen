@@ -3,27 +3,21 @@
 # This validates that classes, enums, and structs are exported as values (not type-only)
 # so that static methods, enum values, and constructors are accessible.
 #
-# NOTE: These tests use PascalCase member names because the validation output
-# is generated with default casing (PascalCase). The @tsonic/dotnet npm package
-# uses camelCase, but validation uses PascalCase.
+# NOTE: These tests use PascalCase member names because the default mode
+# generates PascalCase. The @tsonic/dotnet npm package uses camelCase,
+# but this test uses default mode.
 
-set -e
-
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-ROOT_DIR="$(dirname "$SCRIPT_DIR")"
-TEST_DIR="$ROOT_DIR/.tests/facade-value-exports"
-VALIDATE_DIR="$ROOT_DIR/.tests/validate"
+source "$(dirname "${BASH_SOURCE[0]}")/_common.sh"
 
 echo "================================================================"
 echo "Testing Facade Value Exports"
 echo "================================================================"
 
-# Check if validation output exists
-if [ ! -d "$VALIDATE_DIR" ]; then
-    echo "Error: Validation output not found at $VALIDATE_DIR"
-    echo "Run 'node scripts/validate.js' first to generate the test package."
-    exit 1
-fi
+# Use cached BCL output
+BCL_DIR=$(ensure_bcl default)
+
+# Test directory
+TEST_DIR="$TESTS_DIR/facade-value-exports"
 
 # Clean and create test directory
 rm -rf "$TEST_DIR"
@@ -38,7 +32,7 @@ cat > "$TEST_DIR/package.json" << 'EOF'
 }
 EOF
 
-# Create tsconfig.json
+# Create tsconfig.json pointing to BCL cache
 cat > "$TEST_DIR/tsconfig.json" << EOF
 {
   "compilerOptions": {
@@ -49,7 +43,7 @@ cat > "$TEST_DIR/tsconfig.json" << EOF
     "noEmit": true,
     "skipLibCheck": true,
     "paths": {
-      "@tsonic/dotnet/*": ["$VALIDATE_DIR/*"]
+      "@tsonic/dotnet/*": ["$BCL_DIR/*"]
     }
   },
   "include": ["*.ts"]
@@ -196,11 +190,11 @@ echo ""
 
 cd "$TEST_DIR"
 
-# Run tsc and capture output
-if npx tsc --noEmit 2>&1; then
+# Run tsc
+if run_tsc --noEmit 2>&1; then
     echo ""
     echo "================================================================"
-    echo "✓ ALL FACADE VALUE EXPORT TESTS PASSED"
+    echo -e "${GREEN}✓ ALL FACADE VALUE EXPORT TESTS PASSED${NC}"
     echo "================================================================"
     echo ""
     echo "Verified:"
@@ -213,7 +207,7 @@ if npx tsc --noEmit 2>&1; then
 else
     echo ""
     echo "================================================================"
-    echo "✗ FACADE VALUE EXPORT TESTS FAILED"
+    echo -e "${RED}✗ FACADE VALUE EXPORT TESTS FAILED${NC}"
     echo "================================================================"
     echo ""
     echo "TypeScript compilation failed. This indicates that either:"

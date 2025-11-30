@@ -2,32 +2,16 @@
 # Test: Delegates must be callable function types, not class-shaped
 # This prevents regression to the broken delegate pattern that blocks LINQ.
 
-set -e
-
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-PROJECT_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
-
-# Colors
-RED='\033[0;31m'
-GREEN='\033[0;32m'
-NC='\033[0m' # No Color
+source "$(dirname "${BASH_SOURCE[0]}")/_common.sh"
 
 echo "Testing delegate emission format..."
 
-# Generate to temp directory
-TEMP_DIR=$(mktemp -d)
-trap "rm -rf $TEMP_DIR" EXIT
-
-RUNTIME_DIR="/home/jeswin/dotnet/shared/Microsoft.NETCore.App/10.0.0-rc.1.25451.107"
-
-dotnet run --project "$PROJECT_ROOT/src/tsbindgen/tsbindgen.csproj" -- \
-    generate -a "$RUNTIME_DIR/System.Private.CoreLib.dll" \
-    --out-dir "$TEMP_DIR" > /dev/null 2>&1
-
-INDEX_FILE="$TEMP_DIR/System/internal/index.d.ts"
+# Use cached BCL output
+BCL_DIR=$(ensure_bcl default)
+INDEX_FILE="$BCL_DIR/System/internal/index.d.ts"
 
 if [ ! -f "$INDEX_FILE" ]; then
-    echo -e "${RED}FAIL: Generated index.d.ts not found${NC}"
+    echo -e "${RED}FAIL: Generated index.d.ts not found at $INDEX_FILE${NC}"
     exit 1
 fi
 

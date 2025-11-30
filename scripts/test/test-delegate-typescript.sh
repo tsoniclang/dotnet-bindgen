@@ -3,30 +3,16 @@
 # Tests both LINQ predicate pattern and facade assign+call pattern.
 # This is the exact failure scenario from Tsonic that was blocking LINQ.
 
-set -e
-
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-PROJECT_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
-
-# Colors
-RED='\033[0;31m'
-GREEN='\033[0;32m'
-NC='\033[0m' # No Color
+source "$(dirname "${BASH_SOURCE[0]}")/_common.sh"
 
 echo "Running TypeScript compile tests for delegate assignability..."
 
-# Create temp directory for tests
+# Use cached BCL output
+BCL_DIR=$(ensure_bcl default)
+
+# Create temp directory for test files
 TEMP_DIR=$(mktemp -d)
 trap "rm -rf $TEMP_DIR" EXIT
-
-# Generate BCL namespaces needed for tests
-RUNTIME_DIR="/home/jeswin/dotnet/shared/Microsoft.NETCore.App/10.0.0-rc.1.25451.107"
-OUT_DIR="$TEMP_DIR/generated"
-
-echo "  Generating BCL namespaces..."
-dotnet run --project "$PROJECT_ROOT/src/tsbindgen/tsbindgen.csproj" -- \
-    generate -a "$RUNTIME_DIR/System.Private.CoreLib.dll" \
-    --out-dir "$OUT_DIR" > /dev/null 2>&1
 
 # Create test file that simulates real usage
 cat > "$TEMP_DIR/test.ts" << 'EOF'
@@ -129,7 +115,7 @@ EOF
 # Run TypeScript compiler
 echo "  Compiling test file with tsc --strict..."
 cd "$TEMP_DIR"
-if npx tsc --noEmit 2>&1; then
+if run_tsc --noEmit 2>&1; then
     echo -e "${GREEN}All TypeScript compile tests passed!${NC}"
     echo ""
     echo "Verified:"
