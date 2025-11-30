@@ -143,16 +143,10 @@ public enum ConstraintMergeStrategy
 public sealed record EmissionPolicy
 {
     /// <summary>
-    /// Name transformation strategy for TYPE names (classes, interfaces, enums).
-    /// Default: None (preserve PascalCase from C#).
+    /// Naming style for member names (methods, properties, fields, events, enum members).
+    /// Default: Js (JavaScript-style lowerFirst for PascalCase members).
     /// </summary>
-    public NameTransformStrategy TypeNameTransform { get; init; } = NameTransformStrategy.None;
-
-    /// <summary>
-    /// Name transformation strategy for MEMBER names (methods, properties, fields).
-    /// Default: CamelCase (TypeScript convention).
-    /// </summary>
-    public NameTransformStrategy MemberNameTransform { get; init; } = NameTransformStrategy.CamelCase;
+    public NamingStyle Naming { get; init; } = NamingStyle.Js;
 
     /// <summary>
     /// Sorting order for types and members.
@@ -165,11 +159,26 @@ public sealed record EmissionPolicy
     public required bool EmitDocComments { get; init; }
 }
 
-public enum NameTransformStrategy
+/// <summary>
+/// Naming style for emitted member names.
+/// </summary>
+public enum NamingStyle
 {
-    None,
-    CamelCase,
-    PascalCase
+    /// <summary>
+    /// CLR-style: preserve original C# names as-is.
+    /// "GetValue" → "GetValue", "CC_CDECL" → "CC_CDECL"
+    /// </summary>
+    Clr,
+
+    /// <summary>
+    /// JavaScript-style: lowerFirst for pure PascalCase members.
+    /// Only transforms C# PascalCase: "GetValue" → "getValue", "HelloWorld" → "helloWorld"
+    /// Leaves everything else unchanged:
+    ///   - ALL-UPPERCASE: "CC_CDECL" → "CC_CDECL"
+    ///   - Underscores: "Hello_World" → "Hello_World"
+    ///   - CLR-reserved: "value__" → "value__"
+    /// </summary>
+    Js
 }
 
 public enum SortOrderStrategy

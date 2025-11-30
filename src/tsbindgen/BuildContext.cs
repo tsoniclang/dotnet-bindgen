@@ -85,14 +85,17 @@ public sealed class BuildContext
         // Apply explicit overrides from policy
         renamer.ApplyExplicitOverrides(policy.Renaming.ExplicitMap);
 
-        // Adopt style transforms from policy (types and members can have different casing)
-        var typeTransform = policy.Emission.TypeNameTransform != NameTransformStrategy.None
-            ? new Func<string, string>(name => NameTransform.Apply(name, policy.Emission.TypeNameTransform))
-            : static name => name; // Identity
+        // Adopt style transforms from policy
+        // Type names: always preserve as-is (PascalCase from C#)
+        // Member names: apply JS-style transform if configured
+        Func<string, string> typeTransform = static name => name; // Identity - preserve type names
 
-        var memberTransform = policy.Emission.MemberNameTransform != NameTransformStrategy.None
-            ? new Func<string, string>(name => NameTransform.Apply(name, policy.Emission.MemberNameTransform))
-            : static name => name; // Identity
+        Func<string, string> memberTransform = policy.Emission.Naming switch
+        {
+            NamingStyle.Js => NameTransform.ToJsStyle,
+            NamingStyle.Clr => static name => name, // Identity - preserve CLR names
+            _ => static name => name
+        };
 
         renamer.AdoptTypeStyleTransform(typeTransform);
         renamer.AdoptMemberStyleTransform(memberTransform);
