@@ -24,7 +24,12 @@ public static class NameTransform
 
     /// <summary>
     /// Convert name to camelCase.
-    /// Examples: "GetValue" -> "getValue", "URL" -> "url", "HTTPSConnection" -> "httpsConnection"
+    /// Examples:
+    ///   "GetValue" -> "getValue"
+    ///   "URL" -> "url"
+    ///   "HTTPSConnection" -> "httpsConnection"
+    ///   "CC_CDECL" -> "ccCdecl" (underscore-separated)
+    ///   "SOME_ENUM_VALUE" -> "someEnumValue"
     /// </summary>
     public static string ToCamelCase(string name)
     {
@@ -35,7 +40,13 @@ public static class NameTransform
         if (name.Length == 1)
             return char.ToLowerInvariant(name[0]).ToString();
 
-        // Check if it's all uppercase (acronym)
+        // Check if name contains underscores - handle as underscore-separated
+        if (name.Contains('_'))
+        {
+            return UnderscoreSeparatedToCamelCase(name);
+        }
+
+        // Check if it's all uppercase (acronym without underscores)
         if (IsAllUpperCase(name))
             return name.ToLowerInvariant();
 
@@ -59,6 +70,41 @@ public static class NameTransform
 
         // Append the rest
         sb.Append(name[i..]);
+
+        return sb.ToString();
+    }
+
+    /// <summary>
+    /// Convert underscore-separated name to camelCase.
+    /// "CC_CDECL" -> "ccCdecl", "SOME_VALUE" -> "someValue"
+    /// </summary>
+    private static string UnderscoreSeparatedToCamelCase(string name)
+    {
+        var parts = name.Split('_', StringSplitOptions.RemoveEmptyEntries);
+        if (parts.Length == 0)
+            return name;
+
+        var sb = new StringBuilder();
+
+        for (var i = 0; i < parts.Length; i++)
+        {
+            var part = parts[i];
+            if (string.IsNullOrEmpty(part))
+                continue;
+
+            if (i == 0)
+            {
+                // First part: all lowercase
+                sb.Append(part.ToLowerInvariant());
+            }
+            else
+            {
+                // Subsequent parts: capitalize first letter, lowercase rest
+                sb.Append(char.ToUpperInvariant(part[0]));
+                if (part.Length > 1)
+                    sb.Append(part[1..].ToLowerInvariant());
+            }
+        }
 
         return sb.ToString();
     }

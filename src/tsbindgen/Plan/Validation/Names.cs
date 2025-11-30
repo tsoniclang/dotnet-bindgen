@@ -760,29 +760,36 @@ internal static class Names
 
                 totalClassesChecked++;
 
-                // Build set of class surface + view member names using CLR-name policy
+                // Build set of class surface + view member names using actual emitted names from Renamer
                 // Views represent explicit interface implementations
                 var classSurfaceNames = new HashSet<string>();
+                var instanceScope = ScopeFactory.ClassInstance(type);
 
-                // Add class surface members
+                // Add class surface members - use Renamer to get actual emitted names
                 foreach (var method in type.Members.Methods.Where(m => !m.IsStatic && m.EmitScope == EmitScope.ClassSurface))
                 {
-                    var clrName = Emit.Shared.NameUtilities.ApplyClrSurfaceNamePolicy(method.ClrName);
-                    classSurfaceNames.Add(clrName);
+                    var emitName = ctx.Renamer.GetFinalMemberName(method.StableId, instanceScope);
+                    var sanitizedName = Emit.Shared.NameUtilities.SanitizeTsIdentifier(emitName);
+                    classSurfaceNames.Add(sanitizedName);
                 }
                 foreach (var prop in type.Members.Properties.Where(p => !p.IsStatic && p.EmitScope == EmitScope.ClassSurface))
                 {
-                    var clrName = Emit.Shared.NameUtilities.ApplyClrSurfaceNamePolicy(prop.ClrName);
-                    classSurfaceNames.Add(clrName);
+                    var emitName = ctx.Renamer.GetFinalMemberName(prop.StableId, instanceScope);
+                    var sanitizedName = Emit.Shared.NameUtilities.SanitizeTsIdentifier(emitName);
+                    classSurfaceNames.Add(sanitizedName);
                 }
 
                 // Add view members (explicit interface implementations)
+                // View members will have the interface member name with styling applied.
+                // We don't need to look up the exact scope - just apply the member style transform.
                 foreach (var view in type.ExplicitViews)
                 {
                     foreach (var viewMember in view.ViewMembers)
                     {
-                        var clrName = Emit.Shared.NameUtilities.ApplyClrSurfaceNamePolicy(viewMember.ClrName);
-                        classSurfaceNames.Add(clrName);
+                        // Apply member style transform (e.g., camelCase) + sanitize
+                        var styledName = ctx.Renamer.ApplyMemberStyleTransform(viewMember.ClrName);
+                        var sanitizedName = Emit.Shared.NameUtilities.SanitizeTsIdentifier(styledName);
+                        classSurfaceNames.Add(sanitizedName);
                     }
                 }
 
@@ -799,16 +806,26 @@ internal static class Names
                     if (ifaceType.Kind != TypeKind.Interface)
                         continue;
 
-                    // Check each interface member
+                    // Check each interface member - use styled BASE name (not suffixed Renamer name)
+                    // Interface and class may have different suffix allocations for overloads,
+                    // so we check that the class has a member with the base name or base+suffix
                     foreach (var ifaceMethod in ifaceType.Members.Methods.Where(m => !m.IsStatic))
                     {
-                        var ifaceClrName = Emit.Shared.NameUtilities.ApplyClrSurfaceNamePolicy(ifaceMethod.ClrName);
-                        if (!classSurfaceNames.Contains(ifaceClrName))
+                        // Get the base name: style transform + sanitize (no suffix)
+                        var styledName = ctx.Renamer.ApplyMemberStyleTransform(ifaceMethod.ClrName);
+                        var baseName = Emit.Shared.NameUtilities.SanitizeTsIdentifier(styledName);
+
+                        // Check if class has this base name or base+suffix variant
+                        var hasMatch = classSurfaceNames.Contains(baseName) ||
+                                       classSurfaceNames.Any(n => n.StartsWith(baseName, StringComparison.Ordinal) &&
+                                           n.Length > baseName.Length && char.IsDigit(n[baseName.Length]));
+
+                        if (!hasMatch)
                         {
                             validationCtx.RecordDiagnostic(
                                 DiagnosticCodes.SurfaceNamePolicyMismatch,
                                 "ERROR",
-                                $"Class {type.ClrFullName} implements {ifaceType.ClrFullName} but missing member '{ifaceClrName}' (interface method '{ifaceMethod.ClrName}')");
+                                $"Class {type.ClrFullName} implements {ifaceType.ClrFullName} but missing member '{baseName}' (interface method '{ifaceMethod.ClrName}')");
                             mismatches++;
                         }
                     }
@@ -819,13 +836,21 @@ internal static class Names
                         if (ifaceProp.IsIndexer)
                             continue;
 
-                        var ifaceClrName = Emit.Shared.NameUtilities.ApplyClrSurfaceNamePolicy(ifaceProp.ClrName);
-                        if (!classSurfaceNames.Contains(ifaceClrName))
+                        // Get the base name: style transform + sanitize (no suffix)
+                        var styledName = ctx.Renamer.ApplyMemberStyleTransform(ifaceProp.ClrName);
+                        var baseName = Emit.Shared.NameUtilities.SanitizeTsIdentifier(styledName);
+
+                        // Check if class has this base name or base+suffix variant
+                        var hasMatch = classSurfaceNames.Contains(baseName) ||
+                                       classSurfaceNames.Any(n => n.StartsWith(baseName, StringComparison.Ordinal) &&
+                                           n.Length > baseName.Length && char.IsDigit(n[baseName.Length]));
+
+                        if (!hasMatch)
                         {
                             validationCtx.RecordDiagnostic(
                                 DiagnosticCodes.SurfaceNamePolicyMismatch,
                                 "ERROR",
-                                $"Class {type.ClrFullName} implements {ifaceType.ClrFullName} but missing member '{ifaceClrName}' (interface property '{ifaceProp.ClrName}')");
+                                $"Class {type.ClrFullName} implements {ifaceType.ClrFullName} but missing member '{baseName}' (interface property '{ifaceProp.ClrName}')");
                             mismatches++;
                         }
                     }
@@ -852,17 +877,23 @@ internal static class Names
         {
             foreach (var type in ns.Types)
             {
-                // Check class surface members
+                // Create scopes for member name resolution
+                var instanceScope = ScopeFactory.ClassInstance(type);
+                var staticScope = ScopeFactory.ClassStatic(type);
+
+                // Check class surface members - use Renamer to get actual emitted names
                 foreach (var method in type.Members.Methods.Where(m => m.EmitScope == EmitScope.ClassSurface))
                 {
                     totalMembersChecked++;
-                    var clrName = Emit.Shared.NameUtilities.ApplyClrSurfaceNamePolicy(method.ClrName);
-                    if (Emit.Shared.NameUtilities.HasNumericSuffix(clrName))
+                    var scope = method.IsStatic ? staticScope : instanceScope;
+                    var emitName = ctx.Renamer.GetFinalMemberName(method.StableId, scope);
+                    var sanitizedName = Emit.Shared.NameUtilities.SanitizeTsIdentifier(emitName);
+                    if (Emit.Shared.NameUtilities.HasNumericSuffix(sanitizedName))
                     {
                         validationCtx.RecordDiagnostic(
                             DiagnosticCodes.NumericSuffixOnSurface,
                             "ERROR",
-                            $"Method {type.ClrFullName}.{method.ClrName} emits with numeric suffix '{clrName}'");
+                            $"Method {type.ClrFullName}.{method.ClrName} emits with numeric suffix '{sanitizedName}'");
                         numericSuffixes++;
                     }
                 }
@@ -870,31 +901,33 @@ internal static class Names
                 foreach (var prop in type.Members.Properties.Where(p => p.EmitScope == EmitScope.ClassSurface))
                 {
                     totalMembersChecked++;
-                    var clrName = Emit.Shared.NameUtilities.ApplyClrSurfaceNamePolicy(prop.ClrName);
-                    if (Emit.Shared.NameUtilities.HasNumericSuffix(clrName))
+                    var scope = prop.IsStatic ? staticScope : instanceScope;
+                    var emitName = ctx.Renamer.GetFinalMemberName(prop.StableId, scope);
+                    var sanitizedName = Emit.Shared.NameUtilities.SanitizeTsIdentifier(emitName);
+                    if (Emit.Shared.NameUtilities.HasNumericSuffix(sanitizedName))
                     {
                         validationCtx.RecordDiagnostic(
                             DiagnosticCodes.NumericSuffixOnSurface,
                             "ERROR",
-                            $"Property {type.ClrFullName}.{prop.ClrName} emits with numeric suffix '{clrName}'");
+                            $"Property {type.ClrFullName}.{prop.ClrName} emits with numeric suffix '{sanitizedName}'");
                         numericSuffixes++;
                     }
                 }
 
-                // Check view members
+                // Check view members - view members use CLR names (they're explicit interface implementations)
                 foreach (var view in type.ExplicitViews)
                 {
                     foreach (var viewMember in view.ViewMembers)
                     {
                         totalMembersChecked++;
-                        var clrName = Emit.Shared.NameUtilities.ApplyClrSurfaceNamePolicy(viewMember.ClrName);
-                        if (Emit.Shared.NameUtilities.HasNumericSuffix(clrName))
+                        var sanitizedName = Emit.Shared.NameUtilities.SanitizeTsIdentifier(viewMember.ClrName);
+                        if (Emit.Shared.NameUtilities.HasNumericSuffix(sanitizedName))
                         {
                             var memberKindStr = viewMember.Kind.ToString().ToLowerInvariant();
                             validationCtx.RecordDiagnostic(
                                 DiagnosticCodes.NumericSuffixOnSurface,
                                 "ERROR",
-                                $"View {memberKindStr} {type.ClrFullName}.{view.ViewPropertyName}.{viewMember.ClrName} emits with numeric suffix '{clrName}'");
+                                $"View {memberKindStr} {type.ClrFullName}.{view.ViewPropertyName}.{viewMember.ClrName} emits with numeric suffix '{sanitizedName}'");
                             numericSuffixes++;
                         }
                     }
