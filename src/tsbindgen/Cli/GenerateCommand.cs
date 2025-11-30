@@ -38,30 +38,10 @@ public static class GenerateCommand
             AllowMultipleArgumentsPerToken = true
         };
 
-        // Naming transform options
-        var namespaceNamesOption = new Option<string?>(
-            name: "--namespace-names",
-            description: "Transform namespace names (camelCase)");
-
-        var classNamesOption = new Option<string?>(
-            name: "--class-names",
-            description: "Transform class names (camelCase)");
-
-        var interfaceNamesOption = new Option<string?>(
-            name: "--interface-names",
-            description: "Transform interface names (camelCase)");
-
-        var methodNamesOption = new Option<string?>(
-            name: "--method-names",
-            description: "Transform method names (camelCase)");
-
-        var propertyNamesOption = new Option<string?>(
-            name: "--property-names",
-            description: "Transform property names (camelCase)");
-
-        var enumMemberNamesOption = new Option<string?>(
-            name: "--enum-member-names",
-            description: "Transform enum member names (camelCase)");
+        // Naming style option
+        var namingOption = new Option<string?>(
+            name: "--naming",
+            description: "Member naming style: 'js' (JavaScript-style lowerFirst) or 'clr' (preserve C# names). Default: clr");
 
         var verboseOption = new Option<bool>(
             aliases: new[] { "--verbose", "-v" },
@@ -88,12 +68,7 @@ public static class GenerateCommand
         command.AddOption(assemblyDirOption);
         command.AddOption(outDirOption);
         command.AddOption(namespacesOption);
-        command.AddOption(namespaceNamesOption);
-        command.AddOption(classNamesOption);
-        command.AddOption(interfaceNamesOption);
-        command.AddOption(methodNamesOption);
-        command.AddOption(propertyNamesOption);
-        command.AddOption(enumMemberNamesOption);
+        command.AddOption(namingOption);
         command.AddOption(verboseOption);
         command.AddOption(logsOption);
         command.AddOption(strictOption);
@@ -105,12 +80,7 @@ public static class GenerateCommand
             var assemblyDir = context.ParseResult.GetValueForOption(assemblyDirOption);
             var outDir = context.ParseResult.GetValueForOption(outDirOption) ?? "out";
             var namespaces = context.ParseResult.GetValueForOption(namespacesOption) ?? Array.Empty<string>();
-            var namespaceNames = context.ParseResult.GetValueForOption(namespaceNamesOption);
-            var classNames = context.ParseResult.GetValueForOption(classNamesOption);
-            var interfaceNames = context.ParseResult.GetValueForOption(interfaceNamesOption);
-            var methodNames = context.ParseResult.GetValueForOption(methodNamesOption);
-            var propertyNames = context.ParseResult.GetValueForOption(propertyNamesOption);
-            var enumMemberNames = context.ParseResult.GetValueForOption(enumMemberNamesOption);
+            var naming = context.ParseResult.GetValueForOption(namingOption);
             var verbose = context.ParseResult.GetValueForOption(verboseOption);
             var logs = context.ParseResult.GetValueForOption(logsOption) ?? Array.Empty<string>();
             var strict = context.ParseResult.GetValueForOption(strictOption);
@@ -121,12 +91,7 @@ public static class GenerateCommand
                 assemblyDir,
                 outDir,
                 namespaces,
-                namespaceNames,
-                classNames,
-                interfaceNames,
-                methodNames,
-                propertyNames,
-                enumMemberNames,
+                naming,
                 verbose,
                 logs,
                 strict,
@@ -141,12 +106,7 @@ public static class GenerateCommand
         string? assemblyDir,
         string outDir,
         string[] namespaceFilter,
-        string? namespaceNames,
-        string? classNames,
-        string? interfaceNames,
-        string? methodNames,
-        string? propertyNames,
-        string? enumMemberNames,
+        string? naming,
         bool verbose,
         string[] logs,
         bool strict,
@@ -178,25 +138,21 @@ public static class GenerateCommand
             // Build policy from CLI options
             var policy = Core.Policy.PolicyDefaults.Create();
 
-            // Apply name transforms to policy if specified
-            if (!string.IsNullOrWhiteSpace(namespaceNames) ||
-                !string.IsNullOrWhiteSpace(classNames) ||
-                !string.IsNullOrWhiteSpace(interfaceNames) ||
-                !string.IsNullOrWhiteSpace(methodNames) ||
-                !string.IsNullOrWhiteSpace(propertyNames))
+            // Apply naming style if specified
+            if (!string.IsNullOrWhiteSpace(naming))
             {
-                // Determine if CamelCase transform is requested
-                var transformValue = (namespaceNames ?? classNames ?? interfaceNames ?? methodNames ?? propertyNames)?.ToLowerInvariant();
-                var useCamelCase = transformValue == "camelcase" || transformValue == "camel-case" || transformValue == "camel";
+                var namingStyle = naming.ToLowerInvariant() switch
+                {
+                    "js" => Core.Policy.NamingStyle.Js,
+                    "clr" => Core.Policy.NamingStyle.Clr,
+                    _ => throw new ArgumentException($"Unknown naming style: '{naming}'. Use 'js' or 'clr'.")
+                };
 
-                // Update emission policy
                 policy = policy with
                 {
                     Emission = policy.Emission with
                     {
-                        MemberNameTransform = useCamelCase
-                            ? Core.Policy.NameTransformStrategy.CamelCase
-                            : Core.Policy.NameTransformStrategy.None
+                        Naming = namingStyle
                     }
                 };
             }
