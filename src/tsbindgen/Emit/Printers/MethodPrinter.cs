@@ -146,6 +146,51 @@ public static class MethodPrinter
         return sb.ToString();
     }
 
+    /// <summary>
+    /// STATIC-SIDE FIX: Print method signature without modifiers (static/abstract).
+    /// Used in object literal types: { methodName(args): ReturnType; }
+    /// </summary>
+    public static string PrintSignatureOnly(MethodSymbol method, TypeSymbol declaringType, string methodName, TypeNameResolver resolver, BuildContext ctx)
+    {
+        var sb = new StringBuilder();
+
+        // TS2304 FIX: Compute allowed type parameters for this method signature
+        var allowedTypeParams = new HashSet<string>();
+        foreach (var gp in declaringType.GenericParameters)
+        {
+            allowedTypeParams.Add(gp.Name);
+        }
+        foreach (var gp in method.GenericParameters)
+        {
+            allowedTypeParams.Add(gp.Name);
+        }
+
+        // NO modifiers (static/abstract) - we're in an object literal type
+
+        // Method name
+        sb.Append(methodName);
+
+        // Generic parameters: <T, U>
+        var enrichedGenericParams = EnrichMethodGenericParametersWithClassConstraints(method, declaringType);
+        if (enrichedGenericParams.Length > 0)
+        {
+            sb.Append('<');
+            sb.Append(string.Join(", ", enrichedGenericParams.Select(gp => PrintGenericParameter(gp, resolver, ctx))));
+            sb.Append('>');
+        }
+
+        // Parameters: (a: int, b: string)
+        sb.Append('(');
+        sb.Append(string.Join(", ", method.Parameters.Select(p => PrintParameter(p, resolver, ctx, allowedTypeParams))));
+        sb.Append(')');
+
+        // Return type: : int
+        sb.Append(": ");
+        sb.Append(TypeRefPrinter.Print(method.ReturnType, resolver, ctx, allowedTypeParams));
+
+        return sb.ToString();
+    }
+
     private static string PrintGenericParameter(GenericParameterSymbol gp, TypeNameResolver resolver, BuildContext ctx)
     {
         var sb = new StringBuilder();

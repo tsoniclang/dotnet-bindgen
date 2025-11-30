@@ -39,7 +39,6 @@ detect_runtime() {
 
     # Check known .NET runtime locations
     local known_paths=(
-        "/home/jeswin/dotnet/shared/Microsoft.NETCore.App"
         "/usr/share/dotnet/shared/Microsoft.NETCore.App"
         "/usr/local/share/dotnet/shared/Microsoft.NETCore.App"
         "$HOME/.dotnet/shared/Microsoft.NETCore.App"

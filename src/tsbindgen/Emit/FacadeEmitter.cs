@@ -546,8 +546,12 @@ public static class FacadeEmitter
     /// Gets the internal module's exported value name for a type.
     ///
     /// Different type kinds have different internal naming patterns:
-    ///   - Classes/Structs/StaticNamespace: Use $instance suffix (Console$instance)
+    ///   - Classes/Structs: Use final name (List_1 - the const export)
+    ///   - StaticNamespace: Use $instance suffix (Console$instance - abstract class)
     ///   - Enums: Use final name directly (ConsoleColor - no $instance)
+    ///
+    /// STATIC-SIDE FIX: Classes and structs now emit interface + const pattern,
+    /// so the value export is the final type name (the const), not the $instance suffix.
     /// </summary>
     private static string GetInternalValueName(Model.Symbols.TypeSymbol type, BuildContext ctx)
     {
@@ -557,7 +561,14 @@ public static class FacadeEmitter
             return ctx.Renamer.GetFinalTypeName(type);
         }
 
-        // Classes, Structs, StaticNamespace use $instance suffix
+        // STATIC-SIDE FIX: Classes and Structs now use const export with final name
+        // The interface is $instance, but the value export (with new()) is the final name
+        if (type.Kind == Model.Symbols.TypeKind.Class || type.Kind == Model.Symbols.TypeKind.Struct)
+        {
+            return ctx.Renamer.GetFinalTypeName(type);
+        }
+
+        // StaticNamespace uses $instance suffix (abstract class pattern unchanged)
         return ctx.Renamer.GetInstanceTypeName(type);
     }
 }

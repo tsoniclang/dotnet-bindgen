@@ -74,6 +74,185 @@ public static class ClassPrinter
         };
     }
 
+    /// <summary>
+    /// STATIC-SIDE FIX: Print value export for constructors and static members.
+    /// Emits: export const TypeName: { new(...): Instance; statics... } = null!;
+    /// This removes static-side inheritance entirely, fixing TS2417.
+    /// </summary>
+    public static string PrintValueExport(TypeSymbol type, TypeNameResolver resolver, BuildContext ctx, Model.SymbolGraph graph, Shape.StaticConflictPlan? staticConflicts = null)
+    {
+        // GUARD: Never print non-public types
+        if (type.Accessibility != Accessibility.Public)
+            return string.Empty;
+
+        // Only classes and structs have value exports (not interfaces, enums, delegates)
+        if (type.Kind != TypeKind.Class && type.Kind != TypeKind.Struct)
+            return string.Empty;
+
+        // Static classes use different emission pattern (abstract class)
+        if (type.IsStatic || type.Kind == TypeKind.StaticNamespace)
+            return string.Empty;
+
+        var sb = new StringBuilder();
+
+        // Get type names
+        var finalName = ctx.Renamer.GetFinalTypeName(type);
+        var instanceName = ctx.Renamer.GetInstanceTypeName(type);
+
+        // Generic parameters for the const declaration
+        // Note: export const with generics uses function syntax, not generic class syntax
+        // For generic types, we'll emit a callable/newable interface
+        var hasGenerics = type.GenericParameters.Length > 0;
+        string genericParams = "";
+        string genericArgs = "";
+        if (hasGenerics)
+        {
+            genericParams = "<" + string.Join(", ", type.GenericParameters.Select(gp => PrintGenericParameter(gp, resolver, ctx))) + ">";
+            genericArgs = "<" + string.Join(", ", type.GenericParameters.Select(gp => gp.Name)) + ">";
+        }
+
+        // Start: export const TypeName: { ... }
+        sb.Append("export const ");
+        sb.Append(finalName);
+        sb.AppendLine(": {");
+
+        // Create type scope for member name resolution
+        var staticTypeScope = ScopeFactory.ClassStatic(type);
+
+        // D2: Helper to check if a static member should be suppressed due to conflict with base
+        var typeStableId = type.StableId.ToString();
+        bool ShouldSuppressMember(string memberStableId)
+        {
+            if (staticConflicts == null)
+                return false;
+
+            var shouldSuppress = staticConflicts.ShouldSuppress(typeStableId, memberStableId);
+            if (shouldSuppress)
+            {
+                var reason = staticConflicts.GetSuppressionReason(typeStableId, memberStableId);
+                ctx.Log("StaticConflict", $"  Suppressing: {type.ClrFullName} static member (StableId: {memberStableId}) - {reason}");
+            }
+            return shouldSuppress;
+        }
+
+        // Constructors: new(...): InstanceType
+        var members = type.Members;
+        foreach (var ctor in members.Constructors.Where(c => !c.IsStatic))
+        {
+            sb.Append("    new");
+            if (hasGenerics) sb.Append(genericParams);
+            sb.Append("(");
+            sb.Append(string.Join(", ", ctor.Parameters.Select(p => $"{p.Name}: {TypeRefPrinter.Print(p.Type, resolver, ctx)}")));
+            sb.Append("): ");
+            sb.Append(instanceName);
+            if (hasGenerics) sb.Append(genericArgs);
+            sb.AppendLine(";");
+        }
+
+        // If no constructors but class is not abstract, emit parameterless constructor
+        if (!members.Constructors.Any(c => !c.IsStatic) && !type.IsAbstract)
+        {
+            sb.Append("    new");
+            if (hasGenerics) sb.Append(genericParams);
+            sb.Append("(): ");
+            sb.Append(instanceName);
+            if (hasGenerics) sb.Append(genericArgs);
+            sb.AppendLine(";");
+        }
+
+        // Static fields - only emit ClassSurface or StaticSurface members
+        foreach (var field in members.Fields.Where(f => f.IsStatic && !f.IsConst &&
+            (f.EmitScope == EmitScope.ClassSurface || f.EmitScope == EmitScope.StaticSurface)))
+        {
+            if (ShouldSuppressMember(field.StableId.ToString()))
+                continue;
+
+            var finalMemberName = ctx.Renamer.GetFinalMemberName(field.StableId, staticTypeScope);
+            sb.Append("    ");
+            if (field.IsReadOnly)
+                sb.Append("readonly ");
+            sb.Append(finalMemberName);
+            sb.Append(": ");
+
+            var fieldType = SubstituteClassGenericsInTypeRef(field.FieldType, type.GenericParameters);
+            sb.Append(TypeRefPrinter.Print(fieldType, resolver, ctx));
+            sb.AppendLine(";");
+        }
+
+        // Const fields (as readonly)
+        foreach (var field in members.Fields.Where(f => f.IsConst &&
+            (f.EmitScope == EmitScope.ClassSurface || f.EmitScope == EmitScope.StaticSurface)))
+        {
+            if (ShouldSuppressMember(field.StableId.ToString()))
+                continue;
+
+            var emitName = ctx.Renamer.GetFinalMemberName(field.StableId, staticTypeScope);
+            sb.Append("    readonly ");
+            sb.Append(emitName);
+            sb.Append(": ");
+
+            var fieldType = SubstituteClassGenericsInTypeRef(field.FieldType, type.GenericParameters);
+            sb.Append(TypeRefPrinter.Print(fieldType, resolver, ctx));
+            sb.AppendLine(";");
+        }
+
+        // Static properties
+        foreach (var prop in members.Properties.Where(p => p.IsStatic &&
+            (p.EmitScope == EmitScope.ClassSurface || p.EmitScope == EmitScope.StaticSurface)))
+        {
+            if (ShouldSuppressMember(prop.StableId.ToString()))
+                continue;
+
+            var emitName = ctx.Renamer.GetFinalMemberName(prop.StableId, staticTypeScope);
+            sb.Append("    ");
+            if (!prop.HasSetter)
+                sb.Append("readonly ");
+            sb.Append(emitName);
+            sb.Append(": ");
+
+            var propType = SubstituteClassGenericsInTypeRef(prop.PropertyType, type.GenericParameters);
+            sb.Append(TypeRefPrinter.Print(propType, resolver, ctx));
+            sb.AppendLine(";");
+        }
+
+        // Static methods
+        var staticMethods = members.Methods
+            .Where(m => m.IsStatic && (m.EmitScope == EmitScope.ClassSurface || m.EmitScope == EmitScope.StaticSurface))
+            .ToList();
+
+        var staticMethodGroups = GroupMethodsByClrName(staticMethods, isStatic: true);
+
+        foreach (var (clrName, overloads) in staticMethodGroups.OrderBy(kvp => kvp.Key))
+        {
+            var firstMethod = overloads.First();
+            var emitName = ctx.Renamer.GetFinalMemberName(firstMethod.StableId, staticTypeScope);
+
+            foreach (var method in overloads)
+            {
+                if (ShouldSuppressMember(method.StableId.ToString()))
+                    continue;
+
+                // Skip abstract static methods in concrete classes
+                if (!type.IsAbstract && method.IsAbstract)
+                    continue;
+
+                // Lift class generic parameters into method
+                var liftedMethod = LiftClassGenericsToMethod(method, type, ctx);
+
+                sb.Append("    ");
+                // Emit method signature without 'static' keyword (it's in an object literal type)
+                sb.Append(MethodPrinter.PrintSignatureOnly(liftedMethod, type, emitName, resolver, ctx));
+                sb.AppendLine(";");
+            }
+        }
+
+        // Close: };
+        // Note: No initializer in .d.ts files - just the type annotation
+        sb.AppendLine("};");
+
+        return sb.ToString();
+    }
+
     private static string PrintClass(TypeSymbol type, TypeNameResolver resolver, BuildContext ctx, Model.SymbolGraph graph, bool instanceSuffix = false, BindingsProvider? bindingsProvider = null, Shape.StaticFlatteningPlan? staticFlattening = null, Shape.StaticConflictPlan? staticConflicts = null, Shape.OverrideConflictPlan? overrideConflicts = null, Plan.PropertyOverridePlan? propertyOverrides = null, Plan.HonestEmissionPlan? honestEmission = null)
     {
         var sb = new StringBuilder();
@@ -82,11 +261,11 @@ public static class ClassPrinter
         // instanceSuffix parameter kept for compatibility but ignored - we always use $instance now
         var finalName = ctx.Renamer.GetInstanceTypeName(type);
 
-        // Class modifiers and declaration
-        if (type.IsAbstract)
-            sb.Append("abstract ");
-
-        sb.Append("class ");
+        // STATIC-SIDE FIX: Emit interface instead of class to avoid TS2417 static-side inheritance
+        // TypeScript checks that 'typeof Derived' extends 'typeof Base' when using 'class extends',
+        // but .NET static methods are not polymorphic - derived types can have different overload sets.
+        // Using interface for instance side removes this constraint entirely.
+        sb.Append("interface ");
         sb.Append(finalName);
 
         // Generic parameters: class Foo<T, U>
@@ -97,27 +276,28 @@ public static class ClassPrinter
             sb.Append('>');
         }
 
-        // Base class: extends BaseClass
+        // STATIC-SIDE FIX: Build extends list from base class AND interfaces
+        // Interfaces use "extends" for all inheritance (not "implements")
+        var extendsList = new List<string>();
+
+        // Base class: extends BaseClass$instance
         // D1 FIX: Skip extends for static-only types that are being flattened
         var shouldFlatten = staticFlattening?.ShouldFlattenType(type.StableId.ToString()) ?? false;
 
         if (type.BaseType != null && !shouldFlatten)
         {
-            // Pass forValuePosition=true to use qualified names for reflection types
-            // This avoids TS2693 "type used as value" errors in extends clauses
-            var baseTypeName = TypeRefPrinter.Print(type.BaseType, resolver, ctx, allowedTypeParameterNames: null, forValuePosition: true);
+            // Pass forValuePosition=false since this is an interface (type position)
+            var baseTypeName = TypeRefPrinter.Print(type.BaseType, resolver, ctx, allowedTypeParameterNames: null, forValuePosition: false);
             // TS2693 FIX (Same-Namespace): For same-namespace types with views, use instance class name
             baseTypeName = ApplyInstanceSuffixForSameNamespaceViews(baseTypeName, type.BaseType, type.Namespace, graph, ctx);
 
             // Skip System.Object, System.ValueType, and any fallback types (any, unknown)
-            // CRITICAL: Never emit "extends any" - TypeScript rejects it
             if (baseTypeName != "Object" &&
                 baseTypeName != "ValueType" &&
                 baseTypeName != "any" &&
                 baseTypeName != "unknown")
             {
-                sb.Append(" extends ");
-                sb.Append(baseTypeName);
+                extendsList.Add(baseTypeName);
             }
         }
         else if (shouldFlatten)
@@ -125,7 +305,7 @@ public static class ClassPrinter
             ctx.Log("StaticFlattening", $"  Suppressing extends for static-only type: {type.ClrFullName}");
         }
 
-        // Interfaces: implements IFoo, IBar
+        // Interfaces: extends IFoo$instance, IBar$instance
         // TS2304 FIX: Filter out non-public interfaces (not in graph)
         // PR C: Filter out unsatisfiable interfaces (honest emission)
         var publicInterfaces = type.Interfaces
@@ -133,74 +313,25 @@ public static class ClassPrinter
             .Where(i => !IsUnsatisfiableInterface(type, i, honestEmission))
             .ToArray();
 
-        if (publicInterfaces.Length > 0)
+        foreach (var iface in publicInterfaces)
         {
-            sb.Append(" implements ");
-            var interfaceNames = publicInterfaces.Select(i =>
-            {
-                // Pass forValuePosition=true to use qualified names for reflection types
-                var name = TypeRefPrinter.Print(i, resolver, ctx, allowedTypeParameterNames: null, forValuePosition: true);
-                // TS2693 FIX (Same-Namespace): For same-namespace types with views, use instance class name
-                return ApplyInstanceSuffixForSameNamespaceViews(name, i, type.Namespace, graph, ctx);
-            });
-            sb.Append(string.Join(", ", interfaceNames));
+            var ifaceName = TypeRefPrinter.Print(iface, resolver, ctx, allowedTypeParameterNames: null, forValuePosition: false);
+            ifaceName = ApplyInstanceSuffixForSameNamespaceViews(ifaceName, iface, type.Namespace, graph, ctx);
+            extendsList.Add(ifaceName);
+        }
+
+        // Emit extends clause if there are any base types/interfaces
+        if (extendsList.Count > 0)
+        {
+            sb.Append(" extends ");
+            sb.Append(string.Join(", ", extendsList));
         }
 
         sb.AppendLine(" {");
 
-        // Emit members
-        EmitMembers(sb, type, resolver, ctx, graph, bindingsProvider, staticConflicts, overrideConflicts, propertyOverrides);
-
-        // D1 FIX: Emit inherited static members for flattened types
-        if (shouldFlatten && staticFlattening != null)
-        {
-            var inheritedMembers = staticFlattening.GetInheritedMembers(type.StableId.ToString());
-            if (inheritedMembers.Count > 0)
-            {
-                ctx.Log("StaticFlattening", $"  Emitting {inheritedMembers.Count} inherited static members for {type.ClrFullName}");
-
-                // Filter out members that already exist in the derived class (by CLR name)
-                var existingFieldNames = new HashSet<string>(type.Members.Fields.Where(f => f.IsStatic).Select(f => f.ClrName));
-                var existingPropertyNames = new HashSet<string>(type.Members.Properties.Where(p => p.IsStatic).Select(p => p.ClrName));
-                var existingMethodNames = new HashSet<string>(type.Members.Methods.Where(m => m.IsStatic).Select(m => m.ClrName));
-
-                var fieldsToEmit = inheritedMembers.Fields.Where(f => !existingFieldNames.Contains(f.ClrName)).ToList();
-                var propertiesToEmit = inheritedMembers.Properties.Where(p => !existingPropertyNames.Contains(p.ClrName)).ToList();
-                var methodsToEmit = inheritedMembers.Methods.Where(m => !existingMethodNames.Contains(m.ClrName)).ToList();
-
-                var totalToEmit = fieldsToEmit.Count + propertiesToEmit.Count + methodsToEmit.Count;
-
-                if (totalToEmit > 0)
-                {
-                    sb.AppendLine();
-                    sb.AppendLine("    // Inherited static members from base classes (hierarchy flattened)");
-
-                    // Emit inherited fields
-                    foreach (var field in fieldsToEmit)
-                    {
-                        EmitInheritedStaticField(sb, field, type, resolver, ctx);
-                    }
-
-                    // Emit inherited properties
-                    foreach (var property in propertiesToEmit)
-                    {
-                        EmitInheritedStaticProperty(sb, property, type, resolver, ctx);
-                    }
-
-                    // Emit inherited methods
-                    foreach (var method in methodsToEmit)
-                    {
-                        EmitInheritedStaticMethod(sb, method, type, resolver, ctx);
-                    }
-
-                    ctx.Log("StaticFlattening", $"  Actually emitted {totalToEmit} inherited members (filtered {inheritedMembers.Count - totalToEmit} duplicates)");
-                }
-                else
-                {
-                    ctx.Log("StaticFlattening", $"  All {inheritedMembers.Count} inherited members already exist in derived class - skipped");
-                }
-            }
-        }
+        // STATIC-SIDE FIX: Emit only INSTANCE members for the interface
+        // Static members and constructors will be emitted separately in PrintValueExport
+        EmitInstanceMembersOnly(sb, type, resolver, ctx, graph, bindingsProvider, overrideConflicts, propertyOverrides);
 
         sb.AppendLine("}");
 
@@ -209,14 +340,15 @@ public static class ClassPrinter
 
     private static string PrintStruct(TypeSymbol type, TypeNameResolver resolver, BuildContext ctx, Model.SymbolGraph graph, bool instanceSuffix = false, BindingsProvider? bindingsProvider = null, Shape.StaticFlatteningPlan? staticFlattening = null, Shape.StaticConflictPlan? staticConflicts = null, Shape.OverrideConflictPlan? overrideConflicts = null, Plan.PropertyOverridePlan? propertyOverrides = null, Plan.HonestEmissionPlan? honestEmission = null)
     {
-        // Structs emit as classes in TypeScript (with metadata noting value semantics)
+        // STATIC-SIDE FIX: Structs emit as interfaces (like classes) to avoid static-side inheritance issues
+        // Constructors and static members go in the const declaration (PrintValueExport)
         var sb = new StringBuilder();
 
         // STEP 1: Always use instance type name for structs
-        // instanceSuffix parameter kept for compatibility but ignored - we always use $instance now
         var finalName = ctx.Renamer.GetInstanceTypeName(type);
 
-        sb.Append("class ");
+        // STATIC-SIDE FIX: Emit interface instead of class
+        sb.Append("interface ");
         sb.Append(finalName);
 
         // Generic parameters
@@ -227,7 +359,7 @@ public static class ClassPrinter
             sb.Append('>');
         }
 
-        // Interfaces
+        // Interfaces - STATIC-SIDE FIX: Use "extends" (interfaces use extends, not implements)
         // TS2304 FIX: Filter out non-public interfaces (not in graph)
         // PR C: Filter out unsatisfiable interfaces (honest emission)
         var publicInterfaces = type.Interfaces
@@ -237,14 +369,15 @@ public static class ClassPrinter
 
         if (publicInterfaces.Length > 0)
         {
-            sb.Append(" implements ");
+            sb.Append(" extends ");
             sb.Append(string.Join(", ", publicInterfaces.Select(i => TypeRefPrinter.Print(i, resolver, ctx))));
         }
 
         sb.AppendLine(" {");
 
-        // Emit members
-        EmitMembers(sb, type, resolver, ctx, graph, bindingsProvider, staticConflicts, overrideConflicts, propertyOverrides);
+        // STATIC-SIDE FIX: Emit only instance members (no constructors, no statics)
+        // Constructors and static members go in PrintValueExport
+        EmitInstanceMembersOnly(sb, type, resolver, ctx, graph, bindingsProvider, overrideConflicts, propertyOverrides: null);
 
         sb.AppendLine("}");
 
@@ -656,6 +789,215 @@ public static class ClassPrinter
 
         // Static members
         EmitStaticMembers(sb, type, resolver, ctx, staticConflicts);
+    }
+
+    /// <summary>
+    /// STATIC-SIDE FIX: Emit only INSTANCE members (no constructors, no static members).
+    /// Used when emitting interface for instance side of class.
+    /// </summary>
+    private static void EmitInstanceMembersOnly(StringBuilder sb, TypeSymbol type, TypeNameResolver resolver, BuildContext ctx, Model.SymbolGraph graph, BindingsProvider? bindingsProvider = null, Shape.OverrideConflictPlan? overrideConflicts = null, Plan.PropertyOverridePlan? propertyOverrides = null)
+    {
+        var members = type.Members;
+
+        // Create type scope for member name resolution
+        var typeScope = ScopeFactory.ClassInstance(type); // Instance members
+
+        // D3: Helper to check if an instance member should be suppressed due to override conflict
+        var typeStableId = type.StableId.ToString();
+        bool ShouldSuppressMember(string memberStableId)
+        {
+            if (overrideConflicts == null)
+                return false;
+
+            var shouldSuppress = overrideConflicts.ShouldSuppress(typeStableId, memberStableId);
+            if (shouldSuppress)
+            {
+                var reason = overrideConflicts.GetSuppressionReason(typeStableId, memberStableId);
+                ctx.Log("OverrideConflict", $"  Suppressing: {type.ClrFullName} member (StableId: {memberStableId}) - {reason}");
+            }
+            return shouldSuppress;
+        }
+
+        // NO CONSTRUCTORS - they go in the value export (const declaration)
+
+        // Fields - only emit ClassSurface members, no static fields
+        foreach (var field in members.Fields.Where(f => !f.IsStatic && f.EmitScope == EmitScope.ClassSurface))
+        {
+            // Get final name from Renamer (applies camelCase transform if configured)
+            var emitName = ctx.Renamer.GetFinalMemberName(field.StableId, typeScope);
+
+            sb.Append("    ");
+            if (field.IsReadOnly)
+                sb.Append("readonly ");
+            sb.Append(emitName);
+            sb.Append(": ");
+            sb.Append(TypeRefPrinter.Print(field.FieldType, resolver, ctx));
+            sb.AppendLine(";");
+        }
+
+        // Properties - V2: Use ExposedProperties from bindings if available (own + inherited)
+        var exposedProperties = bindingsProvider?.GetExposedProperties(type);
+        if (exposedProperties != null)
+        {
+            // V2 path: Use ExposedProperties (complete property sets including inherited)
+            var propertyGroups = exposedProperties
+                .GroupBy(e => e.Property.ClrName)
+                .OrderBy(g => g.Key);
+
+            foreach (var group in propertyGroups)
+            {
+                var exposures = group.ToList();
+
+                // Only emit properties where we have an OWN (non-inherited) exposure
+                var ownProperty = exposures.FirstOrDefault(e => !e.IsInherited);
+                if (ownProperty == null)
+                    continue;
+
+                var tsName = ownProperty.TsName;
+
+                // D3: Skip if this instance property conflicts with base class
+                if (ShouldSuppressMember(ownProperty.Property.StableId.ToString()))
+                    continue;
+
+                // FIX D EXTENSION: Substitute generic parameters for properties from interfaces
+                var propToEmit = SubstituteMemberIfNeeded(type, ownProperty.Property, ctx, graph);
+
+                sb.Append("    ");
+                if (!propToEmit.HasSetter)
+                    sb.Append("readonly ");
+                sb.Append(tsName);
+                sb.Append(": ");
+
+                // E: Check for property override unification
+                var key = (type.StableId.ToString(), ownProperty.Property.StableId.ToString());
+                if (propertyOverrides?.PropertyTypeOverrides.TryGetValue(key, out var overrideType) == true)
+                {
+                    sb.Append(overrideType);
+                }
+                else
+                {
+                    sb.Append(TypeRefPrinter.Print(propToEmit.PropertyType, resolver, ctx));
+                }
+
+                sb.AppendLine(";");
+            }
+        }
+        else
+        {
+            // Fallback: Old path for types without bindings
+            foreach (var prop in members.Properties.Where(p => !p.IsStatic && p.EmitScope == EmitScope.ClassSurface))
+            {
+                // D3: Skip if this instance property conflicts with base class
+                if (ShouldSuppressMember(prop.StableId.ToString()))
+                    continue;
+
+                var emitName = ctx.Renamer.GetFinalMemberName(prop.StableId, typeScope);
+                var propToEmit = SubstituteMemberIfNeeded(type, prop, ctx, graph);
+
+                sb.Append("    ");
+                if (!propToEmit.HasSetter)
+                    sb.Append("readonly ");
+                sb.Append(emitName);
+                sb.Append(": ");
+
+                // E: Check for property override unification
+                var key = (type.StableId.ToString(), prop.StableId.ToString());
+                if (propertyOverrides?.PropertyTypeOverrides.TryGetValue(key, out var overrideType) == true)
+                {
+                    sb.Append(overrideType);
+                }
+                else
+                {
+                    sb.Append(TypeRefPrinter.Print(propToEmit.PropertyType, resolver, ctx));
+                }
+
+                sb.AppendLine(";");
+            }
+        }
+
+        // Methods - only emit ClassSurface members, no static methods
+        var shouldSkipAbstract = !type.IsAbstract;
+
+        // V2: Use ExposedMethods from bindings if available (own + inherited)
+        var exposedMethods = bindingsProvider?.GetExposedMethods(type);
+        if (exposedMethods != null)
+        {
+            var methodGroups = exposedMethods
+                .GroupBy(e => e.Method.ClrName)
+                .OrderBy(g => g.Key);
+
+            foreach (var group in methodGroups)
+            {
+                var exposures = group.ToList();
+
+                var ownMethods = exposures.Where(e => !e.IsInherited).ToList();
+                if (!ownMethods.Any())
+                    continue;
+
+                string tsName;
+                var preferredName = ownMethods.FirstOrDefault(m => !NameUtilities.HasNumericSuffix(m.TsName));
+                if (preferredName != null)
+                    tsName = preferredName.TsName;
+                else
+                    tsName = ownMethods.First().TsName;
+
+                // STATIC-SIDE FIX: Interfaces don't have abstract keyword - all methods are implicitly abstract
+                // Since we're now emitting classes as interfaces, we never emit abstract
+
+                foreach (var exposure in ownMethods)
+                {
+                    // D3: Skip if this instance method conflicts with base class
+                    if (ShouldSuppressMember(exposure.Method.StableId.ToString()))
+                        continue;
+
+                    if (shouldSkipAbstract && exposure.Method.IsAbstract)
+                        continue;
+
+                    sb.Append("    ");
+
+                    var methodToEmit = SubstituteMemberIfNeeded(type, exposure.Method, ctx, graph);
+                    // Never emit abstract - we're emitting as interface now
+                    sb.Append(MethodPrinter.PrintWithName(methodToEmit, type, tsName, resolver, ctx, emitAbstract: false));
+                    sb.AppendLine(";");
+                }
+            }
+        }
+        else
+        {
+            // V1 fallback path: Use only type's own methods
+            var instanceMethods = members.Methods
+                .Where(m => !m.IsStatic && m.EmitScope == EmitScope.ClassSurface)
+                .ToList();
+
+            var methodGroups = GroupMethodsByClrName(instanceMethods, isStatic: false);
+
+            foreach (var (clrName, overloads) in methodGroups.OrderBy(kvp => kvp.Key))
+            {
+                var firstMethod = overloads.First();
+                var emitName = ctx.Renamer.GetFinalMemberName(firstMethod.StableId, typeScope);
+
+                // STATIC-SIDE FIX: Interfaces don't have abstract keyword - all methods are implicitly abstract
+                // Since we're now emitting classes as interfaces, we never emit abstract
+
+                foreach (var method in overloads)
+                {
+                    if (ShouldSuppressMember(method.StableId.ToString()))
+                        continue;
+
+                    if (shouldSkipAbstract && method.IsAbstract)
+                        continue;
+
+                    sb.Append("    ");
+
+                    var methodToEmit = SubstituteMemberIfNeeded(type, method, ctx, graph);
+                    // Never emit abstract - we're emitting as interface now
+                    sb.Append(MethodPrinter.PrintWithName(methodToEmit, type, emitName, resolver, ctx, emitAbstract: false));
+                    sb.AppendLine(";");
+                }
+            }
+        }
+
+        // NO STATIC MEMBERS - they go in the value export (const declaration)
     }
 
     private static void EmitStaticMembers(StringBuilder sb, TypeSymbol type, TypeNameResolver resolver, BuildContext ctx, Shape.StaticConflictPlan? staticConflicts = null)
