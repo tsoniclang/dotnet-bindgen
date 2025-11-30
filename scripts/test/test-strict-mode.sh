@@ -1,31 +1,40 @@
 #!/bin/bash
-# Regression test for strict mode - ensures zero errors, zero warnings, disciplined INFO codes, and surface stability
+# Regression test for strict mode - ensures zero errors, zero warnings,
+# disciplined INFO codes, and surface stability
 
-set -e  # Exit on error
+source "$(dirname "${BASH_SOURCE[0]}")/_common.sh"
 
 echo "================================================"
 echo "Strict Mode Regression Test"
 echo "================================================"
 echo ""
 
+# Initialize runtime
+init_runtime
+
+# Use strict test output directory
+STRICT_DIR="$TESTS_DIR/strict-test"
+
 # Run strict mode validation
 echo "[1/4] Running strict mode validation..."
-output=$(dotnet run --project src/tsbindgen/tsbindgen.csproj -- \
-    generate -d ~/dotnet/shared/Microsoft.NETCore.App/10.0.0-rc.1.25451.107 \
-    -o .tests/strict-test --strict --logs PhaseGate 2>&1)
+rm -rf "$STRICT_DIR"
+mkdir -p "$STRICT_DIR"
 
-# Check exit code
+output=$(dotnet run --project "$PROJECT_ROOT/src/tsbindgen/tsbindgen.csproj" -- \
+    generate -d "$DOTNET_RUNTIME" \
+    -o "$STRICT_DIR" --strict --logs PhaseGate 2>&1)
+
 exit_code=$?
 
 if [ $exit_code -ne 0 ]; then
-    echo "❌ FAILED: Strict mode validation failed"
+    echo -e "${RED}❌ FAILED: Strict mode validation failed${NC}"
     echo ""
     echo "Output:"
     echo "$output"
     exit 1
 fi
 
-echo "✓ Strict mode validation passed"
+echo -e "${GREEN}✓ Strict mode validation passed${NC}"
 echo ""
 
 # Check validation output
@@ -43,19 +52,19 @@ echo ""
 
 # Verify error count is zero
 if [ "$errors" != "0" ]; then
-    echo "❌ FAILED: Expected 0 errors, got $errors"
+    echo -e "${RED}❌ FAILED: Expected 0 errors, got $errors${NC}"
     exit 1
 fi
 
-echo "✓ Zero errors verified"
+echo -e "${GREEN}✓ Zero errors verified${NC}"
 
 # Verify warning count is zero (strict mode zero tolerance)
 if [ "$warnings" != "0" ]; then
-    echo "❌ FAILED: Expected 0 warnings (strict mode zero tolerance), got $warnings"
+    echo -e "${RED}❌ FAILED: Expected 0 warnings (strict mode zero tolerance), got $warnings${NC}"
     exit 1
 fi
 
-echo "✓ Zero warnings verified (strict mode zero tolerance)"
+echo -e "${GREEN}✓ Zero warnings verified (strict mode zero tolerance)${NC}"
 echo ""
 
 # Check INFO code discipline
@@ -81,7 +90,7 @@ echo ""
 
 # Compare expected vs actual
 if [ "$actual_codes" != "$expected_codes" ]; then
-    echo "❌ FAILED: INFO diagnostic codes don't match expected set"
+    echo -e "${RED}❌ FAILED: INFO diagnostic codes don't match expected set${NC}"
     echo ""
     echo "This indicates either:"
     echo "  - A new INFO code was introduced (requires review)"
@@ -95,22 +104,21 @@ if [ "$actual_codes" != "$expected_codes" ]; then
     exit 1
 fi
 
-echo "✓ INFO diagnostic codes match expected set"
+echo -e "${GREEN}✓ INFO diagnostic codes match expected set${NC}"
 echo ""
 
-# Verify surface manifest
+# Verify surface manifest using the output we just generated
 echo "[4/4] Verifying API surface stability..."
 
-# Run surface manifest verification
-bash scripts/test-surface-manifest.sh > /dev/null 2>&1
-
-if [ $? -eq 0 ]; then
-    echo "✓ Surface matches baseline (no drift detected)"
+# Set environment variable for surface-manifest test to use our output
+export SURFACE_VERIFY_DIR="$STRICT_DIR"
+if bash "$SCRIPT_DIR/test-surface-manifest.sh" > /dev/null 2>&1; then
+    echo -e "${GREEN}✓ Surface matches baseline (no drift detected)${NC}"
 else
-    echo "❌ FAILED: Surface manifest verification failed"
+    echo -e "${RED}❌ FAILED: Surface manifest verification failed${NC}"
     echo ""
     echo "The emitted TypeScript API surface has changed."
-    echo "Run: bash scripts/test-surface-manifest.sh"
+    echo "Run: bash scripts/test/test-surface-manifest.sh"
     echo ""
     echo "For details and remediation steps."
     exit 1
@@ -119,7 +127,7 @@ fi
 echo ""
 
 echo "================================================"
-echo "✓ ALL TESTS PASSED"
+echo -e "${GREEN}✓ ALL TESTS PASSED${NC}"
 echo "================================================"
 echo ""
 echo "Summary:"

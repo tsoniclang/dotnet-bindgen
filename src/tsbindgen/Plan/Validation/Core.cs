@@ -1,11 +1,13 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using tsbindgen.Core;
 using tsbindgen.Core.Diagnostics;
 using tsbindgen.Model;
 using tsbindgen.Model.Symbols;
 using tsbindgen.Model.Symbols.MemberSymbols;
 using tsbindgen.Model.Types;
+using tsbindgen.Renaming;
 
 namespace tsbindgen.Plan.Validation;
 
@@ -102,7 +104,9 @@ internal static class Core
         {
             foreach (var type in ns.Types)
             {
-                var memberNames = new HashSet<string>();
+                // Separate tracking for static vs instance to match TypeScript scoping
+                var staticSignatures = new HashSet<string>();
+                var instanceSignatures = new HashSet<string>();
 
                 // Validate methods
                 foreach (var method in type.Members.Methods)
@@ -115,16 +119,28 @@ internal static class Core
                             $"Method {method.ClrName} in {type.ClrFullName} has no TsEmitName");
                     }
 
-                    // Check for collisions within same scope
+                    // Check for collisions within same scope using FULL canonical TypeScript signature
+                    // This includes: finalName, genericArity, canonicalParamTypes, canonicalReturnType
                     if (method.EmitScope == EmitScope.ClassSurface)
                     {
-                        var signature = $"{method.TsEmitName}_{method.Parameters.Length}";
-                        if (!memberNames.Add(signature))
+                        // Get final name from Renamer (includes any disambiguation suffix)
+                        var methodScope = ScopeFactory.ClassSurface(type, method.IsStatic);
+                        var finalName = ctx.Renamer.GetFinalMemberName(method.StableId, methodScope);
+
+                        // Use TypeSignatureCanon for canonical TypeScript-level signature
+                        var canonicalParams = TypeSignatureCanon.ComputeMethodSignature(method.Arity, method.Parameters.Select(p => p.Type));
+                        var canonicalReturn = TypeSignatureCanon.CanonicalizeType(method.ReturnType);
+                        var fullSignature = $"{finalName}{canonicalParams}:{canonicalReturn}";
+
+                        var scopeSet = method.IsStatic ? staticSignatures : instanceSignatures;
+                        if (!scopeSet.Add(fullSignature))
                         {
+                            // TRUE duplicate - same name, same arity, same param types, same return type
+                            // This should not happen after Reservation.cs disambiguation
                             validationCtx.RecordDiagnostic(
                                 DiagnosticCodes.AmbiguousOverload,
-                                "WARNING",
-                                $"Potential method overload collision for {method.TsEmitName} in {type.ClrFullName}");
+                                "ERROR",
+                                $"Duplicate TypeScript signature in {type.ClrFullName}: {fullSignature}");
                         }
                     }
 
@@ -410,8 +426,11 @@ internal static class Core
                 if (baseClass == null)
                     continue; // External base class
 
-                // Check that base class is actually a class
-                if (baseClass.Kind != TypeKind.Class)
+                // Check that base class is actually a class (or delegate for delegate inheritance)
+                // Delegates inherit from System.MulticastDelegate/System.Delegate, which are also delegates
+                var validInheritance = baseClass.Kind == TypeKind.Class ||
+                                       (type.Kind == TypeKind.Delegate && baseClass.Kind == TypeKind.Delegate);
+                if (!validInheritance)
                 {
                     validationCtx.RecordDiagnostic(
                         DiagnosticCodes.CircularInheritance,

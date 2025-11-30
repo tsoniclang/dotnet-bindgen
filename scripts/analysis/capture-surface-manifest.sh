@@ -1,28 +1,36 @@
 #!/bin/bash
 # Capture surface manifest - baseline snapshot of emitted TypeScript API surface
 
-set -euo pipefail
+source "$(dirname "${BASH_SOURCE[0]}")/../test/_common.sh"
 
 echo "================================================"
 echo "Surface Manifest Capture"
 echo "================================================"
 echo ""
 
+# Initialize runtime
+init_runtime
+
 # Configuration
-BCL_PATH="$HOME/dotnet/shared/Microsoft.NETCore.App/10.0.0-rc.1.25451.107"
-TEMP_OUTPUT=".tests/surface-capture"
-MANIFEST_FILE="scripts/harness/baselines/bcl-surface-manifest.json"
+TEMP_OUTPUT="$TESTS_DIR/surface-capture"
+MANIFEST_FILE="$PROJECT_ROOT/scripts/harness/baselines/bcl-surface-manifest.json"
 
 # Clean and prepare
 echo "[1/4] Preparing output directory..."
 rm -rf "$TEMP_OUTPUT"
 mkdir -p "$TEMP_OUTPUT"
 
-# Run generation
-echo "[2/4] Running strict generation..."
-output=$(dotnet run --project src/tsbindgen/tsbindgen.csproj -- \
-    generate -d "$BCL_PATH" \
-    -o "$TEMP_OUTPUT" --strict --logs PhaseGate 2>&1)
+# Run generation (without --strict to allow capture even with warnings)
+echo "[2/4] Running generation..."
+output=$(dotnet run --project "$PROJECT_ROOT/src/tsbindgen/tsbindgen.csproj" -- \
+    generate -d "$DOTNET_RUNTIME" \
+    -o "$TEMP_OUTPUT" --logs PhaseGate 2>&1)
+
+if [ $? -ne 0 ]; then
+    echo -e "${RED}❌ Generation failed${NC}"
+    echo "$output"
+    exit 1
+fi
 
 # Extract statistics
 namespaces=$(echo "$output" | grep "Namespaces:" | grep -o "[0-9]*" | head -1)
@@ -70,11 +78,14 @@ echo ""
 # Write manifest
 echo "[4/4] Writing manifest..."
 
-mkdir -p baselines
+mkdir -p "$(dirname "$MANIFEST_FILE")"
+
+# Get .NET version from runtime path
+dotnet_version=$(basename "$DOTNET_RUNTIME")
 
 cat > "$MANIFEST_FILE" <<EOF
 {
-  "dotnetVersion": "10.0.0-rc.1.25451.107",
+  "dotnetVersion": "$dotnet_version",
   "capturedAt": "$(date -u +"%Y-%m-%dT%H:%M:%SZ")",
   "generation": {
     "namespaces": $namespaces,

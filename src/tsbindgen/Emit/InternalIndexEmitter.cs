@@ -187,7 +187,7 @@ public static class InternalIndexEmitter
         {
             // Check if type has explicit views (attached by ViewPlanner)
             var views = typeOrder.Type.ExplicitViews;
-            var hasViews = views.Length > 0 && (typeOrder.Type.Kind == Model.Symbols.TypeKind.Class || typeOrder.Type.Kind == Model.Symbols.TypeKind.Struct);
+            var hasViews = views.Length > 0 && (typeOrder.Type.Kind == Model.Symbols.TypeKind.Class || typeOrder.Type.Kind == Model.Symbols.TypeKind.Struct || typeOrder.Type.Kind == Model.Symbols.TypeKind.Delegate);
 
             if (hasViews)
             {
@@ -947,7 +947,20 @@ public static class InternalIndexEmitter
 
         // Build RHS: both $instance and $views need type arguments
         var typeArgs = AliasEmit.GenerateTypeArguments(type);
-        var rhsExpression = $"{finalName}$instance{typeArgs} & __{finalName}$views{typeArgs}";
+
+        // DELEGATE CALL SIGNATURE: For delegates, prepend call signature to make arrow functions assignable
+        // export type Func_2<T, TResult> = ((arg: T) => TResult) & Func_2$instance<T, TResult> & __Func_2$views<T, TResult>
+        var callSignature = "";
+        if (type.Kind == TypeKind.Delegate)
+        {
+            callSignature = BuildDelegateCallSignature(type, resolver, ctx);
+            if (!string.IsNullOrEmpty(callSignature))
+            {
+                callSignature = callSignature + " & ";
+            }
+        }
+
+        var rhsExpression = $"{callSignature}{finalName}$instance{typeArgs} & __{finalName}$views{typeArgs}";
 
         // Emit the alias with constraints on LHS
         // Note: We pass the complete RHS (including type args), so we use the manual emission
@@ -968,6 +981,37 @@ public static class InternalIndexEmitter
     {
         var lines = text.Split('\n').Select(line => string.IsNullOrWhiteSpace(line) ? line : indentation + line);
         return string.Join("\n", lines);
+    }
+
+    /// <summary>
+    /// Build a TypeScript call signature for a delegate type based on its Invoke method.
+    /// Example: Func_2&lt;T, TResult&gt; becomes "((arg: T) => TResult)"
+    /// This allows arrow functions to be assignable to delegate types.
+    /// </summary>
+    private static string BuildDelegateCallSignature(TypeSymbol type, TypeNameResolver resolver, BuildContext ctx)
+    {
+        // Find the Invoke method - this defines the delegate's signature
+        var invokeMethod = type.Members.Methods.FirstOrDefault(m => m.ClrName == "Invoke");
+        if (invokeMethod == null)
+        {
+            return ""; // Fallback: no call signature if Invoke not found
+        }
+
+        // Build allowed type parameter names set for TypeRefPrinter
+        var allowedTypeParams = new HashSet<string>(type.GenericParameters.Select(gp => gp.Name));
+
+        // Build parameter list: (arg1: T, arg2: U, ...)
+        var parameters = string.Join(", ", invokeMethod.Parameters.Select(p =>
+        {
+            var paramType = TypeRefPrinter.Print(p.Type, resolver, ctx, allowedTypeParams);
+            return $"{p.Name}: {paramType}";
+        }));
+
+        // Build return type
+        var returnType = TypeRefPrinter.Print(invokeMethod.ReturnType, resolver, ctx, allowedTypeParams);
+
+        // Return call signature: ((params) => returnType)
+        return $"(({parameters}) => {returnType})";
     }
 
     /// <summary>
