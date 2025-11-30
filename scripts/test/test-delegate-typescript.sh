@@ -97,15 +97,12 @@ const sum: int = add(1 as int, 2 as int);
 
 // ============================================================
 // TEST 5: Boolean return type (native boolean → CLR Boolean)
-// Arrow functions naturally return native 'boolean', but Func_2<T, CLRBoolean>
-// expects CLR Boolean. The Boolean union fix makes this work.
+// PRIMITIVE ALIAS FIX: CLR Boolean is now a simple alias to boolean
+// Arrow functions naturally return native 'boolean' which is assignable to Boolean.
 // ============================================================
-// Simulated CLR Boolean type (union with native boolean)
-// Named CLRBoolean to avoid conflict with global Boolean
+// CLR Boolean is now just boolean (no wrapper type)
 namespace CLR {
-  interface Boolean$instance { readonly __clr: "Boolean"; }
-  interface __Boolean$views { As_IComparable(): unknown; }
-  export type Boolean = boolean | (Boolean$instance & __Boolean$views);
+  export type Boolean = boolean;
 }
 
 // This MUST compile - arrow returns native boolean, Func expects CLR Boolean

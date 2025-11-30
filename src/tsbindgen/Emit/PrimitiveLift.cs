@@ -66,4 +66,12 @@ internal static class PrimitiveLift
     /// </summary>
     internal static string? GetClrSimpleName(string tsName) =>
         Rules.FirstOrDefault(r => r.TsName == tsName).ClrSimpleName;
+
+    /// <summary>
+    /// Get the TypeScript primitive name for a given CLR full name.
+    /// Returns null if not a liftable primitive.
+    /// Used by InternalIndexEmitter to emit primitive type aliases.
+    /// </summary>
+    internal static string? GetTsPrimitiveName(string clrFullName) =>
+        Rules.FirstOrDefault(r => r.ClrFullName == clrFullName).TsName;
 }

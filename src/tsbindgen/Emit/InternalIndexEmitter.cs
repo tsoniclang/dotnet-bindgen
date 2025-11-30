@@ -185,6 +185,19 @@ public static class InternalIndexEmitter
         // Emit types in order (PUBLIC ONLY - internal types should not appear in .d.ts)
         foreach (var typeOrder in nsOrder.OrderedTypes.Where(to => ShouldEmit(to.Type)))
         {
+            // PRIMITIVE ALIAS FIX: CLR primitive types must be simple aliases to branded TS primitives
+            // This enables LINQ assignability: List<int> is assignable to IEnumerable<Int32> when Int32 = int
+            // Example: export type Int32 = int; (not Int32$instance & __Int32$views)
+            var tsPrimitiveName = PrimitiveLift.GetTsPrimitiveName(typeOrder.Type.ClrFullName);
+            if (tsPrimitiveName != null)
+            {
+                var primitiveAlias = $"export type {typeOrder.Type.TsEmitName} = {tsPrimitiveName};";
+                sb.Append(indent);
+                sb.AppendLine(primitiveAlias);
+                sb.AppendLine();
+                continue; // Skip normal emission for primitives
+            }
+
             // Check if type has explicit views (attached by ViewPlanner)
             var views = typeOrder.Type.ExplicitViews;
             var hasViews = views.Length > 0 && (typeOrder.Type.Kind == Model.Symbols.TypeKind.Class || typeOrder.Type.Kind == Model.Symbols.TypeKind.Struct || typeOrder.Type.Kind == Model.Symbols.TypeKind.Delegate);
