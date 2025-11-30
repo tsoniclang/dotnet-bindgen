@@ -410,8 +410,11 @@ internal static class Core
                 if (baseClass == null)
                     continue; // External base class
 
-                // Check that base class is actually a class
-                if (baseClass.Kind != TypeKind.Class)
+                // Check that base class is actually a class (or delegate for delegate inheritance)
+                // Delegates inherit from System.MulticastDelegate/System.Delegate, which are also delegates
+                var validInheritance = baseClass.Kind == TypeKind.Class ||
+                                       (type.Kind == TypeKind.Delegate && baseClass.Kind == TypeKind.Delegate);
+                if (!validInheritance)
                 {
                     validationCtx.RecordDiagnostic(
                         DiagnosticCodes.CircularInheritance,

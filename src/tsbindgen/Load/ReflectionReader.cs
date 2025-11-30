@@ -180,12 +180,31 @@ public sealed class ReflectionReader
     {
         if (type.IsEnum) return TypeKind.Enum;
         if (type.IsInterface) return TypeKind.Interface;
-        if (type.IsSubclassOf(typeof(Delegate)) || type.IsSubclassOf(typeof(MulticastDelegate)))
+        // CRITICAL: Use name-based comparison for delegates because typeof() doesn't work
+        // with MetadataLoadContext types (they're from different assembly contexts)
+        if (IsDelegate(type))
             return TypeKind.Delegate;
         if (type.IsAbstract && type.IsSealed && !type.IsValueType)
             return TypeKind.StaticNamespace;
         if (type.IsValueType) return TypeKind.Struct;
         return TypeKind.Class;
+    }
+
+    /// <summary>
+    /// Check if a type is a delegate using name-based comparison.
+    /// CRITICAL: typeof(Delegate) comparison fails with MetadataLoadContext types.
+    /// </summary>
+    private static bool IsDelegate(Type type)
+    {
+        // Walk the inheritance chain looking for Delegate or MulticastDelegate
+        var baseType = type.BaseType;
+        while (baseType != null)
+        {
+            if (baseType.FullName == "System.Delegate" || baseType.FullName == "System.MulticastDelegate")
+                return true;
+            baseType = baseType.BaseType;
+        }
+        return false;
     }
 
     private TypeMembers ReadMembers(Type type)
