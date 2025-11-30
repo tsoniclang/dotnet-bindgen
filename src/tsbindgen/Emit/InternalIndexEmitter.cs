@@ -979,7 +979,18 @@ public static class InternalIndexEmitter
             }
         }
 
-        var rhsExpression = $"{callSignature}{finalName}$instance{typeArgs} & __{finalName}$views{typeArgs}";
+        // BOOLEAN UNION FIX: System.Boolean must accept native TS boolean for predicate ergonomics
+        // Arrow functions like (x => x % 2 === 0) return native boolean, but Func_2<T, Boolean> expects CLR Boolean.
+        // Making Boolean a union allows both to work: export type Boolean = boolean | (Boolean$instance & __Boolean$views);
+        var nativePrimitivePrefix = "";
+        if (type.ClrFullName == "System.Boolean")
+        {
+            nativePrimitivePrefix = "boolean | (";
+        }
+
+        var nativePrimitiveSuffix = nativePrimitivePrefix.Length > 0 ? ")" : "";
+
+        var rhsExpression = $"{nativePrimitivePrefix}{callSignature}{finalName}$instance{typeArgs} & __{finalName}$views{typeArgs}{nativePrimitiveSuffix}";
 
         // Emit the alias with constraints on LHS
         // Note: We pass the complete RHS (including type args), so we use the manual emission

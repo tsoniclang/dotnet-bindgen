@@ -95,6 +95,27 @@ directAction("hello");
 const add: Func<int, int, int> = (a: int, b: int) => ((a as number) + (b as number)) as int;
 const sum: int = add(1 as int, 2 as int);
 
+// ============================================================
+// TEST 5: Boolean return type (native boolean → CLR Boolean)
+// Arrow functions naturally return native 'boolean', but Func_2<T, CLRBoolean>
+// expects CLR Boolean. The Boolean union fix makes this work.
+// ============================================================
+// Simulated CLR Boolean type (union with native boolean)
+// Named CLRBoolean to avoid conflict with global Boolean
+namespace CLR {
+  interface Boolean$instance { readonly __clr: "Boolean"; }
+  interface __Boolean$views { As_IComparable(): unknown; }
+  export type Boolean = boolean | (Boolean$instance & __Boolean$views);
+}
+
+// This MUST compile - arrow returns native boolean, Func expects CLR Boolean
+declare function takesBoolPred(p: Internal.Func_2<number, CLR.Boolean>): void;
+takesBoolPred(x => x % 2 === 0);
+
+// Also test with facade pattern
+declare function takesFacadeBoolPred(p: Func<number, CLR.Boolean>): void;
+takesFacadeBoolPred(x => x > 0);
+
 console.log("All TypeScript compile tests passed!");
 EOF
 
@@ -124,6 +145,7 @@ if run_tsc --noEmit 2>&1; then
     echo "  - Facade call: f(5 as int)"
     echo "  - Action assign + call"
     echo "  - Direct internal type usage"
+    echo "  - Boolean return type: takesBoolPred(x => x % 2 === 0)"
     exit 0
 else
     echo -e "${RED}TypeScript compile tests FAILED!${NC}"

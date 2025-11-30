@@ -1,10 +1,10 @@
 {
   "dotnetVersion": ".NET 10.0",
-  "capturedAt": "2025-11-30T17:26:36Z",
+  "capturedAt": "2025-11-30T19:03:45Z",
   "generation": {
     "namespaces": 131,
-    "types": 4295,
-    "members": 50720
+    "types": 4296,
+    "members": 50675
   },
   "files": {
     "__internal/extensions/index.d.ts": "sha256:e17531acb0390a9fd3dee64f5d90d3cbd00079f13d3dc0bbed856db89ee1fb0a",
@@ -85,7 +85,7 @@
     "System.Globalization/index.d.ts": "sha256:f07931a8d70509a67a2a1202ef178221534bb8a1840c6cc2c7781b7da28dba59",
     "System.Globalization/internal/index.d.ts": "sha256:a9db58cf2aee2ea20cb6ad8020b2084b470746193a1c4176090cb92a8230e936",
     "System/index.d.ts": "sha256:9f6665a7af36887d5431affc49495cd9530717cf33dd5fea6133d48b96de33dd",
-    "System/internal/index.d.ts": "sha256:e0c6f375aed4fb87f331ab2b979e99eaf36666a424b7e2d622b44995351c4035",
+    "System/internal/index.d.ts": "sha256:020ee7b3d60e2e3ee290bde823a9f81ff55e1cbd4a804b505ffa1eae88ce91d3",
     "System.IO.Compression/index.d.ts": "sha256:e41ea525ccbd7ff1c6b60672fbd05f52c00fbe3b3ecd91b3da88a18425839e48",
     "System.IO.Compression/internal/index.d.ts": "sha256:c2032247c9a553c91f7b0ebd2bc8160d78799f126de7af505f61b0e419dbd35e",
     "System.IO.Enumeration/index.d.ts": "sha256:86bb4f1fe3ac3ad1e715a10e0870879522d327246148f1f65ba8a9f9a91e4b76",
