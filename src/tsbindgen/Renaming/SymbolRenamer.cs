@@ -148,6 +148,41 @@ public sealed class SymbolRenamer
     }
 
     /// <summary>
+    /// Record a decision for an overload method that should use the same final name as
+    /// another method in its overload family. Does NOT allocate a new name - uses the
+    /// provided finalName directly.
+    /// Used for TypeScript function overloading where all overloads share the same name.
+    /// </summary>
+    public void RecordOverloadDecision(
+        StableId stableId,
+        string requested,
+        string finalName,
+        RenameScope scope,
+        string reason,
+        bool isStatic,
+        string decisionSource = "Unknown")
+    {
+        // Create a sub-scope for static vs instance
+        var effectiveScope = scope is TypeScope ts
+            ? ts with { IsStatic = isStatic, ScopeKey = $"{ts.ScopeKey}#{(isStatic ? "static" : "instance")}" }
+            : scope;
+
+        // Record decision with the pre-determined final name (no table allocation)
+        RecordDecision(new RenameDecision
+        {
+            Id = stableId,
+            Requested = requested,
+            Final = finalName,
+            From = ExtractOriginalName(requested),
+            Reason = reason,
+            DecisionSource = decisionSource,
+            Strategy = "OverloadFamily",
+            ScopeKey = effectiveScope.ScopeKey,
+            IsStatic = isStatic
+        });
+    }
+
+    /// <summary>
     /// Get the final TypeScript name for a type (SAFE API - use this).
     /// Automatically derives the correct namespace scope from the type.
     /// This is the "stem" name - variants like T$instance, T$static build on top of this.

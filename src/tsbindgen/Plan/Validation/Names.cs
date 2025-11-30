@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using tsbindgen.Core;
 using tsbindgen.Core.Diagnostics;
 using tsbindgen.Model;
 using tsbindgen.Model.Symbols;
@@ -592,8 +593,9 @@ internal static class Names
     {
         int collisionCount = 0;
 
-        // Group methods by erased signature key: (Name, IsStatic, ErasedSignature)
+        // Group methods by erased signature key: (Name, IsStatic, CanonicalSignature)
         // Methods and properties are in separate namespaces, so we check them separately
+        // Uses TypeSignatureCanon for consistency with Reservation.cs
         var methodGroups = methods
             .GroupBy(m =>
             {
@@ -601,19 +603,20 @@ internal static class Names
                     ? ScopeFactory.ViewSurface(type, interfaceStableId, m.IsStatic)
                     : ScopeFactory.ClassSurface(type, m.IsStatic);
                 var finalName = ctx.Renamer.GetFinalMemberName(m.StableId, methodScope);
-                var erasedParams = string.Join(", ", m.Parameters.Select(p => EraseTypeToString(p.Type)));
-                var erasedReturn = EraseTypeToString(m.ReturnType);
-                return (finalName, m.IsStatic, erasedParams, erasedReturn);
+                // Use TypeSignatureCanon for canonical TS signature (matches Reservation.cs)
+                var canonicalSignature = TypeSignatureCanon.ComputeMethodSignature(m.Arity, m.Parameters.Select(p => p.Type));
+                var erasedReturn = TypeSignatureCanon.CanonicalizeType(m.ReturnType);
+                return (finalName, m.IsStatic, canonicalSignature, erasedReturn);
             })
             .Where(g => g.Count() > 1)
             .ToList();
 
         foreach (var group in methodGroups)
         {
-            var (name, isStatic, erasedParams, erasedReturn) = group.Key;
+            var (name, isStatic, canonicalSignature, erasedReturn) = group.Key;
             var members = group.ToList();
             var scopeName = isStatic ? "static" : "instance";
-            var erasedSignature = $"{name}({erasedParams}): {erasedReturn}";
+            var erasedSignature = $"{name}{canonicalSignature}: {erasedReturn}";
 
             // Build member list with StableIds
             var memberDetails = string.Join("\n", members.Select(m =>
@@ -656,7 +659,7 @@ internal static class Names
             var memberDetails = string.Join("\n", members.Select(p =>
                 $"    - stable: {p.StableId}\n" +
                 $"      clr:    {type.ClrFullName}::{p.ClrName}\n" +
-                $"      type:   {EraseTypeToString(p.PropertyType)}"));
+                $"      type:   {TypeSignatureCanon.CanonicalizeType(p.PropertyType)}"));
 
             validationCtx.RecordDiagnostic(
                 DiagnosticCodes.DuplicateErasedSurfaceSignature,
@@ -671,59 +674,6 @@ internal static class Names
         }
 
         return collisionCount;
-    }
-
-    /// <summary>
-    /// Erase a TypeReference to a simple string representation for signature comparison.
-    /// Simplified version that doesn't require TsEmitName on types.
-    /// </summary>
-    private static string EraseTypeToString(TypeReference typeRef)
-    {
-        return typeRef switch
-        {
-            NamedTypeReference named when named.TypeArguments.Count > 0 =>
-                $"{SimplifyTypeName(named.FullName)}<{string.Join(", ", named.TypeArguments.Select(EraseTypeToString))}>",
-
-            NamedTypeReference named => SimplifyTypeName(named.FullName),
-
-            NestedTypeReference nested => SimplifyTypeName(nested.FullReference.FullName),
-
-            GenericParameterReference gp => gp.Name,
-
-            ArrayTypeReference arr => $"ReadonlyArray<{EraseTypeToString(arr.ElementType)}>",
-
-            PointerTypeReference ptr => EraseTypeToString(ptr.PointeeType),
-            ByRefTypeReference byref => EraseTypeToString(byref.ReferencedType),
-
-            _ => "unknown"
-        };
-    }
-
-    /// <summary>
-    /// Simplify type name to TypeScript-level representation.
-    /// Maps common BCL types to their TS equivalents.
-    /// </summary>
-    private static string SimplifyTypeName(string fullName)
-    {
-        return fullName switch
-        {
-            "System.Void" => "void",
-            "System.Object" => "any",
-            "System.String" => "string",
-            "System.Boolean" => "boolean",
-            "System.Int32" => "number",
-            "System.Int64" => "number",
-            "System.Double" => "number",
-            "System.Single" => "number",
-            "System.Byte" => "number",
-            "System.SByte" => "number",
-            "System.Int16" => "number",
-            "System.UInt16" => "number",
-            "System.UInt32" => "number",
-            "System.UInt64" => "number",
-            "System.Decimal" => "number",
-            _ => fullName.Replace("`", "_") // Replace generic arity marker
-        };
     }
 
     /// <summary>

@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using tsbindgen.Core;
 using tsbindgen.Model;
 using tsbindgen.Model.Symbols;
 using tsbindgen.Model.Symbols.MemberSymbols;
@@ -18,6 +19,10 @@ internal static class Reservation
     /// Reserve member names without mutating symbols (Phase 1).
     /// Returns (Reserved, Skipped) counts.
     /// Skips members that already have rename decisions from earlier passes.
+    ///
+    /// IMPORTANT: Methods are reserved by overload family (clrName, isStatic) AND erased signature.
+    /// Methods with DIFFERENT TypeScript-level signatures can share the same name (valid overloads).
+    /// Methods with IDENTICAL TypeScript-level signatures get numeric suffixes (duplicate prevention).
     /// </summary>
     internal static (int Reserved, int Skipped) ReserveMemberNamesOnly(BuildContext ctx, TypeSymbol type)
     {
@@ -27,47 +32,54 @@ internal static class Reservation
         int reserved = 0;
         int skipped = 0;
 
-        foreach (var method in type.Members.Methods.OrderBy(m => m.ClrName))
+        // Group methods by overload family (clrName, isStatic)
+        var methodsByFamily = type.Members.Methods
+            .Where(m => m.EmitScope != EmitScope.ViewOnly &&
+                       m.EmitScope != EmitScope.Omitted &&
+                       m.EmitScope != EmitScope.Unspecified)
+            .GroupBy(m => (m.ClrName, m.IsStatic))
+            .OrderBy(g => g.Key.ClrName)
+            .ThenBy(g => g.Key.IsStatic);
+
+        foreach (var family in methodsByFamily)
         {
-            // DEBUG: Log all Decimal To* methods
-            bool isDecimalToMethod = type.ClrFullName == "System.Decimal" && method.ClrName.StartsWith("To");
+            var (clrName, isStatic) = family.Key;
+            var methods = family.OrderBy(m => m.StableId.ToString()).ToList();
 
-            // M5: Skip ViewOnly members - they'll be reserved in view-scoped reservation
-            if (method.EmitScope == EmitScope.ViewOnly)
-            {
-                if (isDecimalToMethod)
-                    ctx.Log("name-resv-debug", $"Skip ViewOnly: {method.ClrName} (static={method.IsStatic})");
-                skipped++;
-                continue;
-            }
-
-            // Guard: Never reserve names for Unspecified members - this is a developer mistake
-            if (method.EmitScope == EmitScope.Unspecified)
+            // Check for Unspecified EmitScope in the original list (validation)
+            var unspecified = type.Members.Methods.Where(m =>
+                m.ClrName == clrName && m.IsStatic == isStatic && m.EmitScope == EmitScope.Unspecified).ToList();
+            if (unspecified.Any())
             {
                 throw new InvalidOperationException(
-                    $"Cannot reserve name for method with Unspecified EmitScope: {method.StableId} in {type.ClrFullName}. " +
+                    $"Cannot reserve name for method with Unspecified EmitScope: {unspecified.First().StableId} in {type.ClrFullName}. " +
                     "EmitScope must be explicitly set during Shape phase.");
             }
 
-            // Skip Omitted members - they don't need name reservations
-            if (method.EmitScope == EmitScope.Omitted)
+            // Skip families where all methods already have decisions
+            var methodCheckScope = ScopeFactory.ClassSurface(type, isStatic);
+            var methodsNeedingReservation = methods
+                .Where(m => !ctx.Renamer.TryGetDecision(m.StableId, methodCheckScope, out _))
+                .ToList();
+
+            if (methodsNeedingReservation.Count == 0)
             {
-                skipped++;
+                skipped += methods.Count;
                 continue;
             }
 
-            // Check if already renamed by earlier pass (e.g., HiddenMemberPlanner, IndexerPlanner)
-            // Pass class scope and isStatic to TryGetDecision
-            var methodCheckScope = ScopeFactory.ClassSurface(type, method.IsStatic);
-            if (ctx.Renamer.TryGetDecision(method.StableId, methodCheckScope, out var existingDecision))
-            {
-                if (isDecimalToMethod)
-                    ctx.Log("name-resv-debug", $"Skip existing: {method.ClrName} (from {existingDecision.DecisionSource}, final={existingDecision.Final})");
-                skipped++;
-                continue;
-            }
+            // ALGORITHM (per Alice's review):
+            // 1. Pick ONE anchor method (deterministic - smallest stableId)
+            // 2. Reserve name EXACTLY ONCE for the anchor
+            // 3. All methods with UNIQUE erased signatures → RecordOverloadDecision(familyFinalName)
+            // 4. Methods with DUPLICATE erased signatures:
+            //    - Exactly ONE method per erased-signature group keeps familyFinalName
+            //    - Others need new distinct names (suffix)
 
-            var reason = method.Provenance switch
+            // Step 1: Pick anchor (first by stableId - deterministic)
+            var anchorMethod = methodsNeedingReservation.First(); // Already sorted by StableId
+            var requested = Shared.ComputeMethodBase(anchorMethod);
+            var anchorReason = anchorMethod.Provenance switch
             {
                 MemberProvenance.Original => "MethodDeclaration",
                 MemberProvenance.FromInterface => "InterfaceMember",
@@ -75,12 +87,74 @@ internal static class Reservation
                 _ => "Unknown"
             };
 
-            var requested = Shared.ComputeMethodBase(method);
-            if (isDecimalToMethod)
-                ctx.Log("name-resv-debug", $"Reserving: {method.ClrName} (static={method.IsStatic}, requested={requested})");
-            ctx.Renamer.ReserveMemberName(method.StableId, requested, typeScope, reason, method.IsStatic, "NameReservation");
+            // Step 2: Reserve name EXACTLY ONCE for the anchor
+            ctx.Renamer.ReserveMemberName(anchorMethod.StableId, requested, typeScope, anchorReason, isStatic, "NameReservation:FamilyAnchor");
+            var familyFinalName = ctx.Renamer.GetFinalMemberName(anchorMethod.StableId, methodCheckScope);
             reserved++;
+
+            // Compute anchor's erased signature to know which group it belongs to
+            var anchorErasedSig = ComputeErasedParameterSignature(anchorMethod);
+
+            // Step 3-4: Group by erased signature, handle unique vs duplicate
+            var byErasedSignature = methodsNeedingReservation
+                .GroupBy(m => ComputeErasedParameterSignature(m))
+                .OrderBy(g => g.Key)
+                .ToList();
+
+            foreach (var erasedGroup in byErasedSignature)
+            {
+                var groupMethods = erasedGroup.OrderBy(m => m.StableId.ToString()).ToList();
+                var erasedSig = erasedGroup.Key;
+
+                // Check if anchor is in this erased-signature group
+                var anchorInThisGroup = erasedSig == anchorErasedSig;
+
+                // Track how many methods have been assigned familyFinalName in this group
+                // (anchor counts as 1 if it's in this group)
+                var familyNameUsedInGroup = anchorInThisGroup;
+
+                foreach (var method in groupMethods)
+                {
+                    // Skip anchor - already reserved
+                    if (method.StableId.Equals(anchorMethod.StableId))
+                        continue;
+
+                    var methodRequested = Shared.ComputeMethodBase(method);
+                    var reason = method.Provenance switch
+                    {
+                        MemberProvenance.Original => "MethodDeclaration",
+                        MemberProvenance.FromInterface => "InterfaceMember",
+                        MemberProvenance.Synthesized => "SynthesizedMember",
+                        _ => "Unknown"
+                    };
+
+                    if (!familyNameUsedInGroup)
+                    {
+                        // First method to use familyFinalName in this erased-signature group
+                        // → Valid TS overload (different erased signature from others with same name)
+                        ctx.Renamer.RecordOverloadDecision(method.StableId, methodRequested, familyFinalName, typeScope, reason, isStatic, "NameReservation:ValidOverload");
+                        reserved++;
+                        familyNameUsedInGroup = true;
+
+                    }
+                    else
+                    {
+                        // Duplicate erased signature - familyFinalName already used in this group
+                        // → Need distinct name (suffix) because TS can't have identical signatures
+                        ctx.Renamer.ReserveMemberName(method.StableId, methodRequested, typeScope, reason, isStatic, "NameReservation:DuplicateErasure");
+                        reserved++;
+
+                        ctx.Log("NameReservation", $"WARNING: Duplicate TS-erased signature in {type.ClrFullName}.{clrName} - method gets suffix");
+                    }
+                }
+            }
+
+            // Count methods that already had decisions
+            skipped += methods.Count - methodsNeedingReservation.Count;
         }
+
+        // Count ViewOnly and Omitted methods as skipped
+        skipped += type.Members.Methods.Count(m => m.EmitScope == EmitScope.ViewOnly || m.EmitScope == EmitScope.Omitted);
 
         foreach (var property in type.Members.Properties.OrderBy(p => p.ClrName))
         {
@@ -368,5 +442,15 @@ internal static class Reservation
         }
 
         return (reserved, skipped);
+    }
+
+    /// <summary>
+    /// Compute a canonical TypeScript-level parameter signature for grouping overloads.
+    /// Methods with the same erased signature would be duplicate overloads in TypeScript.
+    /// Uses TypeSignatureCanon for consistency with Names.cs validation.
+    /// </summary>
+    private static string ComputeErasedParameterSignature(MethodSymbol method)
+    {
+        return TypeSignatureCanon.ComputeMethodSignature(method.Arity, method.Parameters.Select(p => p.Type));
     }
 }

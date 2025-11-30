@@ -243,6 +243,10 @@ public static class Builder
         graph = ExplicitImplSynthesizer.Synthesize(ctx, graph);
         LogEmitScopeState(ctx, graph, "AfterExplicitImplSynthesizer");
 
+        // 4.5. Enumerator conformance - promote reset() to ClassSurface for structural typing
+        graph = Shape.EnumeratorConformancePass.Run(ctx, graph);
+        LogEmitScopeState(ctx, graph, "AfterEnumeratorConformance");
+
         // 5. Diamond inheritance resolution
         graph = DiamondResolver.Resolve(ctx, graph);
 
