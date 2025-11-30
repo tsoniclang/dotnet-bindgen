@@ -430,11 +430,10 @@ public static class ClassPrinter
         }
 
         // Fields - only emit ClassSurface members
-        // CLR-NAME CONTRACT: Use PascalCase CLR names
         foreach (var field in members.Fields.Where(f => !f.IsStatic && f.EmitScope == EmitScope.ClassSurface))
         {
-            // Apply CLR surface name policy
-            var emitName = NameUtilities.ApplyClrSurfaceNamePolicy(field.ClrName);
+            // Get final name from Renamer (applies camelCase transform if configured)
+            var emitName = ctx.Renamer.GetFinalMemberName(field.StableId, typeScope);
 
             sb.Append("    ");
             if (field.IsReadOnly)
@@ -502,15 +501,14 @@ public static class ClassPrinter
         else
         {
             // Fallback: Old path for types without bindings
-            // CLR-NAME CONTRACT: Use PascalCase CLR names (Count, not count)
             foreach (var prop in members.Properties.Where(p => !p.IsStatic && p.EmitScope == EmitScope.ClassSurface))
             {
                 // D3: Skip if this instance property conflicts with base class
                 if (ShouldSuppressMember(prop.StableId.ToString()))
                     continue;
 
-                // Apply CLR surface name policy
-                var emitName = NameUtilities.ApplyClrSurfaceNamePolicy(prop.ClrName);
+                // Get final name from Renamer (applies camelCase transform if configured)
+                var emitName = ctx.Renamer.GetFinalMemberName(prop.StableId, typeScope);
 
                 // FIX D EXTENSION: Substitute generic parameters for properties from interfaces
                 var propToEmit = SubstituteMemberIfNeeded(type, prop, ctx, graph);
@@ -621,8 +619,9 @@ public static class ClassPrinter
 
             foreach (var (clrName, overloads) in methodGroups.OrderBy(kvp => kvp.Key))
             {
-                // Get the CLR-based emit name (preserves casing like "Equals", "GetHashCode")
-                var emitName = GetClrEmitName(clrName);
+                // Get final name from Renamer using first method in overload group
+                var firstMethod = overloads.First();
+                var emitName = ctx.Renamer.GetFinalMemberName(firstMethod.StableId, typeScope);
 
                 // TS2512 FIX: Compute single abstract status for entire overload group
                 // If ALL overloads are abstract, mark the group as abstract
@@ -645,7 +644,6 @@ public static class ClassPrinter
                     // FIX D EXTENSION: Substitute generic parameters for methods from interfaces
                     var methodToEmit = SubstituteMemberIfNeeded(type, method, ctx, graph);
 
-                    // TS2416/TS2420 FIX: Use CLR-cased name instead of Renamer's lowercase name
                     // TS2512 FIX: Pass group-level abstract status to ensure consistency
                     sb.Append(MethodPrinter.PrintWithName(methodToEmit, type, emitName, resolver, ctx, emitAbstract: groupIsAbstract));
                     sb.AppendLine(";");
@@ -706,7 +704,6 @@ public static class ClassPrinter
         }
 
         // Const fields (as static readonly) - only emit ClassSurface or StaticSurface members
-        // CLR-NAME CONTRACT: Use PascalCase CLR names
         foreach (var field in members.Fields.Where(f => f.IsConst &&
             (f.EmitScope == EmitScope.ClassSurface || f.EmitScope == EmitScope.StaticSurface)))
         {
@@ -714,8 +711,8 @@ public static class ClassPrinter
             if (ShouldSuppressMember(field.StableId.ToString()))
                 continue;
 
-            // Apply CLR surface name policy
-            var emitName = NameUtilities.ApplyClrSurfaceNamePolicy(field.ClrName);
+            // Get final name from Renamer (applies camelCase transform if configured)
+            var emitName = ctx.Renamer.GetFinalMemberName(field.StableId, staticTypeScope);
 
             sb.Append("    static readonly ");
             sb.Append(emitName);
@@ -728,7 +725,6 @@ public static class ClassPrinter
 
         // Static properties - only emit ClassSurface or StaticSurface members
         // NOTE: If property type references class generics, widen to 'unknown' (TypeScript limitation)
-        // CLR-NAME CONTRACT: Use PascalCase CLR names
         foreach (var prop in members.Properties.Where(p => p.IsStatic &&
             (p.EmitScope == EmitScope.ClassSurface || p.EmitScope == EmitScope.StaticSurface)))
         {
@@ -736,8 +732,8 @@ public static class ClassPrinter
             if (ShouldSuppressMember(prop.StableId.ToString()))
                 continue;
 
-            // Apply CLR surface name policy
-            var emitName = NameUtilities.ApplyClrSurfaceNamePolicy(prop.ClrName);
+            // Get final name from Renamer (applies camelCase transform if configured)
+            var emitName = ctx.Renamer.GetFinalMemberName(prop.StableId, staticTypeScope);
 
             sb.Append("    static ");
             if (!prop.HasSetter)
@@ -762,7 +758,9 @@ public static class ClassPrinter
 
         foreach (var (clrName, overloads) in staticMethodGroups.OrderBy(kvp => kvp.Key))
         {
-            var emitName = GetClrEmitName(clrName);
+            // Get final name from Renamer using first method in overload group
+            var firstMethod = overloads.First();
+            var emitName = ctx.Renamer.GetFinalMemberName(firstMethod.StableId, staticTypeScope);
 
             // TS2512 FIX: Compute single abstract status for entire overload group
             var groupIsAbstract = overloads.All(m => m.IsAbstract) && type.IsAbstract;
@@ -791,12 +789,14 @@ public static class ClassPrinter
     {
         var members = type.Members;
 
+        // Create scope for member name resolution (interfaces use instance scope)
+        var instanceScope = ScopeFactory.ClassInstance(type);
+
         // Properties - only emit ClassSurface members, skip static (TypeScript doesn't support static interface members)
-        // CLR-NAME CONTRACT: Use PascalCase CLR names (Dispose, not dispose)
         foreach (var prop in members.Properties.Where(p => !p.IsStatic && p.EmitScope == EmitScope.ClassSurface))
         {
-            // Apply CLR surface name policy (preserves PascalCase, sanitizes reserved words)
-            var emitName = NameUtilities.ApplyClrSurfaceNamePolicy(prop.ClrName);
+            // Get final name from Renamer (applies camelCase transform if configured)
+            var emitName = ctx.Renamer.GetFinalMemberName(prop.StableId, instanceScope);
 
             sb.Append("    ");
             if (!prop.HasSetter)
@@ -808,7 +808,7 @@ public static class ClassPrinter
         }
 
         // Methods - only emit ClassSurface members, skip static (TypeScript doesn't support static interface members)
-        // CLR-NAME CONTRACT: Group by CLR name, emit as TypeScript overload sets
+        // Group by CLR name, emit as TypeScript overload sets
         var interfaceMethods = members.Methods
             .Where(m => !m.IsStatic && m.EmitScope == EmitScope.ClassSurface)
             .ToList();
@@ -817,8 +817,9 @@ public static class ClassPrinter
 
         foreach (var (clrName, overloads) in methodGroups.OrderBy(kvp => kvp.Key))
         {
-            // Get CLR-based emit name (PascalCase, sanitized)
-            var emitName = NameUtilities.ApplyClrSurfaceNamePolicy(clrName);
+            // Get final name from Renamer using first method in overload group
+            var firstMethod = overloads.First();
+            var emitName = ctx.Renamer.GetFinalMemberName(firstMethod.StableId, instanceScope);
 
             // Emit each overload signature (interfaces have no abstract keyword)
             foreach (var method in overloads)
@@ -1498,17 +1499,6 @@ public static class ClassPrinter
     }
 
     /// <summary>
-    /// TS2416/TS2420 FIX: Get the TypeScript emit name for a method using CLR casing.
-    /// Sanitizes reserved words but does NOT apply member style transform (lowercase).
-    /// This preserves CLR method names like "Equals", "GetHashCode", "Add" on the surface.
-    /// DEPRECATED: Use NameUtilities.ApplyClrSurfaceNamePolicy instead.
-    /// </summary>
-    private static string GetClrEmitName(string clrName)
-    {
-        return NameUtilities.ApplyClrSurfaceNamePolicy(clrName);
-    }
-
-    /// <summary>
     /// TS2416/TS2420 FIX: Group methods by CLR base name for overload emission.
     /// Groups are partitioned by isStatic.
     /// Returns: Dictionary[clrBaseName -> List of methods with that CLR name]
@@ -1525,10 +1515,20 @@ public static class ClassPrinter
 
     /// <summary>
     /// D1: Emit an inherited static field from a base class (for static hierarchy flattening).
+    /// Uses the declaring type's scope to get the correct final name from Renamer.
     /// </summary>
     private static void EmitInheritedStaticField(StringBuilder sb, FieldSymbol field, TypeSymbol derivedType, TypeNameResolver resolver, BuildContext ctx)
     {
-        var fieldEmitName = NameUtilities.ApplyClrSurfaceNamePolicy(field.ClrName);
+        // Get final name from Renamer using the declaring type's static scope
+        var declaringTypeName = field.StableId.DeclaringClrFullName;
+        var scope = new TypeScope
+        {
+            TypeFullName = declaringTypeName,
+            IsStatic = true,
+            ScopeKey = $"type:{declaringTypeName}#static"
+        };
+        var fieldEmitName = ctx.Renamer.GetFinalMemberName(field.StableId, scope);
+
         sb.Append("    static ");
         if (field.IsReadOnly || field.IsConst)
             sb.Append("readonly ");
@@ -1540,10 +1540,20 @@ public static class ClassPrinter
 
     /// <summary>
     /// D1: Emit an inherited static property from a base class (for static hierarchy flattening).
+    /// Uses the declaring type's scope to get the correct final name from Renamer.
     /// </summary>
     private static void EmitInheritedStaticProperty(StringBuilder sb, PropertySymbol property, TypeSymbol derivedType, TypeNameResolver resolver, BuildContext ctx)
     {
-        var propEmitName = NameUtilities.ApplyClrSurfaceNamePolicy(property.ClrName);
+        // Get final name from Renamer using the declaring type's static scope
+        var declaringTypeName = property.StableId.DeclaringClrFullName;
+        var scope = new TypeScope
+        {
+            TypeFullName = declaringTypeName,
+            IsStatic = true,
+            ScopeKey = $"type:{declaringTypeName}#static"
+        };
+        var propEmitName = ctx.Renamer.GetFinalMemberName(property.StableId, scope);
+
         sb.Append("    static ");
         if (!property.HasSetter)
             sb.Append("readonly ");
@@ -1556,10 +1566,20 @@ public static class ClassPrinter
     /// <summary>
     /// D1: Emit an inherited static method from a base class (for static hierarchy flattening).
     /// Note: MethodPrinter.PrintWithName already includes "static" keyword for static methods.
+    /// Uses the declaring type's scope to get the correct final name from Renamer.
     /// </summary>
     private static void EmitInheritedStaticMethod(StringBuilder sb, MethodSymbol method, TypeSymbol derivedType, TypeNameResolver resolver, BuildContext ctx)
     {
-        var emitName = NameUtilities.ApplyClrSurfaceNamePolicy(method.ClrName);
+        // Get final name from Renamer using the declaring type's static scope
+        var declaringTypeName = method.StableId.DeclaringClrFullName;
+        var scope = new TypeScope
+        {
+            TypeFullName = declaringTypeName,
+            IsStatic = true,
+            ScopeKey = $"type:{declaringTypeName}#static"
+        };
+        var emitName = ctx.Renamer.GetFinalMemberName(method.StableId, scope);
+
         sb.Append("    ");
         sb.Append(MethodPrinter.PrintWithName(method, derivedType, emitName, resolver, ctx));
         sb.AppendLine(";");

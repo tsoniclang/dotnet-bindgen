@@ -3,6 +3,11 @@ namespace tsbindgen.Renaming;
 /// <summary>
 /// Internal structure for tracking name reservations within a scope.
 /// Manages collision detection and numeric suffix allocation.
+///
+/// CONTRACT: Collision resolution ONLY appends numeric suffixes (e.g., foo2, foo3).
+/// The base name is NEVER rewritten or transformed. This invariant is relied upon by
+/// PhaseGate validation (Names.ValidateClrSurfaceNamePolicy) which uses a heuristic
+/// to match interface members to class members by checking: baseName OR baseName+digit.
 /// </summary>
 public sealed class NameReservationTable
 {

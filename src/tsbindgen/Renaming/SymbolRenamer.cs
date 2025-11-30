@@ -58,6 +58,15 @@ public sealed class SymbolRenamer
     }
 
     /// <summary>
+    /// Apply the member style transform to a name without reserving it.
+    /// Used for PhaseGate validation when the declaring type isn't in the graph.
+    /// </summary>
+    public string ApplyMemberStyleTransform(string name)
+    {
+        return _memberStyleTransform.Invoke(name);
+    }
+
+    /// <summary>
     /// Reserve a type name in a namespace scope.
     /// Applies the type style transform.
     /// </summary>

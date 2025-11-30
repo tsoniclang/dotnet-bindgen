@@ -3,24 +3,22 @@ using tsbindgen.Renaming;
 namespace tsbindgen.Emit.Shared;
 
 /// <summary>
-/// Utilities for applying consistent naming policy across all emission surfaces.
-/// Implements the "CLR-name contract" - use PascalCase CLR names, sanitize reserved words.
+/// Utilities for TypeScript identifier sanitization.
+/// NOTE: This is a SANITIZER only - it does NOT apply naming transforms (camelCase/PascalCase).
+/// For final member names, use ctx.Renamer.GetFinalMemberName() which applies the policy transform.
 /// </summary>
 public static class NameUtilities
 {
     /// <summary>
-    /// Apply CLR surface name policy using CLR name.
+    /// Sanitize a TypeScript identifier by escaping reserved words and invalid characters.
+    /// This is the FINAL step after getting the name from Renamer.
     ///
-    /// Policy:
-    /// 1. Start with CLR name (PascalCase)
-    /// 2. Sanitize reserved/invalid TypeScript identifiers
-    /// 3. NEVER print numeric suffixes (equals2, getHashCode3, etc.)
-    ///
-    /// This ensures interfaces and classes emit matching member names.
+    /// IMPORTANT: This does NOT apply naming transforms (camelCase/PascalCase).
+    /// The Renamer applies transforms during name reservation.
     /// </summary>
-    public static string ApplyClrSurfaceNamePolicy(string clrName)
+    public static string SanitizeTsIdentifier(string name)
     {
-        return SanitizeIdentifier(clrName);
+        return SanitizeIdentifier(name);
     }
 
     /// <summary>
