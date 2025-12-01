@@ -55,7 +55,7 @@ PhaseGate guards must pass with zero errors.
 ### Completeness Verification
 All reflected types must appear in emitted output.
 
-**Command**: `node scripts/verify-completeness.js`
+**Command**: `node test/validate/verify-completeness.js`
 
 **Process**:
 1. Loads `snapshot.json` (what was reflected/transformed)
@@ -70,7 +70,7 @@ All reflected types must appear in emitted output.
 
 ### Full BCL Validation
 ```bash
-node scripts/validate.js
+node test/validate/validate.js
 ```
 
 **Steps**:
@@ -89,7 +89,7 @@ node scripts/validate.js
 
 ### Completeness Check
 ```bash
-node scripts/verify-completeness.js
+node test/validate/verify-completeness.js
 ```
 
 **Output**:
@@ -158,8 +158,8 @@ Validation must pass before merging:
 # In CI pipeline
 dotnet build
 dotnet test
-node scripts/validate.js
-node scripts/verify-completeness.js
+node test/validate/validate.js
+node test/validate/verify-completeness.js
 ```
 
 Exit code 0 = all validation passed

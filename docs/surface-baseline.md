@@ -14,7 +14,7 @@ This is the final safety gate before emission - ensuring no unreviewed changes r
 
 ## Baseline File
 
-Location: `scripts/harness/baselines/bcl-surface-manifest.json`
+Location: `test/baselines/bcl-surface-manifest.json`
 
 Structure:
 ```json
@@ -61,7 +61,7 @@ Before refreshing, understand what changed:
 
 ```bash
 # Run verification to see the diff
-bash scripts/test-surface-manifest.sh
+bash test/scripts/test-surface-manifest.sh
 ```
 
 This will show:
@@ -96,10 +96,10 @@ Once you've reviewed and approved the changes:
 
 ```bash
 # Capture new baseline
-bash scripts/capture-surface-manifest.sh
+bash test/scripts/capture-baseline.sh
 
 # Review what changed in the manifest
-git diff scripts/harness/baselines/bcl-surface-manifest.json
+git diff test/baselines/bcl-surface-manifest.json
 ```
 
 ### Step 4: Commit the Update
@@ -107,7 +107,7 @@ git diff scripts/harness/baselines/bcl-surface-manifest.json
 Include the baseline update in your PR:
 
 ```bash
-git add scripts/harness/baselines/bcl-surface-manifest.json
+git add test/baselines/bcl-surface-manifest.json
 git commit -m "feat: Update surface baseline for <reason>
 
 <Detailed explanation of what changed and why>
@@ -129,10 +129,10 @@ The surface manifest is verified in multiple places:
 
 ```bash
 # Full strict mode test (includes surface verification)
-bash scripts/test-strict-mode.sh
+bash test/scripts/test-strict-mode.sh
 
 # Surface verification only
-bash scripts/test-surface-manifest.sh
+bash test/scripts/test-surface-manifest.sh
 ```
 
 ### 2. CI/CD Pipeline
@@ -146,7 +146,7 @@ The strict mode test runs on every PR and ensures:
 If the surface verification fails in CI:
 1. Review the CI logs to see what changed
 2. Pull the branch locally
-3. Run `bash scripts/test-surface-manifest.sh` to get detailed diff
+3. Run `bash test/scripts/test-surface-manifest.sh` to get detailed diff
 4. Either fix the unintended change OR update baseline if intentional
 
 ## Common Scenarios
@@ -162,10 +162,10 @@ dotnet run --project src/tsbindgen/tsbindgen.csproj -- \
 
 # Verify no unexpected changes
 # Update baseline
-bash scripts/capture-surface-manifest.sh
+bash test/scripts/capture-baseline.sh
 
 # Commit with clear message
-git add scripts/harness/baselines/bcl-surface-manifest.json
+git add test/baselines/bcl-surface-manifest.json
 git commit -m "feat: Update baseline for .NET 11.0.0 BCL
 
 Added 47 new types from System.Threading.RateLimiting
@@ -179,14 +179,14 @@ Modified 12 signatures for improved nullability
 ```bash
 # After implementing type mapping change
 # Verify expected impact
-bash scripts/test-surface-manifest.sh
+bash test/scripts/test-surface-manifest.sh
 
 # Review changes carefully
 # Update baseline
-bash scripts/capture-surface-manifest.sh
+bash test/scripts/capture-baseline.sh
 
 # Commit
-git add scripts/harness/baselines/bcl-surface-manifest.json
+git add test/baselines/bcl-surface-manifest.json
 git commit -m "feat: Improve Task<T> mapping to Promise<T>
 
 Changed all async method return types to use Promise<T>
@@ -200,7 +200,7 @@ Surface impact: ~1,200 method signatures updated
 
 ```bash
 # Surface verification fails unexpectedly
-bash scripts/test-surface-manifest.sh
+bash test/scripts/test-surface-manifest.sh
 
 # Output shows unexpected changes:
 # Changed Files (hash mismatch):
@@ -210,7 +210,7 @@ bash scripts/test-surface-manifest.sh
 # Find root cause (e.g., nondeterministic ordering bug)
 # Fix the bug
 # Re-run verification
-bash scripts/test-surface-manifest.sh
+bash test/scripts/test-surface-manifest.sh
 
 # Should now pass without baseline update
 ```
@@ -228,7 +228,7 @@ bash scripts/test-surface-manifest.sh
 ### "Surface regression detected" but I didn't change anything
 
 Possible causes:
-1. **Nondeterministic generation** - Run `bash scripts/test-determinism.sh`
+1. **Nondeterministic generation** - Run `bash test/scripts/test-determinism.sh`
 2. **Environment differences** - Check .NET version, OS, etc.
 3. **Uncommitted changes** - Ensure working directory is clean
 4. **Baseline out of sync** - Pull latest from main
@@ -241,7 +241,7 @@ This means multiple PRs changed the surface. To resolve:
 2. Re-run your changes
 3. Recapture baseline:
    ```bash
-   bash scripts/capture-surface-manifest.sh
+   bash test/scripts/capture-baseline.sh
    ```
 4. Review and commit the merged baseline
 

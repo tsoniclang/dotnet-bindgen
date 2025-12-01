@@ -292,10 +292,10 @@ npm install  # First time only
 npm run validate
 
 # Regression guards (run all)
-./scripts/test-determinism.sh      # Deterministic output
-./scripts/test-strict-mode.sh      # Strict mode compliance
-./scripts/test-surface-manifest.sh # Surface baseline guard
-./scripts/test-lib.sh              # Library mode (--lib)
+./test/scripts/test-determinism.sh      # Deterministic output
+./test/scripts/test-strict-mode.sh      # Strict mode compliance
+./test/scripts/test-surface-manifest.sh # Surface baseline guard
+./test/scripts/test-lib.sh              # Library mode (--lib)
 ```
 
 ### TypeScript Validation
@@ -337,7 +337,7 @@ Error breakdown:
 Ensures tsbindgen produces identical output across runs:
 
 ```bash
-./scripts/test-determinism.sh
+./test/scripts/test-determinism.sh
 ```
 
 **What it tests:**
@@ -350,7 +350,7 @@ Ensures tsbindgen produces identical output across runs:
 Verifies strict mode compliance and performance baseline:
 
 ```bash
-./scripts/test-strict-mode.sh
+./test/scripts/test-strict-mode.sh
 ```
 
 **What it tests:**
@@ -362,7 +362,7 @@ Verifies strict mode compliance and performance baseline:
 Guards against accidental removal of public API surface:
 
 ```bash
-./scripts/test-surface-manifest.sh
+./test/scripts/test-surface-manifest.sh
 ```
 
 **What it tests:**
@@ -375,7 +375,7 @@ Guards against accidental removal of public API surface:
 Validates `--lib` mode filters base library types correctly:
 
 ```bash
-./scripts/test-lib.sh
+./test/scripts/test-lib.sh
 ```
 
 **What it tests:**
