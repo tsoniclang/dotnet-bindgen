@@ -4,17 +4,30 @@ This documentation covers the internal architecture of tsbindgen, the TypeScript
 
 ## Documentation Index
 
+### Core Architecture
+
 | Document | Description |
 |----------|-------------|
 | [Overview](overview.md) | High-level architecture and design principles |
 | [Pipeline](pipeline.md) | Complete pipeline flow from input to output |
+| [Key Concepts](concepts.md) | Facades, views, EmitScope, dual-scope naming, etc. |
+
+### Pipeline Phases
+
+| Document | Description |
+|----------|-------------|
 | [Load Phase](load.md) | Assembly loading and reflection |
-| [Model](model.md) | Symbol graph data structures |
-| [Shape Phase](shape.md) | Type transformation passes |
+| [Model](model.md) | Symbol graph data structures (TypeReference, StableId) |
+| [Shape Phase](shape.md) | 29 transformation passes |
 | [Normalize Phase](normalize.md) | Name reservation and conflict resolution |
 | [Plan Phase](plan.md) | Import/export planning and validation |
-| [PhaseGate](phasegate.md) | Validation rules and diagnostic codes |
+| [Phase Gate](phasegate.md) | Validation checkpoint (50+ rules, all diagnostic codes) |
 | [Emit Phase](emit.md) | TypeScript file generation |
+
+### Reference
+
+| Document | Description |
+|----------|-------------|
 | [Output Files](output-files.md) | Generated file formats and schemas |
 | [Renaming](renaming.md) | Naming system and style transforms |
 
