@@ -107,6 +107,20 @@ else
     echo -e "${GREEN}PASS${NC}"
 fi
 
+# Test 8: Boolean type alias must be simple alias to native boolean
+# (PRIMITIVE ALIAS FIX: All CLR primitives are simple aliases, not wrapper types)
+echo -n "  Test 8: Boolean is simple alias to boolean... "
+BOOLEAN_TYPE=$(grep "^export type Boolean = " "$INDEX_FILE" 2>/dev/null || true)
+if [ "$BOOLEAN_TYPE" = "export type Boolean = boolean;" ]; then
+    echo -e "${GREEN}PASS${NC}"
+    echo "    $BOOLEAN_TYPE" | head -1 | sed 's/^/      /'
+else
+    echo -e "${RED}FAIL${NC}"
+    echo "    Expected: export type Boolean = boolean;"
+    echo "    Got: $BOOLEAN_TYPE"
+    FAILED=1
+fi
+
 echo ""
 if [ $FAILED -eq 0 ]; then
     echo -e "${GREEN}All delegate tests passed!${NC}"

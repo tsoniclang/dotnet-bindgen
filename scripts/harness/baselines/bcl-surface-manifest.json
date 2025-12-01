@@ -1,10 +1,10 @@
 {
-  "dotnetVersion": ".NET 10.0",
-  "capturedAt": "2025-11-30T17:26:36Z",
+  "dotnetVersion": "10.0.0",
+  "capturedAt": "2025-12-01T03:26:39Z",
   "generation": {
-    "namespaces": 131,
-    "types": 4295,
-    "members": 50720
+    "namespaces": 130,
+    "types": 4296,
+    "members": 50675
   },
   "files": {
     "__internal/extensions/index.d.ts": "sha256:e17531acb0390a9fd3dee64f5d90d3cbd00079f13d3dc0bbed856db89ee1fb0a",
@@ -25,7 +25,7 @@
     "System.Buffers.Binary/index.d.ts": "sha256:a00e89212581d387bea9a381dc0a37b1ac82673a99aa45c91df990790630102e",
     "System.Buffers.Binary/internal/index.d.ts": "sha256:9a371d806c55eee1c0f6c7450809e6bd41ec68ccbb894a7680d854f82c0f5a4f",
     "System.Buffers/index.d.ts": "sha256:63e85bf32cddb92bf0b06a9e22881a8174e1eade43376958c5b77fdf23079d9f",
-    "System.Buffers/internal/index.d.ts": "sha256:7ed17700fec21d31e5c494dfc171e503e5b91e9abc3a5619771138c6bae6c381",
+    "System.Buffers/internal/index.d.ts": "sha256:5c56a3b0722c86374e1720d5b5ceb66e0b746f1f7e49bd57b0010998a2a830f9",
     "System.Buffers.Text/index.d.ts": "sha256:386020378ba69da625961a11f6a9c6f6bb01e9851baa3ed59b9005c06002a54c",
     "System.Buffers.Text/internal/index.d.ts": "sha256:6b0eb3c62759452e3ad868141d0c0559b65c7a7cfaeadf1c4d3cb52264d3ab71",
     "System.CodeDom.Compiler/index.d.ts": "sha256:db819ff3da99d8e9c351f74e0691a774cec2333d2d3f23abb28d4373a42ce0aa",
@@ -35,7 +35,7 @@
     "System.Collections.Frozen/index.d.ts": "sha256:727b0a5d71fa4ad69ce2707c4b0a9bbcd941b277d779bf3725e86af59d8bb48b",
     "System.Collections.Frozen/internal/index.d.ts": "sha256:acc8cb83efef5f26183161fc254f91b18575967cfa24a95c36c37480f72ad157",
     "System.Collections.Generic/index.d.ts": "sha256:7121a92747bd17ec282e13e867071e1e76c492aad21525cb560111aad8221d02",
-    "System.Collections.Generic/internal/index.d.ts": "sha256:0fc174057e8098bcab423e69c477606aefdf9ded504f885e5a930d306d622cc0",
+    "System.Collections.Generic/internal/index.d.ts": "sha256:72b6f007587129f3720baff2878a6247585b1182fb2aaeb98c10ca03240441a5",
     "System.Collections.Immutable/index.d.ts": "sha256:bd62a5951bb59ad73f0389ab5c930424dee08d3a88ec170aa8868a19b03b6ab1",
     "System.Collections.Immutable/internal/index.d.ts": "sha256:4d985747e75aff10141edb5ea32256b026f00174826cf1258869d5c83637644b",
     "System.Collections/index.d.ts": "sha256:7f6424839682391bf4b138936154101c5d1f3e20429daaccdddadaa51640c1a7",
@@ -85,7 +85,7 @@
     "System.Globalization/index.d.ts": "sha256:f07931a8d70509a67a2a1202ef178221534bb8a1840c6cc2c7781b7da28dba59",
     "System.Globalization/internal/index.d.ts": "sha256:a9db58cf2aee2ea20cb6ad8020b2084b470746193a1c4176090cb92a8230e936",
     "System/index.d.ts": "sha256:9f6665a7af36887d5431affc49495cd9530717cf33dd5fea6133d48b96de33dd",
-    "System/internal/index.d.ts": "sha256:e0c6f375aed4fb87f331ab2b979e99eaf36666a424b7e2d622b44995351c4035",
+    "System/internal/index.d.ts": "sha256:fd2e74821cc3e8a51b723d63cd079c96c4dec9524720b6d683c37d34ed42f5fe",
     "System.IO.Compression/index.d.ts": "sha256:e41ea525ccbd7ff1c6b60672fbd05f52c00fbe3b3ecd91b3da88a18425839e48",
     "System.IO.Compression/internal/index.d.ts": "sha256:c2032247c9a553c91f7b0ebd2bc8160d78799f126de7af505f61b0e419dbd35e",
     "System.IO.Enumeration/index.d.ts": "sha256:86bb4f1fe3ac3ad1e715a10e0870879522d327246148f1f65ba8a9f9a91e4b76",

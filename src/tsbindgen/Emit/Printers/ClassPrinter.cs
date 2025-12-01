@@ -1189,8 +1189,18 @@ public static class ClassPrinter
             // TS2344 FIX: Filter out "any" from constraints
             // C# value type constraints (struct, unmanaged) can't be represented in TS and emit as "any"
             // "any & IFoo" is invalid - just use "IFoo"
+            // PRIMITIVE CONSTRAINT RELAXATION: Widen value semantics constraints
             var printedConstraints = gp.Constraints
-                .Select(c => TypeRefPrinter.Print(c, resolver, ctx))
+                .Select(c =>
+                {
+                    var printed = TypeRefPrinter.Print(c, resolver, ctx);
+                    // Relax IEquatable_1<T>, IComparable_1<T>, IComparable to admit primitives
+                    if (AliasEmit.IsValueSemanticsConstraint(c, gp.Name))
+                    {
+                        return AliasEmit.RelaxConstraintForPrimitives(printed, gp.Name);
+                    }
+                    return printed;
+                })
                 .Where(c => c != "any" && c != "unknown")  // Filter out fallback types
                 .ToArray();
 

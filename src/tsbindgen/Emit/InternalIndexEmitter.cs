@@ -185,6 +185,19 @@ public static class InternalIndexEmitter
         // Emit types in order (PUBLIC ONLY - internal types should not appear in .d.ts)
         foreach (var typeOrder in nsOrder.OrderedTypes.Where(to => ShouldEmit(to.Type)))
         {
+            // PRIMITIVE ALIAS FIX: CLR primitive types must be simple aliases to branded TS primitives
+            // This enables LINQ assignability: List<int> is assignable to IEnumerable<Int32> when Int32 = int
+            // Example: export type Int32 = int; (not Int32$instance & __Int32$views)
+            var tsPrimitiveName = PrimitiveLift.GetTsPrimitiveName(typeOrder.Type.ClrFullName);
+            if (tsPrimitiveName != null)
+            {
+                var primitiveAlias = $"export type {typeOrder.Type.TsEmitName} = {tsPrimitiveName};";
+                sb.Append(indent);
+                sb.AppendLine(primitiveAlias);
+                sb.AppendLine();
+                continue; // Skip normal emission for primitives
+            }
+
             // Check if type has explicit views (attached by ViewPlanner)
             var views = typeOrder.Type.ExplicitViews;
             var hasViews = views.Length > 0 && (typeOrder.Type.Kind == Model.Symbols.TypeKind.Class || typeOrder.Type.Kind == Model.Symbols.TypeKind.Struct || typeOrder.Type.Kind == Model.Symbols.TypeKind.Delegate);
@@ -336,6 +349,8 @@ public static class InternalIndexEmitter
     /// <summary>
     /// INTERNAL CONSTRAINTS: Generates generic type parameters WITH constraints for internal convenience exports.
     /// Mirrors the facade constraint propagation logic to fix TS2344 errors in module-level type aliases.
+    /// PRIMITIVE CONSTRAINT RELAXATION: IEquatable_1<T>, IComparable_1<T>, IComparable
+    /// are widened to admit TS primitives (number | string | boolean).
     /// </summary>
     private static string GenerateTypeParametersWithConstraints(
         Model.Symbols.TypeSymbol sourceType,
@@ -364,8 +379,18 @@ public static class InternalIndexEmitter
             else
             {
                 // Print each constraint using TypeRefPrinter (handles CLROf, imports, etc.)
+                // PRIMITIVE CONSTRAINT RELAXATION: Widen value semantics constraints
                 var constraintStrings = typeConstraints
-                    .Select(c => Printers.TypeRefPrinter.Print(c, resolver, ctx))
+                    .Select(c =>
+                    {
+                        var printed = Printers.TypeRefPrinter.Print(c, resolver, ctx);
+                        // Relax IEquatable_1<T>, IComparable_1<T>, IComparable to admit primitives
+                        if (AliasEmit.IsValueSemanticsConstraint(c, gp.Name))
+                        {
+                            return AliasEmit.RelaxConstraintForPrimitives(printed, gp.Name);
+                        }
+                        return printed;
+                    })
                     .ToArray();
 
                 // Join multiple constraints with & (intersection type)
@@ -409,7 +434,7 @@ public static class InternalIndexEmitter
         // For System namespace, use direct type names (no prefix)
         // For other namespaces, use System_Internal.TypeName (namespace-qualified)
         var isSystemNamespace = currentNamespace == "System";
-        foreach (var (tsName, _, clrSimpleName) in PrimitiveLift.Rules)
+        foreach (var (tsName, _, clrSimpleName, _) in PrimitiveLift.Rules)
         {
             var typeRef = isSystemNamespace ? clrSimpleName : $"System_Internal.{clrSimpleName}";
             sb.AppendLine($"    T extends {tsName} ? {typeRef} :");
@@ -840,6 +865,8 @@ public static class InternalIndexEmitter
     /// <summary>
     /// Print a generic parameter with its constraints for use in type declarations.
     /// E.g., "T extends IFoo & IBar"
+    /// PRIMITIVE CONSTRAINT RELAXATION: IEquatable_1<T>, IComparable_1<T>, IComparable
+    /// are widened to admit TS primitives (number | string | boolean).
     /// </summary>
     private static string PrintGenericParameterWithConstraints(
         Model.Symbols.GenericParameterSymbol gp,
@@ -854,17 +881,18 @@ public static class InternalIndexEmitter
         {
             sb.Append(" extends ");
 
-            if (gp.Constraints.Length == 1)
+            // PRIMITIVE CONSTRAINT RELAXATION: Widen value semantics constraints
+            var constraints = gp.Constraints.Select(c =>
             {
-                sb.Append(Printers.TypeRefPrinter.Print(gp.Constraints[0], resolver, ctx));
-            }
-            else
-            {
-                // Multiple constraints: T extends IFoo & IBar
-                var constraints = gp.Constraints.Select(c =>
-                    Printers.TypeRefPrinter.Print(c, resolver, ctx));
-                sb.Append(string.Join(" & ", constraints));
-            }
+                var printed = Printers.TypeRefPrinter.Print(c, resolver, ctx);
+                // Relax IEquatable_1<T>, IComparable_1<T>, IComparable to admit primitives
+                if (AliasEmit.IsValueSemanticsConstraint(c, gp.Name))
+                {
+                    return AliasEmit.RelaxConstraintForPrimitives(printed, gp.Name);
+                }
+                return printed;
+            });
+            sb.Append(string.Join(" & ", constraints));
         }
 
         return sb.ToString();
@@ -979,7 +1007,18 @@ public static class InternalIndexEmitter
             }
         }
 
-        var rhsExpression = $"{callSignature}{finalName}$instance{typeArgs} & __{finalName}$views{typeArgs}";
+        // BOOLEAN UNION FIX: System.Boolean must accept native TS boolean for predicate ergonomics
+        // Arrow functions like (x => x % 2 === 0) return native boolean, but Func_2<T, Boolean> expects CLR Boolean.
+        // Making Boolean a union allows both to work: export type Boolean = boolean | (Boolean$instance & __Boolean$views);
+        var nativePrimitivePrefix = "";
+        if (type.ClrFullName == "System.Boolean")
+        {
+            nativePrimitivePrefix = "boolean | (";
+        }
+
+        var nativePrimitiveSuffix = nativePrimitivePrefix.Length > 0 ? ")" : "";
+
+        var rhsExpression = $"{nativePrimitivePrefix}{callSignature}{finalName}$instance{typeArgs} & __{finalName}$views{typeArgs}{nativePrimitiveSuffix}";
 
         // Emit the alias with constraints on LHS
         // Note: We pass the complete RHS (including type args), so we use the manual emission
