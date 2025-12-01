@@ -6,15 +6,15 @@ This documentation covers the internal architecture of tsbindgen, the TypeScript
 
 | Document | Description |
 |----------|-------------|
-| [Overview](00-overview.md) | High-level architecture and design principles |
-| [Pipeline](01-pipeline.md) | Complete pipeline flow from input to output |
-| [Load Phase](02-load.md) | Assembly loading and reflection |
-| [Model](03-model.md) | Symbol graph data structures |
-| [Shape Phase](04-shape.md) | Type transformation passes |
-| [Normalize Phase](05-normalize.md) | Name reservation and conflict resolution |
-| [Plan Phase](06-plan.md) | Import/export planning and validation |
-| [Emit Phase](07-emit.md) | TypeScript file generation |
-| [Renaming](08-renaming.md) | Naming system and style transforms |
+| [Overview](overview.md) | High-level architecture and design principles |
+| [Pipeline](pipeline.md) | Complete pipeline flow from input to output |
+| [Load Phase](load.md) | Assembly loading and reflection |
+| [Model](model.md) | Symbol graph data structures |
+| [Shape Phase](shape.md) | Type transformation passes |
+| [Normalize Phase](normalize.md) | Name reservation and conflict resolution |
+| [Plan Phase](plan.md) | Import/export planning and validation |
+| [Emit Phase](emit.md) | TypeScript file generation |
+| [Renaming](renaming.md) | Naming system and style transforms |
 
 ## Quick Reference
 
