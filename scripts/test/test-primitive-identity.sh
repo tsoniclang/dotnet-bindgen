@@ -13,6 +13,11 @@ BCL_DIR=$(ensure_bcl default)
 TEMP_DIR=$(mktemp -d)
 trap "rm -rf $TEMP_DIR" EXIT
 
+# Install required packages for noLib mode
+cd "$TEMP_DIR"
+npm init -y > /dev/null 2>&1
+npm install --save-dev @tsonic/dotnet-globals > /dev/null 2>&1
+
 # Create test file that simulates the real LINQ scenario
 cat > "$TEMP_DIR/test.ts" << 'TESTEOF'
 // Branded primitive types (from @tsonic/types)
@@ -96,18 +101,21 @@ declare function where<T>(items: IEnumerable_1<T>, predicate: Func_2<T, System.B
 // This MUST compile - arrow returns native boolean, function expects System.Boolean
 const filtered = where(myList, (x: int) => x > 0);
 
-console.log("All primitive identity tests passed!");
+// All primitive identity tests passed!
 TESTEOF
 
-# Create tsconfig.json
+# Create tsconfig.json with noLib (like Tsonic uses)
 cat > "$TEMP_DIR/tsconfig.json" << 'CONFIGEOF'
 {
   "compilerOptions": {
     "strict": true,
     "noEmit": true,
+    "noLib": true,
+    "skipLibCheck": true,
     "target": "ES2020",
     "module": "ESNext",
-    "moduleResolution": "node"
+    "moduleResolution": "node",
+    "types": ["@tsonic/dotnet-globals"]
   },
   "include": ["test.ts"]
 }

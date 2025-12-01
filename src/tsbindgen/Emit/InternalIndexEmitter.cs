@@ -349,6 +349,8 @@ public static class InternalIndexEmitter
     /// <summary>
     /// INTERNAL CONSTRAINTS: Generates generic type parameters WITH constraints for internal convenience exports.
     /// Mirrors the facade constraint propagation logic to fix TS2344 errors in module-level type aliases.
+    /// PRIMITIVE CONSTRAINT RELAXATION: IEquatable_1<T>, IComparable_1<T>, IComparable
+    /// are widened to admit TS primitives (number | string | boolean).
     /// </summary>
     private static string GenerateTypeParametersWithConstraints(
         Model.Symbols.TypeSymbol sourceType,
@@ -377,8 +379,18 @@ public static class InternalIndexEmitter
             else
             {
                 // Print each constraint using TypeRefPrinter (handles CLROf, imports, etc.)
+                // PRIMITIVE CONSTRAINT RELAXATION: Widen value semantics constraints
                 var constraintStrings = typeConstraints
-                    .Select(c => Printers.TypeRefPrinter.Print(c, resolver, ctx))
+                    .Select(c =>
+                    {
+                        var printed = Printers.TypeRefPrinter.Print(c, resolver, ctx);
+                        // Relax IEquatable_1<T>, IComparable_1<T>, IComparable to admit primitives
+                        if (AliasEmit.IsValueSemanticsConstraint(c, gp.Name))
+                        {
+                            return AliasEmit.RelaxConstraintForPrimitives(printed, gp.Name);
+                        }
+                        return printed;
+                    })
                     .ToArray();
 
                 // Join multiple constraints with & (intersection type)
@@ -422,7 +434,7 @@ public static class InternalIndexEmitter
         // For System namespace, use direct type names (no prefix)
         // For other namespaces, use System_Internal.TypeName (namespace-qualified)
         var isSystemNamespace = currentNamespace == "System";
-        foreach (var (tsName, _, clrSimpleName) in PrimitiveLift.Rules)
+        foreach (var (tsName, _, clrSimpleName, _) in PrimitiveLift.Rules)
         {
             var typeRef = isSystemNamespace ? clrSimpleName : $"System_Internal.{clrSimpleName}";
             sb.AppendLine($"    T extends {tsName} ? {typeRef} :");
@@ -853,6 +865,8 @@ public static class InternalIndexEmitter
     /// <summary>
     /// Print a generic parameter with its constraints for use in type declarations.
     /// E.g., "T extends IFoo & IBar"
+    /// PRIMITIVE CONSTRAINT RELAXATION: IEquatable_1<T>, IComparable_1<T>, IComparable
+    /// are widened to admit TS primitives (number | string | boolean).
     /// </summary>
     private static string PrintGenericParameterWithConstraints(
         Model.Symbols.GenericParameterSymbol gp,
@@ -867,17 +881,18 @@ public static class InternalIndexEmitter
         {
             sb.Append(" extends ");
 
-            if (gp.Constraints.Length == 1)
+            // PRIMITIVE CONSTRAINT RELAXATION: Widen value semantics constraints
+            var constraints = gp.Constraints.Select(c =>
             {
-                sb.Append(Printers.TypeRefPrinter.Print(gp.Constraints[0], resolver, ctx));
-            }
-            else
-            {
-                // Multiple constraints: T extends IFoo & IBar
-                var constraints = gp.Constraints.Select(c =>
-                    Printers.TypeRefPrinter.Print(c, resolver, ctx));
-                sb.Append(string.Join(" & ", constraints));
-            }
+                var printed = Printers.TypeRefPrinter.Print(c, resolver, ctx);
+                // Relax IEquatable_1<T>, IComparable_1<T>, IComparable to admit primitives
+                if (AliasEmit.IsValueSemanticsConstraint(c, gp.Name))
+                {
+                    return AliasEmit.RelaxConstraintForPrimitives(printed, gp.Name);
+                }
+                return printed;
+            });
+            sb.Append(string.Join(" & ", constraints));
         }
 
         return sb.ToString();

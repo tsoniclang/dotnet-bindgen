@@ -373,8 +373,18 @@ public static class FacadeEmitter
             else
             {
                 // Print each constraint using TypeRefPrinter (handles CLROf, imports, etc.)
+                // PRIMITIVE CONSTRAINT RELAXATION: Widen value semantics constraints
                 var constraintStrings = typeConstraints
-                    .Select(c => Printers.TypeRefPrinter.Print(c, resolver, ctx))
+                    .Select(c =>
+                    {
+                        var printed = Printers.TypeRefPrinter.Print(c, resolver, ctx);
+                        // Relax IEquatable_1<T>, IComparable_1<T>, IComparable to admit primitives
+                        if (AliasEmit.IsValueSemanticsConstraint(c, gp.Name))
+                        {
+                            return AliasEmit.RelaxConstraintForPrimitives(printed, gp.Name);
+                        }
+                        return printed;
+                    })
                     .ToArray();
 
                 // Join multiple constraints with & (intersection type)

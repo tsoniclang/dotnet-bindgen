@@ -2,6 +2,7 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Text;
 using tsbindgen.Model.Symbols;
+using tsbindgen.Model.Types;
 
 namespace tsbindgen.Emit;
 
@@ -104,8 +105,18 @@ internal static class AliasEmit
             else
             {
                 // Print each constraint using TypeRefPrinter
+                // PRIMITIVE CONSTRAINT RELAXATION: Widen value semantics constraints
                 var constraintStrings = typeConstraints
-                    .Select(c => Printers.TypeRefPrinter.Print(c, resolver, ctx))
+                    .Select(c =>
+                    {
+                        var printed = Printers.TypeRefPrinter.Print(c, resolver, ctx);
+                        // Relax IEquatable_1<T>, IComparable_1<T>, IComparable to admit primitives
+                        if (IsValueSemanticsConstraint(c, gp.Name))
+                        {
+                            return RelaxConstraintForPrimitives(printed, gp.Name);
+                        }
+                        return printed;
+                    })
                     .ToArray();
                 var constraintList = string.Join(" & ", constraintStrings);
                 parts.Add($"{gp.Name} extends {constraintList}");
@@ -143,5 +154,92 @@ internal static class AliasEmit
                 && named.TypeArguments.Count == 0;
         }
         return false;
+    }
+
+    /// <summary>
+    /// PRIMITIVE CONSTRAINT RELAXATION: Checks if a constraint is a CLR "value semantics" interface
+    /// that requires relaxation to admit TS primitives (branded number/string/boolean).
+    ///
+    /// When CLR primitives like Int32 are emitted as simple type aliases (Int32 = int),
+    /// the branded primitives don't structurally satisfy interfaces like IEquatable_1<T>
+    /// because they lack the Equals() method. To fix this, we widen such constraints:
+    ///   T extends IEquatable_1<T>  →  T extends (IEquatable_1<T> | number | string | boolean)
+    ///
+    /// This allows:
+    /// - Branded numerics (byte, int, etc.) to satisfy via | number
+    /// - Branded char to satisfy via | string
+    /// - Boolean to satisfy via | boolean
+    /// </summary>
+    /// <param name="constraint">The constraint type reference</param>
+    /// <param name="typeParamName">The name of the type parameter being constrained (e.g., "T")</param>
+    /// <returns>True if this is a value semantics constraint that needs relaxation</returns>
+    internal static bool IsValueSemanticsConstraint(TypeReference constraint, string typeParamName)
+    {
+        if (constraint is not NamedTypeReference named)
+            return false;
+
+        var fullName = named.FullName;
+
+        // IEquatable<T> where T is the same type parameter
+        if (fullName == "System.IEquatable`1" && named.TypeArguments.Count == 1)
+        {
+            // Check if the type argument is the same type parameter
+            if (named.TypeArguments[0] is GenericParameterReference gpRef &&
+                gpRef.Name == typeParamName)
+            {
+                return true;
+            }
+        }
+
+        // IComparable<T> where T is the same type parameter
+        if (fullName == "System.IComparable`1" && named.TypeArguments.Count == 1)
+        {
+            if (named.TypeArguments[0] is GenericParameterReference gpRef &&
+                gpRef.Name == typeParamName)
+            {
+                return true;
+            }
+        }
+
+        // IComparable (non-generic) - always relax
+        if (fullName == "System.IComparable" && named.TypeArguments.Count == 0)
+        {
+            return true;
+        }
+
+        return false;
+    }
+
+    /// <summary>
+    /// The primitive carrier union, derived from PrimitiveLift.Rules.
+    /// Cached for performance since it's computed once and used repeatedly.
+    /// Per @tsonic/types: "number | string | boolean" (no bigint - all numerics are number-carried)
+    /// </summary>
+    private static readonly string PrimitiveCarrierUnion =
+        string.Join(" | ", PrimitiveLift.GetTsCarrierKinds());
+
+    /// <summary>
+    /// Relaxes a value semantics constraint by adding primitive type alternatives.
+    ///
+    /// IEquatable_1&lt;T&gt; becomes:
+    ///   (IEquatable_1&lt;T&gt; | number | string | boolean)
+    ///
+    /// NOTE: A tighter conditional pattern like `(T extends number ? number : never)` would
+    /// preserve full fidelity for non-primitives, but TypeScript treats this as a circular
+    /// constraint (TS2313). The simple union pattern is safe because:
+    /// - It only affects constraint satisfaction, not the actual type of T
+    /// - The practical set of types that pass the union matches CLR primitives
+    /// - Non-primitives still work correctly (they satisfy IEquatable_1&lt;T&gt; structurally)
+    ///
+    /// The carrier union is derived from PrimitiveLift.Rules to guarantee it covers
+    /// all primitives as the mapping evolves (per @tsonic/types contract).
+    /// </summary>
+    /// <param name="printedConstraint">The already-printed constraint string</param>
+    /// <param name="typeParamName">The type parameter name (unused, kept for API compatibility)</param>
+    /// <returns>The relaxed constraint with primitive alternatives</returns>
+    internal static string RelaxConstraintForPrimitives(string printedConstraint, string typeParamName = "T")
+    {
+        // Union derived from PrimitiveLift.Rules - guaranteed to cover all primitives
+        return $"({printedConstraint} | {PrimitiveCarrierUnion})";
     }
 }
