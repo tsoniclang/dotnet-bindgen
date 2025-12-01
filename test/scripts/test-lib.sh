@@ -36,7 +36,7 @@ echo "          ✓ BCL generation succeeded ($bcl_namespaces namespaces)"
 
 # Step 2: Build user library fixture
 echo "[3/5] Building user library fixture..."
-cd "$PROJECT_ROOT/scripts/harness/fixtures/UserLib"
+cd "$PROJECT_ROOT/test/fixtures/UserLib"
 if ! dotnet build -c Release > /dev/null 2>&1; then
     echo -e "${RED}❌ FAILED: User library build failed${NC}"
     exit 1
@@ -45,8 +45,8 @@ cd "$PROJECT_ROOT"
 
 # Find the DLL (could be in bin/ or artifacts/)
 userlib_dll=""
-if [ -f "$PROJECT_ROOT/scripts/harness/fixtures/UserLib/bin/Release/net10.0/UserLib.dll" ]; then
-    userlib_dll="$PROJECT_ROOT/scripts/harness/fixtures/UserLib/bin/Release/net10.0/UserLib.dll"
+if [ -f "$PROJECT_ROOT/test/fixtures/UserLib/bin/Release/net10.0/UserLib.dll" ]; then
+    userlib_dll="$PROJECT_ROOT/test/fixtures/UserLib/bin/Release/net10.0/UserLib.dll"
 elif [ -f "$PROJECT_ROOT/artifacts/bin/UserLib/Release/net10.0/UserLib.dll" ]; then
     userlib_dll="$PROJECT_ROOT/artifacts/bin/UserLib/Release/net10.0/UserLib.dll"
 else

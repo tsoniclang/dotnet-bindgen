@@ -1,7 +1,7 @@
 #!/bin/bash
 # Capture surface manifest - baseline snapshot of emitted TypeScript API surface
 
-source "$(dirname "${BASH_SOURCE[0]}")/../test/_common.sh"
+source "$(dirname "${BASH_SOURCE[0]}")/_common.sh"
 
 echo "================================================"
 echo "Surface Manifest Capture"
@@ -13,7 +13,7 @@ init_runtime
 
 # Configuration
 TEMP_OUTPUT="$TESTS_DIR/surface-capture"
-MANIFEST_FILE="$PROJECT_ROOT/scripts/harness/baselines/bcl-surface-manifest.json"
+MANIFEST_FILE="$PROJECT_ROOT/test/baselines/bcl-surface-manifest.json"
 
 # Clean and prepare
 echo "[1/4] Preparing output directory..."

@@ -5,7 +5,7 @@
 # 'any' weakens type safety and should never appear in generated declarations.
 #
 # Usage:
-#   ./scripts/check-any-types.sh [validation_dir]
+#   ./test/validate/check-any-types.sh [validation_dir]
 #
 # Arguments:
 #   validation_dir - Directory containing generated declarations (default: .tests/validate)

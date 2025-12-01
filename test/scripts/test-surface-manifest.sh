@@ -23,14 +23,14 @@ else
     echo "Using cached BCL: $TEMP_OUTPUT"
 fi
 
-BASELINE_MANIFEST="$PROJECT_ROOT/scripts/harness/baselines/bcl-surface-manifest.json"
+BASELINE_MANIFEST="$PROJECT_ROOT/test/baselines/bcl-surface-manifest.json"
 CURRENT_MANIFEST="$TESTS_DIR/surface-current-manifest.json"
 
 # Check baseline exists
 if [ ! -f "$BASELINE_MANIFEST" ]; then
     echo -e "${RED}❌ FAILED: Baseline manifest not found: $BASELINE_MANIFEST${NC}"
     echo ""
-    echo "Run: bash scripts/capture-surface-manifest.sh"
+    echo "Run: bash test/scripts/capture-baseline.sh"
     exit 1
 fi
 
@@ -147,7 +147,7 @@ if [ "$has_diff" = true ]; then
 
     echo "If this change is INTENTIONAL:"
     echo "  1. Review the changes carefully"
-    echo "  2. Update baseline: bash scripts/capture-surface-manifest.sh"
+    echo "  2. Update baseline: bash test/scripts/capture-baseline.sh"
     echo "  3. Commit the updated baseline"
     echo ""
     echo "If this change is UNINTENTIONAL:"
