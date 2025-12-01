@@ -13,7 +13,9 @@ This documentation covers the internal architecture of tsbindgen, the TypeScript
 | [Shape Phase](shape.md) | Type transformation passes |
 | [Normalize Phase](normalize.md) | Name reservation and conflict resolution |
 | [Plan Phase](plan.md) | Import/export planning and validation |
+| [PhaseGate](phasegate.md) | Validation rules and diagnostic codes |
 | [Emit Phase](emit.md) | TypeScript file generation |
+| [Output Files](output-files.md) | Generated file formats and schemas |
 | [Renaming](renaming.md) | Naming system and style transforms |
 
 ## Quick Reference
