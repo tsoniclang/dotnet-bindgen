@@ -280,10 +280,10 @@ git push -u origin feat/your-feature-name
 mkdir -p .tests
 
 # Run validation with tee - shows output AND saves to file
-node scripts/validate.js | tee .tests/validation-$(date +%s).txt
+node test/validate/validate.js | tee .tests/validation-$(date +%s).txt
 
 # Run completeness verification
-node scripts/verify-completeness.js | tee .tests/completeness-$(date +%s).txt
+node test/validate/verify-completeness.js | tee .tests/completeness-$(date +%s).txt
 
 # Analyze saved output later without re-running:
 grep "TS2416" .tests/validation-*.txt
@@ -576,13 +576,13 @@ class List_1<T> {
 
 ```bash
 # Full validation (2-3 minutes)
-node scripts/validate.js
+node test/validate/validate.js
 
 # With output capture for later analysis
-node scripts/validate.js | tee .tests/validation-$(date +%s).txt
+node test/validate/validate.js | tee .tests/validation-$(date +%s).txt
 
 # Run completeness verification
-node scripts/verify-completeness.js | tee .tests/completeness-$(date +%s).txt
+node test/validate/verify-completeness.js | tee .tests/completeness-$(date +%s).txt
 ```
 
 ### Validation Steps
@@ -640,7 +640,7 @@ dotnet run --project src/tsbindgen/tsbindgen.csproj -- \
 
 ```bash
 # Run validation with capture
-node scripts/validate.js 2>&1 | tee .tests/run.txt
+node test/validate/validate.js 2>&1 | tee .tests/run.txt
 
 # Count errors by type
 grep "error TS" .tests/run.txt | sed 's/.*error \(TS[0-9]*\).*/\1/' | sort | uniq -c | sort -rn
@@ -662,13 +662,16 @@ dotnet build src/tsbindgen/tsbindgen.csproj
 dotnet run --project src/tsbindgen/tsbindgen.csproj -- <args>
 
 # Validate all BCL assemblies
-node scripts/validate.js
+node test/validate/validate.js
 
 # Verify completeness
-node scripts/verify-completeness.js
+node test/validate/verify-completeness.js
 
 # Capture validation output
-node scripts/validate.js | tee .tests/validation-$(date +%s).txt
+node test/validate/validate.js | tee .tests/validation-$(date +%s).txt
+
+# Run all regression tests
+bash test/scripts/run-all.sh
 ```
 
 ## Git Workflow
@@ -769,8 +772,10 @@ If you encounter issues:
 
 - **STATUS.md** - Current project state and metrics
 - **CODING-STANDARDS.md** - C# style guidelines
-- **scripts/validate.js** - BCL assembly validation script
-- **scripts/verify-completeness.js** - Completeness verification script
+- **test/validate/validate.js** - BCL assembly validation script
+- **test/validate/verify-completeness.js** - Completeness verification script
+- **test/scripts/run-all.sh** - Run all regression tests
+- **test/baselines/** - Baseline manifests for surface verification
 - **.analysis/** - Analysis reports and documentation
 
 ## Remember

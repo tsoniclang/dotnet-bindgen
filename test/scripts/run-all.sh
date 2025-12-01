@@ -81,10 +81,10 @@ for script in "${TEST_SCRIPTS[@]}"; do
 
     if bash "$script"; then
         echo -e "${GREEN}PASSED${NC}: $script_name"
-        ((PASSED++))
+        PASSED=$((PASSED + 1))
     else
         echo -e "${RED}FAILED${NC}: $script_name"
-        ((FAILED++))
+        FAILED=$((FAILED + 1))
         FAILED_SCRIPTS+=("$script_name")
     fi
     echo ""
