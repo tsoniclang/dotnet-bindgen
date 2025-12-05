@@ -28,11 +28,8 @@ public static class FacadeEmitter
             // Generate facade content
             var content = GenerateFacade(ctx, plan, ns);
 
-            // Write to file: output/Namespace.Name/index.d.ts
-            var namespacePath = Path.Combine(outputDirectory, ns.Name);
-            Directory.CreateDirectory(namespacePath);
-
-            var outputFile = Path.Combine(namespacePath, "index.d.ts");
+            // Write to file: output/Namespace.Name.d.ts (flat ESM structure)
+            var outputFile = Path.Combine(outputDirectory, $"{ns.Name}.d.ts");
             File.WriteAllText(outputFile, content);
 
             ctx.Log("FacadeEmitter", $"    → {outputFile}");
@@ -52,10 +49,9 @@ public static class FacadeEmitter
         sb.AppendLine($"// Facade - Public API Surface");
         sb.AppendLine();
 
-        // Import from internal/index.d.ts (or _root/index.d.ts for empty namespace)
+        // Import from Namespace/internal/index.d.ts (flat ESM structure)
         sb.AppendLine("// Import internal declarations");
-        var subdirName = ns.IsRoot ? "_root" : "internal";
-        var internalImportPath = $"./{subdirName}/index.js";
+        var internalImportPath = ns.IsRoot ? "./_root/index.js" : $"./{ns.Name}/internal/index.js";
         sb.AppendLine($"import * as Internal from '{internalImportPath}';");
         sb.AppendLine();
 
@@ -117,11 +113,12 @@ public static class FacadeEmitter
 
                     var facadePath = import.ImportPath;
 
-                    // Facade files sit one level above internal/index.d.ts
-                    // Only collapse paths that start two levels up (../../) → drop one level
+                    // Facade files are at root level (Namespace.d.ts)
+                    // Paths from PathPlanner are like "../../OtherNs/internal/index.js" (relative to internal/)
+                    // Convert to "./" since facade is at root
                     if (facadePath.StartsWith("../../", StringComparison.Ordinal))
                     {
-                        facadePath = "../" + facadePath.Substring(6);
+                        facadePath = "./" + facadePath.Substring(6);
                     }
 
                     sb.AppendLine($"import type {{ {typeList} }} from '{facadePath}';");
@@ -130,7 +127,7 @@ public static class FacadeEmitter
             }
 
             // Flattened ESM: re-export everything from internal
-            var reexportPath = $"./{subdirName}/index.js";
+            var reexportPath = ns.IsRoot ? "./_root/index.js" : $"./{ns.Name}/internal/index.js";
             sb.AppendLine($"export * from '{reexportPath}';");
             sb.AppendLine();
 
@@ -184,7 +181,7 @@ public static class FacadeEmitter
                     : export.ExportName;
 
                 // Emit primary export (uses unified helper)
-                EmitFacadeExport(sb, aliasName, export.SourceType, export.ExportName, resolver, ctx);
+                EmitFacadeExport(sb, aliasName, export.SourceType, export.ExportName, resolver, ctx, ns.Name);
 
                 // FRIENDLY GENERIC ALIAS: Provide arity-less name (List instead of List_1)
                 if (export.SourceType.GenericParameters.Length > 0)
@@ -199,7 +196,7 @@ public static class FacadeEmitter
                             friendlyAliases.Add(friendlyName))
                         {
                             // Emit friendly alias (uses same unified helper)
-                            EmitFacadeExport(sb, friendlyName, export.SourceType, export.ExportName, resolver, ctx);
+                            EmitFacadeExport(sb, friendlyName, export.SourceType, export.ExportName, resolver, ctx, ns.Name);
                         }
                     }
                 }
@@ -493,7 +490,8 @@ public static class FacadeEmitter
         Model.Symbols.TypeSymbol sourceType,
         string exportName,
         TypeNameResolver resolver,
-        BuildContext ctx)
+        BuildContext ctx,
+        string namespaceName)
     {
         var needsValueExport = NeedsValueExport(sourceType.Kind);
 
@@ -502,12 +500,13 @@ public static class FacadeEmitter
             var internalValueName = GetInternalValueName(sourceType, ctx);
 
             // Value re-export: enables static access, construction, and enum values
-            // Example: export { Console$instance as Console } from './internal/index.js';
+            // Example: export { Console$instance as Console } from './System/internal/index.js';
+            var internalPath = string.IsNullOrEmpty(namespaceName) ? "./_root/index.js" : $"./{namespaceName}/internal/index.js";
             sb.Append("export { ");
             sb.Append(internalValueName);
             sb.Append(" as ");
             sb.Append(aliasName);
-            sb.AppendLine(" } from './internal/index.js';");
+            sb.AppendLine($" }} from '{internalPath}';");
         }
         else
         {
