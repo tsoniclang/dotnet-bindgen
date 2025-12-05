@@ -28,11 +28,8 @@ public static class FacadeEmitter
             // Generate facade content
             var content = GenerateFacade(ctx, plan, ns);
 
-            // Write to file: output/Namespace.Name/index.d.ts
-            var namespacePath = Path.Combine(outputDirectory, ns.Name);
-            Directory.CreateDirectory(namespacePath);
-
-            var outputFile = Path.Combine(namespacePath, "index.d.ts");
+            // Write to file: output/Namespace.Name.d.ts (flat ESM structure)
+            var outputFile = Path.Combine(outputDirectory, $"{ns.Name}.d.ts");
             File.WriteAllText(outputFile, content);
 
             ctx.Log("FacadeEmitter", $"    → {outputFile}");
@@ -52,10 +49,9 @@ public static class FacadeEmitter
         sb.AppendLine($"// Facade - Public API Surface");
         sb.AppendLine();
 
-        // Import from internal/index.d.ts (or _root/index.d.ts for empty namespace)
+        // Import from Namespace/internal/index.d.ts (flat ESM structure)
         sb.AppendLine("// Import internal declarations");
-        var subdirName = ns.IsRoot ? "_root" : "internal";
-        var internalImportPath = $"./{subdirName}/index.js";
+        var internalImportPath = ns.IsRoot ? "./_root/index.js" : $"./{ns.Name}/internal/index.js";
         sb.AppendLine($"import * as Internal from '{internalImportPath}';");
         sb.AppendLine();
 
@@ -117,11 +113,12 @@ public static class FacadeEmitter
 
                     var facadePath = import.ImportPath;
 
-                    // Facade files sit one level above internal/index.d.ts
-                    // Only collapse paths that start two levels up (../../) → drop one level
+                    // Facade files are at root level (Namespace.d.ts)
+                    // Paths from PathPlanner are like "../../OtherNs/internal/index.js" (relative to internal/)
+                    // Convert to "./" since facade is at root
                     if (facadePath.StartsWith("../../", StringComparison.Ordinal))
                     {
-                        facadePath = "../" + facadePath.Substring(6);
+                        facadePath = "./" + facadePath.Substring(6);
                     }
 
                     sb.AppendLine($"import type {{ {typeList} }} from '{facadePath}';");
@@ -129,12 +126,9 @@ public static class FacadeEmitter
                 sb.AppendLine();
             }
 
-            // Flattened ESM: re-export everything from internal
-            var reexportPath = $"./{subdirName}/index.js";
-            sb.AppendLine($"export * from '{reexportPath}';");
-            sb.AppendLine();
-
-            sb.AppendLine("// Individual type exports for convenience");
+            // CURATED FACADE EXPORTS: Individual exports only (no export *)
+            // This prevents leaking internal $instance and $views types to end users
+            sb.AppendLine("// Public API exports (curated - no internal $instance/$views leakage)");
 
             // TS2304 FIX: Create TypeNameResolver in facade mode to qualify cross-namespace types
             // This ensures constraints like "T extends IEquatable_1<T>" become "T extends System.IEquatable_1<T>"
@@ -183,8 +177,19 @@ public static class FacadeEmitter
                     ? renamed
                     : export.ExportName;
 
-                // Emit primary export (uses unified helper)
-                EmitFacadeExport(sb, aliasName, export.SourceType, export.ExportName, resolver, ctx);
+                // SKIP REDUNDANT EXPORTS: If aliasName == exportName, there's no alias benefit
+                // We only want friendly names (List), not internal names (List_1)
+                // The friendly alias below will emit the useful "List" export
+                if (aliasName == export.ExportName && export.SourceType.GenericParameters.Length > 0)
+                {
+                    // Skip - the friendly alias below will handle this type
+                    // Only skip generics because they get friendly aliases; non-generics are their own final name
+                }
+                else
+                {
+                    // Emit primary export (uses unified helper)
+                    EmitFacadeExport(sb, aliasName, export.SourceType, export.ExportName, resolver, ctx, ns.Name);
+                }
 
                 // FRIENDLY GENERIC ALIAS: Provide arity-less name (List instead of List_1)
                 if (export.SourceType.GenericParameters.Length > 0)
@@ -199,7 +204,7 @@ public static class FacadeEmitter
                             friendlyAliases.Add(friendlyName))
                         {
                             // Emit friendly alias (uses same unified helper)
-                            EmitFacadeExport(sb, friendlyName, export.SourceType, export.ExportName, resolver, ctx);
+                            EmitFacadeExport(sb, friendlyName, export.SourceType, export.ExportName, resolver, ctx, ns.Name);
                         }
                     }
                 }
@@ -468,24 +473,21 @@ public static class FacadeEmitter
     /// <summary>
     /// UNIFIED FACADE EXPORT HELPER
     ///
-    /// Emits a single facade export for a type, choosing between value re-export and type alias
-    /// based on the type kind. This ensures consistent behavior for both primary exports and
-    /// friendly aliases (arity-less names like List instead of List_1).
+    /// Emits facade exports for a type. For classes/structs, emits BOTH value AND type exports
+    /// to ensure users can use them both as constructors (new List()) and as types (const x: List<T>).
     ///
     /// FACADE EXPORT STRATEGY:
-    /// Types that need VALUE exports (for static access, construction, or enum values):
-    ///   - StaticNamespace: Console.writeLine(), Math.abs() - static method access
-    ///   - Class: new List<T>(), Exception.message - construction + instance/static access
-    ///   - Struct: new Point(), DateTime.now - construction + static access
-    ///   - Enum: ConsoleColor.red, FileMode.open - enum member access
+    /// Types that need VALUE + TYPE exports (for construction AND type annotations):
+    ///   - Class: new List<T>() + const x: List<T> - BOTH value and type needed
+    ///   - Struct: new Point() + const p: Point - BOTH value and type needed
+    ///
+    /// Types that need VALUE-ONLY exports:
+    ///   - StaticNamespace: Console.writeLine() - static method access only
+    ///   - Enum: ConsoleColor.red - enum member access (type inferred from value)
     ///
     /// Types that need TYPE-ONLY exports (no runtime value needed):
     ///   - Interface: IEnumerable<T> - purely type-level
     ///   - Delegate: Action<T>, Func<T> - function type signatures
-    ///
-    /// Internal value name differs by kind:
-    ///   - Classes/Structs/StaticNamespace: use $instance suffix (Console$instance)
-    ///   - Enums: use final name directly (ConsoleColor - no $instance)
     /// </summary>
     private static void EmitFacadeExport(
         StringBuilder sb,
@@ -493,26 +495,47 @@ public static class FacadeEmitter
         Model.Symbols.TypeSymbol sourceType,
         string exportName,
         TypeNameResolver resolver,
-        BuildContext ctx)
+        BuildContext ctx,
+        string namespaceName)
     {
-        var needsValueExport = NeedsValueExport(sourceType.Kind);
+        var kind = sourceType.Kind;
+        var internalPath = string.IsNullOrEmpty(namespaceName) ? "./_root/index.js" : $"./{namespaceName}/internal/index.js";
 
-        if (needsValueExport)
+        // Class/Struct: Value re-export only
+        // When internal has BOTH `const List_1` AND `type List_1<T>`,
+        // re-exporting with `export { List_1 as List }` exports BOTH value AND type
+        // under the new name. No separate type export needed!
+        if (kind == Model.Symbols.TypeKind.Class || kind == Model.Symbols.TypeKind.Struct)
         {
             var internalValueName = GetInternalValueName(sourceType, ctx);
 
-            // Value re-export: enables static access, construction, and enum values
-            // Example: export { Console$instance as Console } from './internal/index.js';
+            // Value re-export (also re-exports the type binding):
+            // export { List_1 as List } from './internal/index.js';
+            // Users can then use: new List<string>() AND const x: List<string>
             sb.Append("export { ");
             sb.Append(internalValueName);
             sb.Append(" as ");
             sb.Append(aliasName);
-            sb.AppendLine(" } from './internal/index.js';");
+            sb.AppendLine($" }} from '{internalPath}';");
         }
+        // StaticNamespace/Enum: Value-only export (no type alias needed)
+        else if (kind == Model.Symbols.TypeKind.StaticNamespace || kind == Model.Symbols.TypeKind.Enum)
+        {
+            var internalValueName = GetInternalValueName(sourceType, ctx);
+
+            // Value re-export: export { Console$instance as Console } from './internal/index.js';
+            sb.Append("export { ");
+            sb.Append(internalValueName);
+            sb.Append(" as ");
+            sb.Append(aliasName);
+            sb.AppendLine($" }} from '{internalPath}';");
+        }
+        // Interface/Delegate: Type-only export (no runtime value)
         else
         {
-            // Type alias for interfaces and delegates (type-only, no runtime value)
-            // Example: export type IEnumerable_1<T> = Internal.IEnumerable_1<T>;
+            // Type alias: export type IEnumerable_1<T> = Internal.IEnumerable_1<T>;
+            // Uses facadeMode=true to prefix constraints with "Internal." so they reference
+            // the internal module's types (which have full constraints).
             var rhsBase = $"Internal.{exportName}";
             AliasEmit.EmitGenericAlias(
                 sb,
@@ -521,7 +544,8 @@ public static class FacadeEmitter
                 rhsExpression: rhsBase,
                 resolver,
                 ctx,
-                withConstraints: true);
+                withConstraints: true,
+                facadeMode: true);
         }
     }
 

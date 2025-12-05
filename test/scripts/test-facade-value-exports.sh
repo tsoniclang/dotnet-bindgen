@@ -107,19 +107,20 @@ const mode = FileMode.Create;
 const access = FileAccess.ReadWrite;
 EOF
 
-# Test 3: Generic class construction (new List_1<string>())
+# Test 3: Generic class construction (new List<string>())
 echo "Creating test: generic-class-construction.ts"
 cat > "$TEST_DIR/generic-class-construction.ts" << 'EOF'
 // Test: Generic class construction and static access
 // This verifies that generic classes are exported as VALUES.
-// Note: The friendly alias (List) and the arity name (List_1) should both work.
+// We use the friendly aliases (List, Dictionary) - arity names (List_1, Dictionary_2)
+// are internal implementation details not exported from facade.
 
-import { List_1, Dictionary_2 } from "@tsonic/dotnet/System.Collections.Generic";
+import { List, Dictionary } from "@tsonic/dotnet/System.Collections.Generic";
 
 // Construction requires value export
-const stringList = new List_1<string>();
-const numberList = new List_1<number>();
-const dict = new Dictionary_2<string, number>();
+const stringList = new List<string>();
+const numberList = new List<number>();
+const dict = new Dictionary<string, number>();
 
 // Instance method access
 stringList.Add("hello");
@@ -138,23 +139,24 @@ cat > "$TEST_DIR/interface-type-only.ts" << 'EOF'
 // Test: Interfaces should remain type-only exports
 // This is a regression test to ensure we don't accidentally value-export interfaces.
 // Interfaces have no runtime value, so type-only is correct.
+// We use friendly names (IEnumerable, IList) not arity names (IEnumerable_1, IList_1).
 
-import type { IEnumerable_1, IList_1, IDictionary_2 } from "@tsonic/dotnet/System.Collections.Generic";
-import type { IDisposable, IComparable_1 } from "@tsonic/dotnet/System";
+import type { IEnumerable, IList, IDictionary } from "@tsonic/dotnet/System.Collections.Generic";
+import type { IDisposable, IComparable } from "@tsonic/dotnet/System";
 
 // Use as type annotations - this should always work
-function process(items: IEnumerable_1<string>): void {
+function process(items: IEnumerable<string>): void {
     // Implementation
 }
 
-function acceptList(list: IList_1<number>): void {
+function acceptList(list: IList<number>): void {
     // Implementation
 }
 
 let disposable: IDisposable;
-let comparable: IComparable_1<string>;
+let comparable: IComparable<string>;  // IComparable requires type arg
 
-// Note: We can't do "new IEnumerable_1()" because interfaces have no constructor.
+// Note: We can't do "new IEnumerable()" because interfaces have no constructor.
 // This test just verifies the types are usable as type annotations.
 EOF
 
@@ -217,8 +219,8 @@ if run_tsc --noEmit 2>&1; then
     echo "Verified:"
     echo "  - Static method access (Console.WriteLine)"
     echo "  - Enum value access (ConsoleColor.Red)"
-    echo "  - Generic class construction (new List_1<T>())"
-    echo "  - Interface type-only usage (IEnumerable_1<T>)"
+    echo "  - Generic class construction (new List<T>())"
+    echo "  - Interface type-only usage (IEnumerable<T>)"
     echo "  - Struct value export (DateTime.Now)"
     echo "  - Abstract class non-instantiability (new Stream() fails)"
     exit 0

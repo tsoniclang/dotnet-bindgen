@@ -25,11 +25,8 @@ public static class ModuleStubEmitter
             // Generate stub content
             var content = GenerateStub(ns.Name);
 
-            // Write to file: output/Namespace.Name/index.js
-            var namespacePath = Path.Combine(outputDirectory, ns.Name);
-            Directory.CreateDirectory(namespacePath);
-
-            var outputFile = Path.Combine(namespacePath, "index.js");
+            // Write to file: output/Namespace.Name.js (flat ESM structure)
+            var outputFile = Path.Combine(outputDirectory, $"{ns.Name}.js");
             File.WriteAllText(outputFile, content);
 
             ctx.Log("ModuleStubEmitter", $"    → {outputFile}");
