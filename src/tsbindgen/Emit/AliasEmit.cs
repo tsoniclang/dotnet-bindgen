@@ -27,6 +27,7 @@ internal static class AliasEmit
     /// <param name="resolver">Type name resolver for printing constraints</param>
     /// <param name="ctx">Build context</param>
     /// <param name="withConstraints">Whether to include constraints on LHS (default: false for simple re-exports)</param>
+    /// <param name="facadeMode">When true, prefixes constraint type references with "Internal." for facade exports</param>
     internal static void EmitGenericAlias(
         StringBuilder sb,
         string aliasName,
@@ -34,7 +35,8 @@ internal static class AliasEmit
         string rhsExpression,
         TypeNameResolver resolver,
         BuildContext ctx,
-        bool withConstraints = false)
+        bool withConstraints = false,
+        bool facadeMode = false)
     {
         var gps = sourceType.GenericParameters;
 
@@ -56,7 +58,7 @@ internal static class AliasEmit
         // LHS: Generate type parameters (with or without constraints)
         if (withConstraints)
         {
-            var typeParamsLHS = GenerateTypeParametersWithConstraints(sourceType, resolver, ctx);
+            var typeParamsLHS = GenerateTypeParametersWithConstraints(sourceType, resolver, ctx, facadeMode);
             sb.Append(typeParamsLHS);
         }
         else
@@ -80,10 +82,12 @@ internal static class AliasEmit
     /// Generates generic type parameters WITH constraints for LHS of alias.
     /// Example: "<T extends IFoo, U extends IBar>"
     /// </summary>
+    /// <param name="facadeMode">When true, prefixes constraint references with "Internal." for facade exports</param>
     internal static string GenerateTypeParametersWithConstraints(
         TypeSymbol sourceType,
         TypeNameResolver resolver,
-        BuildContext ctx)
+        BuildContext ctx,
+        bool facadeMode = false)
     {
         var gps = sourceType.GenericParameters;
         if (gps.Length == 0)
@@ -110,6 +114,16 @@ internal static class AliasEmit
                     .Select(c =>
                     {
                         var printed = Printers.TypeRefPrinter.Print(c, resolver, ctx);
+
+                        // FACADE MODE: Prefix with "Internal." so constraints reference the internal module
+                        // This fixes TS2344 errors where unconstrained facade type params don't satisfy
+                        // internal type constraints. Example:
+                        // export type IFoo<TSelf extends Internal.IFoo_1<TSelf>> = Internal.IFoo_1<TSelf>;
+                        if (facadeMode)
+                        {
+                            printed = "Internal." + printed;
+                        }
+
                         // Relax IEquatable_1<T>, IComparable_1<T>, IComparable to admit primitives
                         if (IsValueSemanticsConstraint(c, gp.Name))
                         {
