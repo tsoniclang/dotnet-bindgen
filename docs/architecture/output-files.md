@@ -45,13 +45,17 @@ export type List_1<T> = List_1$instance<T> & __List_1$views<T>;
 
 ### index.d.ts (Facade)
 
-Re-exports from internal plus friendly aliases.
+Provides curated exports with friendly aliases. **No `export *`** is used to prevent leaking internal `$instance` and `$views` types.
 
 ```typescript
-export * from "./internal/index.js";
+import * as Internal from './internal/index.js';
 
-// Friendly alias (no arity suffix)
-export type List<T> = List_1<T>;
+// Public API exports (curated - no export *)
+// Value re-exports for classes
+export { List_1 as List } from './internal/index.js';
+
+// Type aliases for interfaces
+export type IEnumerable<T> = Internal.IEnumerable_1<T>;
 ```
 
 ### metadata.json
@@ -151,11 +155,13 @@ import type { IEnumerable_1 } from "../../System.Collections.Generic/internal/in
 
 ### Facade to Internal
 
-Always `./internal/index.js`:
+Facades import from `./internal/index.js` but use curated exports (no `export *`):
 
 ```typescript
 // From System.Linq/index.d.ts
-export * from "./internal/index.js";
+import * as Internal from './internal/index.js';
+export { Enumerable } from './internal/index.js';
+export type IQueryable<T> = Internal.IQueryable_1<T>;
 ```
 
 ### Support Types

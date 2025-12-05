@@ -71,30 +71,29 @@ export type List_1<T> = List_1$instance<T> & __List_1$views<T>;
 
 ### Facade File (Public API)
 
-The facade re-exports and adds friendly aliases:
+The facade provides curated exports with friendly aliases. **No `export *`** is used to prevent leaking internal `$instance` and `$views` types to consumers.
 
 ```typescript
 // System.Collections.Generic/index.d.ts
 
-// Import internal declarations
+// Import internal for type alias references
 import * as Internal from './internal/index.js';
 
 // Cross-namespace type imports for constraints
 import type { IComparable_1 } from '../System/index.js';
 
-// Re-export everything from internal
-export * from './internal/index.js';
+// Public API exports (curated - no export *)
+// Value re-exports for classes (TypeScript re-exports both value AND type binding)
+export { List_1 as List } from './internal/index.js';
+export { Dictionary_2 as Dictionary } from './internal/index.js';
+export { HashSet_1 as HashSet } from './internal/index.js';
+export { Queue_1 as Queue } from './internal/index.js';
+export { Stack_1 as Stack } from './internal/index.js';
 
-// Individual type exports with value re-exports for classes
-export { List_1 } from './internal/index.js';
-export { Dictionary_2 } from './internal/index.js';
-
-// Friendly aliases (no arity suffix)
-export type List<T> = Internal.List_1<T>;
-export type Dictionary<TKey, TValue> = Internal.Dictionary_2<TKey, TValue>;
-export type HashSet<T> = Internal.HashSet_1<T>;
-export type Queue<T> = Internal.Queue_1<T>;
-export type Stack<T> = Internal.Stack_1<T>;
+// Type aliases for interfaces (with Internal.-prefixed constraints)
+export type IEnumerable<T> = Internal.IEnumerable_1<T>;
+export type IList<T> = Internal.IList_1<T>;
+export type ICollection<T> = Internal.ICollection_1<T>;
 ```
 
 ### Value vs Type-Only Exports
