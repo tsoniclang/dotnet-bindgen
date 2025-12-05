@@ -88,15 +88,17 @@ output/
 
 ### Facade (index.d.ts)
 
-The public-facing module consumers import from:
+The public-facing module consumers import from. Uses curated exports (no `export *`) to prevent leaking internal `$instance`/`$views` types:
 
 ```typescript
-// Imports and re-exports
+// Import internal for type alias references
 import * as Internal from './internal/index.js';
-export * from './internal/index.js';
 
-// Friendly aliases
-export type List<T> = Internal.List_1<T>;
+// Value re-exports for classes (friendly names)
+export { List_1 as List } from './internal/index.js';
+
+// Type aliases for interfaces
+export type IEnumerable<T> = Internal.IEnumerable_1<T>;
 ```
 
 ### Internal (internal/index.d.ts)
