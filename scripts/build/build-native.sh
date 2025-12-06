@@ -5,7 +5,7 @@ set -e
 # Run this script to build binaries for npm publishing
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-ROOT_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
+ROOT_DIR="$(cd "$SCRIPT_DIR/../.." && pwd)"
 SRC_DIR="$ROOT_DIR/src/tsbindgen"
 NPM_DIR="$ROOT_DIR/npm"
 
