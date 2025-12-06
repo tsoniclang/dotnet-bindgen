@@ -510,10 +510,12 @@ if (type.FullName == "System.Boolean") return "boolean";
 
 ### Known .NET/TypeScript Impedance Mismatches
 
-1. **Property Covariance** (~12 TS2417 errors)
+**As of v0.7.4**: The BCL compiles with **zero semantic errors** using strict TypeScript.
+
+1. **Property Covariance** (FIXED in v0.7.4)
    - C# allows properties to return more specific types than interfaces require
    - TypeScript doesn't support property overloads (unlike methods)
-   - Status: Documented limitation, safe to ignore or use type assertions
+   - Status: **FIXED** - PropertyOverrideUnifier uses union types for covariant properties
 
 2. **Generic Static Members**
    - C# allows `static T DefaultValue` in `class List<T>`
@@ -523,6 +525,14 @@ if (type.FullName == "System.Boolean") return "boolean";
 3. **Indexers** (~241 instances)
    - C# indexers with different parameter types cause duplicate identifiers
    - Status: Intentionally skipped from declarations, tracked in metadata
+
+4. **Interface Method Conflicts** (FIXED in v0.7.4)
+   - Method signature mismatch between class and inherited interface
+   - Status: **FIXED** - ClassPrinter emits inherited method overloads
+
+5. **Multi-arity Constraint Propagation** (FIXED in v0.7.4)
+   - Facade type parameters passed to constrained internal types
+   - Status: **FIXED** - MultiArityAliasEmit uses nested constraint guards
 
 ## Type Mapping Rules (Tsonic Conventions)
 
@@ -605,16 +615,16 @@ node test/validate/verify-completeness.js | tee .tests/completeness-$(date +%s).
 ### Success Criteria
 
 - ✅ **Zero syntax errors (TS1xxx)** - All output is valid TypeScript
+- ✅ **Zero semantic errors (TS2xxx)** - All type constraints satisfied (v0.7.4+)
 - ✅ **All assemblies generate** - No generation failures
 - ✅ **All metadata files present** - Each .d.ts has matching .metadata.json
 - ✅ **100% type coverage** - All reflected types appear in typelist
-- ⚠️ **Semantic errors acceptable** - TS2xxx errors are expected (known limitations)
 
 ### Error Categories
 
 ```
 TS1xxx - Syntax errors (CRITICAL - must be zero)
-TS2xxx - Semantic errors (expected, prioritized by count/impact)
+TS2xxx - Semantic errors (FIXED in v0.7.4 - now zero)
 TS6200 - Duplicate type aliases (expected for branded types)
 ```
 

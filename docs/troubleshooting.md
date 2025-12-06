@@ -90,7 +90,7 @@ error TS2417: Property 'value' of type 'string' is not assignable...
 
 **Cause:** C# property covariance not supported in TypeScript.
 
-**Status:** Known limitation. These errors are expected and safe to ignore (~12 in BCL).
+**Status:** Fixed in v0.7.4. The `PropertyOverrideUnifier` pass now unifies covariant property types using union types. The BCL now compiles with **zero semantic errors**.
 
 ### TS2320 - Interface Cannot Extend
 
@@ -100,7 +100,27 @@ error TS2320: Interface 'X' cannot simultaneously extend types 'A' and 'B'.
 
 **Cause:** Diamond inheritance with conflicting members.
 
-**Solution:** This is handled by tsbindgen's conflict resolution. If you see this error, report it.
+**Status:** Fixed. The `SafeToExtendAnalyzer` detects conflicting members and routes them through views instead of extends.
+
+### TS2430 - Interface Method Conflicts
+
+```
+error TS2430: Interface 'X' incorrectly extends interface 'Y'.
+```
+
+**Cause:** Method signature mismatch between class and inherited interface (e.g., `char` vs `CLROf<char>`).
+
+**Status:** Fixed in v0.7.4. The `ClassPrinter` now emits inherited method overloads to satisfy both the class and interface contracts.
+
+### TS2344 - Constraint Violations
+
+```
+error TS2344: Type 'T' does not satisfy the constraint 'C'.
+```
+
+**Cause:** Multi-arity facade type parameters passed to constrained internal types without verification.
+
+**Status:** Fixed in v0.7.4. The `MultiArityAliasEmit` now uses nested constraint guards (`[T] extends [C] ? Result : never`) to verify constraints before dispatch.
 
 ## Library Mode Issues
 

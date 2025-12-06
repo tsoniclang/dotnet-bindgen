@@ -6,6 +6,7 @@ Each namespace generates multiple companion files.
 
 ```
 output/
+  families.json           # Multi-arity family index (root)
   System/
     internal/
       index.d.ts          # Full declarations
@@ -122,6 +123,37 @@ CLR-to-TypeScript name mappings. Used for runtime binding.
 - `stableId` - Unique identifier (assembly:fullName)
 - `metadataToken` - CLR reflection token
 - `isExtensionMethod` - C# extension method flag
+
+### families.json
+
+Canonical index of multi-arity families for cross-package imports.
+
+```json
+{
+  "System.Action": {
+    "stem": "Action",
+    "namespace": "System",
+    "minArity": 0,
+    "maxArity": 16,
+    "isDelegate": true
+  },
+  "System.Func": {
+    "stem": "Func",
+    "namespace": "System",
+    "minArity": 1,
+    "maxArity": 17,
+    "isDelegate": true
+  }
+}
+```
+
+**Key fields:**
+- `stem` - Base name without arity suffix
+- `namespace` - CLR namespace containing the family
+- `minArity` / `maxArity` - Range of generic parameter counts
+- `isDelegate` - Whether the family members are delegate types
+
+Used by `ImportPlanner` for drift-proof multi-arity family resolution across packages.
 
 ### typelist.json
 

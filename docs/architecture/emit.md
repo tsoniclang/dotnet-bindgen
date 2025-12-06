@@ -63,6 +63,84 @@ export interface __List_1$views<T> {
 export type List_1<T> = List_1$instance<T> & __List_1$views<T>;
 ```
 
+## MultiArityAliasEmit
+
+**File:** `Emit/MultiArityAliasEmit.cs`
+
+Generates sentinel-ladder type aliases for multi-arity families:
+
+```csharp
+public static class MultiArityAliasEmit
+{
+    public static string EmitFamilyAlias(
+        MultiArityFamily family,
+        TypeNameResolver resolver,
+        BuildContext ctx,
+        string currentNamespace)
+    {
+        // Emit sentinel and facade type alias
+        // Uses sentinel-ladder pattern with nested constraint guards
+    }
+}
+```
+
+**Output structure:**
+
+```typescript
+// Sentinel symbol
+declare const __unspecified: unique symbol;
+export type __ = typeof __unspecified;
+
+// Multi-arity facade
+export type Action<T1 = __, T2 = __> =
+  [T1] extends [__] ? Internal.Action :
+  [T2] extends [__] ? Internal.Action_1<T1> :
+  Internal.Action_2<T1, T2>;
+```
+
+**Key methods:**
+
+| Method | Purpose |
+|--------|---------|
+| `EmitFamilyAlias` | Main entry point for family emission |
+| `BuildNestedConstraintCheck` | Generates nested `[T] extends [C]` guards |
+| `IsSameNamespace` | Determines if type needs `Internal.` prefix |
+
+## FamilyIndexEmitter
+
+**File:** `Emit/FamilyIndexEmitter.cs`
+
+Emits `families.json` - a canonical index of multi-arity families for cross-package imports:
+
+```csharp
+public static class FamilyIndexEmitter
+{
+    public static void Emit(
+        BuildContext ctx,
+        IReadOnlyDictionary<string, MultiArityFamily> families,
+        string outputDirectory)
+    {
+        // Write families.json with family metadata
+    }
+}
+```
+
+**Output structure:**
+
+```json
+{
+  "System.Action": {
+    "stem": "Action",
+    "namespace": "System",
+    "minArity": 0,
+    "maxArity": 16,
+    "isDelegate": true
+  }
+}
+```
+
+Used by `ImportPlanner` to resolve multi-arity imports across packages.
+
 ## FacadeEmitter
 
 **File:** `Emit/FacadeEmitter.cs`

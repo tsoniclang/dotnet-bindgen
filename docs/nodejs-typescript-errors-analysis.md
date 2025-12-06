@@ -1,9 +1,12 @@
 # nodejs TypeScript Errors Analysis Report
 
+> **RESOLVED**: This document is historical. All errors described here have been fixed in v0.7.4.
+> The nodejs package now compiles with **zero TypeScript errors**.
+
 **Date:** 2025-12-06
 **Author:** Claude (with Jeswin)
 **Package:** @tsonic/nodejs
-**Total Errors:** 13 nodejs-specific + 18 BCL errors (known limitation)
+**Total Errors:** ~~13 nodejs-specific + 18 BCL errors~~ → **0 errors (v0.7.4+)**
 
 ---
 

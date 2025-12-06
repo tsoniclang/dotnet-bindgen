@@ -28,9 +28,9 @@ node test/validate/validate.js | tee .tests/validation-$(date +%s).txt
 | Criteria | Status |
 |----------|--------|
 | Zero syntax errors (TS1xxx) | Required |
+| Zero semantic errors (TS2xxx) | Required (v0.7.4+) |
 | All assemblies generate | Required |
 | All metadata files present | Required |
-| Semantic errors (TS2xxx) | Expected (known limitations) |
 
 ## Completeness Verification
 
@@ -79,6 +79,11 @@ Individual test scripts verify specific behaviors.
 | `test-primitive-identity.sh` | Primitive type mappings |
 | `test-clrof-regression.sh` | CLROf utility type |
 | `test-camelcase-regression.sh` | CamelCase conversion |
+| `test-multiarity-import.sh` | Multi-arity types import correctly |
+| `test-multiarity-no-wrong-export.sh` | Facades don't export wrong arity |
+| `test-facade-constraint-invariants.sh` | Constraint invariants validation |
+| `test-params-rest.sh` | C# params → TS rest parameters |
+| `test-cross-module-alias.sh` | Cross-module type aliases |
 
 ### Running a Single Test
 
@@ -92,7 +97,7 @@ Individual test scripts verify specific behaviors.
 
 ```
 TS1xxx - Syntax errors (CRITICAL - must be zero)
-TS2xxx - Semantic errors (expected for some patterns)
+TS2xxx - Semantic errors (FIXED in v0.7.4 - now zero)
 TS6200 - Duplicate type aliases (expected for branded types)
 ```
 
@@ -114,25 +119,25 @@ grep "System.Collections.Generic" .tests/run.txt
 
 ## Known Semantic Errors
 
-Some TypeScript semantic errors are expected due to CLR/TypeScript differences:
+**As of v0.7.4**: The BCL compiles with **zero semantic errors**. All previously known issues have been fixed.
 
-### TS2417 - Property Covariance (~12 errors)
+### TS2417 - Property Covariance (FIXED)
 
 C# allows properties to return more specific types than interfaces require. TypeScript doesn't support property overloads.
 
-```csharp
-// C#: Valid - covariant return
-interface IBase { object Value { get; } }
-class Derived : IBase { string Value { get; } }  // More specific
-```
+**Status**: **FIXED** in v0.7.4 - PropertyOverrideUnifier uses union types for covariant properties.
 
-```typescript
-// TypeScript: Error - incompatible types
-interface IBase { value: unknown; }
-interface Derived extends IBase { value: string; }  // TS2417
-```
+### TS2430 - Interface Method Conflicts (FIXED)
 
-**Status**: Documented limitation, safe to ignore.
+Method signature mismatch between class and inherited interface (e.g., `char` vs `CLROf<char>`).
+
+**Status**: **FIXED** in v0.7.4 - ClassPrinter emits inherited method overloads.
+
+### TS2344 - Constraint Violations (FIXED)
+
+Multi-arity facade type parameters passed to constrained internal types without verification.
+
+**Status**: **FIXED** in v0.7.4 - MultiArityAliasEmit uses nested constraint guards.
 
 ### TS6200 - Duplicate Type Aliases
 
