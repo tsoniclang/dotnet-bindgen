@@ -34,6 +34,11 @@ fi
 bcl_namespaces=$(find "$LIB_TEST_DIR/bcl-types" -mindepth 1 -maxdepth 1 -type d | wc -l)
 echo "          ✓ BCL generation succeeded ($bcl_namespaces namespaces)"
 
+# Create package.json for BCL library (required by LibraryContractLoader)
+# In real usage, the library package would have this file
+echo '{"name": "@test/bcl-types", "version": "1.0.0"}' > "$LIB_TEST_DIR/bcl-types/package.json"
+echo "          ✓ Created package.json for BCL library"
+
 # Step 2: Build user library fixture
 echo "[3/5] Building user library fixture..."
 cd "$PROJECT_ROOT/test/fixtures/UserLib"
@@ -121,8 +126,56 @@ fi
 
 echo "          ✓ BCL namespaces correctly excluded from output"
 
+# ============================================================
+# REGRESSION TESTS FOR EXTERNAL IMPORT RESOLUTION
+# These tests detect the failure modes when --lib doesn't work correctly
+# ============================================================
+
+echo ""
+echo "[6/8] Checking for relative imports to BCL (regression test)..."
+# If --lib fails, imports would look like "../../System/internal/index.js" or "../System/"
+if grep -rE '"\.\./.*System|"\.\./.*Microsoft' "$LIB_TEST_DIR/user-lib-filtered/" --include="*.d.ts" 2>/dev/null; then
+    echo -e "${RED}❌ FAILED: Found relative imports to BCL namespaces${NC}"
+    echo "          This indicates library mode import resolution is broken"
+    exit 1
+fi
+echo "          ✓ No relative imports to BCL namespaces"
+
+echo ""
+echo "[7/8] Checking for 'unknown' type leakage (regression test)..."
+# If type resolution fails, BCL types become 'unknown'
+# Check for patterns like ": unknown" that indicate unresolved types
+# Note: grep returns exit 1 when no matches, so we use || true to prevent set -e from failing
+unknown_count=$(grep -rE ': unknown[^a-zA-Z]|: unknown$' "$LIB_TEST_DIR/user-lib-filtered/" --include="*.d.ts" 2>/dev/null | wc -l || true)
+if [ "$unknown_count" -gt 0 ]; then
+    echo -e "${RED}❌ FAILED: Found $unknown_count instances of 'unknown' type${NC}"
+    echo "          This indicates BCL type resolution failed"
+    grep -rE ': unknown[^a-zA-Z]|: unknown$' "$LIB_TEST_DIR/user-lib-filtered/" --include="*.d.ts" 2>/dev/null | head -5 || true
+    exit 1
+fi
+echo "          ✓ No 'unknown' type leakage found"
+
+echo ""
+echo "[8/8] Checking for package specifier imports (regression test)..."
+# Correct imports should use the library package name, not relative paths
+# The BCL library should have a package.json with a name field
+bcl_package_name=$(jq -r '.name // empty' "$LIB_TEST_DIR/bcl-types/package.json" 2>/dev/null || echo "")
+if [ -n "$bcl_package_name" ]; then
+    # Check that imports use the package name (e.g., "@tsonic/dotnet/System.js")
+    import_count=$(grep -c "$bcl_package_name/" "$LIB_TEST_DIR/user-lib-filtered/MyCompany.Utils/internal/index.d.ts" 2>/dev/null || echo "0")
+    if [ "$import_count" -eq 0 ]; then
+        echo -e "${YELLOW}⚠ WARNING: No package specifier imports found for '$bcl_package_name'${NC}"
+        echo "          (BCL types may not be referenced from user library)"
+    else
+        echo "          ✓ Found $import_count package specifier imports for '$bcl_package_name'"
+    fi
+else
+    echo "          (Skipped: BCL package.json has no 'name' field for package specifier test)"
+fi
+
 # Count types in user namespace
 user_types=$(find "$LIB_TEST_DIR/user-lib-filtered/MyCompany.Utils" -name "*.d.ts" | wc -l)
+echo ""
 echo "          User types emitted: $user_types"
 
 echo ""
@@ -138,4 +191,6 @@ echo "  ✓ Filtered generation: $filtered_namespaces namespaces (user only)"
 echo "  ✓ BCL types correctly excluded via --lib"
 echo "  ✓ User types (MyCompany.Utils) correctly included"
 echo "  ✓ No LIB001-003 validation errors"
+echo "  ✓ No relative imports to BCL (regression)"
+echo "  ✓ No 'unknown' type leakage (regression)"
 echo ""

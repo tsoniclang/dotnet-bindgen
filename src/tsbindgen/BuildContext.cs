@@ -66,6 +66,14 @@ public sealed class BuildContext
     public LibraryContract? LibraryContract { get; init; }
 
     /// <summary>
+    /// Library namespace index for import resolution in library mode.
+    /// Maps CLR full name (e.g., "System.Exception") to namespace (e.g., "System").
+    /// Built from the FULL graph before library filtering.
+    /// Used by ImportGraph to resolve library type references.
+    /// </summary>
+    public Dictionary<string, string>? LibraryNamespaceIndex { get; set; }
+
+    /// <summary>
     /// Create a new BuildContext with default services.
     /// </summary>
     public static BuildContext Create(

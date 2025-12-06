@@ -77,6 +77,13 @@ public static class Builder
             {
                 ctx.Log("Build", "\n--- Library Filtering (before Shape) ---");
                 ctx.Log("Build", $"Contract: {libraryContract.TypeCount} types, {libraryContract.MemberCount} members");
+
+                // CRITICAL: Build namespace index from FULL graph BEFORE filtering
+                // This allows ImportGraph to resolve library type references during import planning
+                ctx.Log("Build", "Building library namespace index from full graph...");
+                ctx.LibraryNamespaceIndex = BuildNamespaceIndex(graph);
+                ctx.Log("Build", $"Indexed {ctx.LibraryNamespaceIndex.Count} types for library import resolution");
+
                 graph = LibraryFilter.FilterGraph(ctx, graph, libraryContract);
 
                 // Rebuild indices after filtering
@@ -409,6 +416,9 @@ public static class Builder
         // Emit facade/index.d.ts for each namespace
         FacadeEmitter.Emit(ctx, plan, outputDirectory);
 
+        // Emit families.json (canonical family index for library consumers)
+        FamilyIndexEmitter.Emit(ctx, plan, outputDirectory);
+
         // Emit metadata.json for each namespace
         MetadataEmitter.Emit(ctx, plan, outputDirectory);
 
@@ -469,6 +479,42 @@ public static class Builder
                     $"[trace:shape] {passName} {type.StableId}::{Plan.Validation.Scopes.FormatMemberStableId(prop.StableId)} " +
                     $"EmitScope={prop.EmitScope} SourceInterface={ifaceStableId}");
             }
+        }
+    }
+
+    /// <summary>
+    /// Build namespace index from a SymbolGraph.
+    /// Maps CLR full name (e.g., "System.Exception") → namespace (e.g., "System").
+    /// Used for library mode import resolution.
+    /// </summary>
+    private static Dictionary<string, string> BuildNamespaceIndex(SymbolGraph graph)
+    {
+        var index = new Dictionary<string, string>();
+
+        foreach (var ns in graph.Namespaces)
+        {
+            foreach (var type in ns.Types)
+            {
+                // Index by CLR full name
+                index[type.ClrFullName] = ns.Name;
+
+                // Also index nested types recursively
+                IndexNestedTypes(type, ns.Name, index);
+            }
+        }
+
+        return index;
+    }
+
+    /// <summary>
+    /// Recursively index nested types.
+    /// </summary>
+    private static void IndexNestedTypes(TypeSymbol type, string namespaceName, Dictionary<string, string> index)
+    {
+        foreach (var nested in type.NestedTypes)
+        {
+            index[nested.ClrFullName] = namespaceName;
+            IndexNestedTypes(nested, namespaceName, index);
         }
     }
 

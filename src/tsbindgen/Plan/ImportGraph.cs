@@ -521,6 +521,7 @@ public static class ImportGraph
     }
 
     private static string? FindNamespaceForType(
+        BuildContext ctx,
         SymbolGraph graph,
         ImportGraphData graphData,
         TypeReference typeRef)
@@ -530,13 +531,18 @@ public static class ImportGraph
         if (clrKey == null)
             return null; // Generic parameter, placeholder, or unknown
 
-        // Fast O(1) lookup using CLR full name
+        // Fast O(1) lookup using CLR full name in local graph
         // CRITICAL: This now works for generic types because clrKey uses backtick form
         // Example: IEnumerable<T> → "System.Collections.Generic.IEnumerable`1"
         if (graphData.ClrFullNameToNamespace.TryGetValue(clrKey, out var ns))
             return ns;
 
-        // Type might be external (not in our graph)
+        // Library mode: Check the library namespace index (built from full graph before filtering)
+        // This allows resolving library types that were filtered out
+        if (ctx.LibraryNamespaceIndex != null && ctx.LibraryNamespaceIndex.TryGetValue(clrKey, out var libNs))
+            return libNs;
+
+        // Type might be external (not in our graph or library)
         return null;
     }
 
@@ -662,7 +668,7 @@ public static class ImportGraph
         switch (typeRef)
         {
             case NamedTypeReference named:
-                var ns = FindNamespaceForType(graph, graphData, named);
+                var ns = FindNamespaceForType(ctx, graph, graphData, named);
                 // CRITICAL: Use open generic CLR key, not FullName which may be constructed
                 var clrKey = GetOpenGenericClrKey(named);
 
@@ -693,7 +699,7 @@ public static class ImportGraph
                 break;
 
             case NestedTypeReference nested:
-                var nestedNs = FindNamespaceForType(graph, graphData, nested);
+                var nestedNs = FindNamespaceForType(ctx, graph, graphData, nested);
                 // CRITICAL: Use open generic CLR key for nested type
                 var nestedClrKey = GetOpenGenericClrKey(nested.FullReference);
 

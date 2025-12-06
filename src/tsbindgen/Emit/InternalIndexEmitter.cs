@@ -113,7 +113,19 @@ public static class InternalIndexEmitter
             // Add System_Internal namespace import for CLROf if not already present
             if (needsSystemInternalForCLROf)
             {
-                var systemPath = Plan.PathPlanner.GetSpecifier(nsOrder.Namespace.Name, "System");
+                // Use library package specifier if in library mode and System types are in the library
+                // Check for a specific System type (Int32) rather than namespace membership for correctness
+                string systemPath;
+                if (ctx.LibraryContract != null && ctx.LibraryContract.AllowedClrFullNames.Contains("System.Int32"))
+                {
+                    // Library mode: import from external package facade
+                    systemPath = $"{ctx.LibraryContract.PackageName}/System.js";
+                }
+                else
+                {
+                    // Normal mode: relative path
+                    systemPath = Plan.PathPlanner.GetSpecifier(nsOrder.Namespace.Name, "System");
+                }
                 sb.AppendLine($"import * as System_Internal from \"{systemPath}\";");
             }
 
@@ -750,7 +762,8 @@ public static class InternalIndexEmitter
                     interfaceName.Contains("System.Numerics.IRootFunctions`1") ||
                     interfaceName.Contains("System.Numerics.ITrigonometricFunctions`1") ||
                     interfaceName.Contains("System.IEquatable`1") ||
-                    interfaceName.Contains("System.IComparable"))
+                    interfaceName.Contains("System.IComparable") ||
+                    interfaceName.Contains("System.IUtf8SpanFormattable"))
                 {
                     interfaces ??= new HashSet<string>();
 
@@ -771,6 +784,8 @@ public static class InternalIndexEmitter
                         interfaces.Add("IEquatable");
                     if (interfaceName.Contains("System.IComparable"))
                         interfaces.Add("IComparable");
+                    if (interfaceName.Contains("System.IUtf8SpanFormattable"))
+                        interfaces.Add("IUtf8SpanFormattable");
                 }
             }
         }
@@ -810,20 +825,20 @@ public static class InternalIndexEmitter
                 return $"import(\"../../System/internal/index\").{simpleName}";
         }
 
-        // IEquatable<T>.Equals
+        // IEquatable<T>.Equals - camelCase to match emitted interface members
         if (numericInterfaces.Contains("IEquatable"))
         {
-            sb.AppendLine($"    Equals(other: {typeName}): boolean;");
+            sb.AppendLine($"    equals(other: {typeName}): boolean;");
         }
 
-        // IComparable.CompareTo
+        // IComparable.CompareTo - camelCase to match emitted interface members
         if (numericInterfaces.Contains("IComparable"))
         {
-            sb.AppendLine("    CompareTo(obj: unknown): int;");
+            sb.AppendLine("    compareTo(obj: unknown): int;");
         }
 
         // INumberBase<TSelf>, INumber<TSelf>, IBinaryInteger<TSelf>, IFloatingPoint<TSelf>, etc.
-        // All require ToString and TryFormat
+        // All require toString and tryFormat - camelCase to match emitted interface members
         if (numericInterfaces.Contains("INumberBase") ||
             numericInterfaces.Contains("INumber") ||
             numericInterfaces.Contains("IBinaryInteger") ||
@@ -831,34 +846,43 @@ public static class InternalIndexEmitter
             numericInterfaces.Contains("IRootFunctions") ||
             numericInterfaces.Contains("ITrigonometricFunctions"))
         {
-            sb.AppendLine($"    ToString(format: string, formatProvider: {Qualified("IFormatProvider")}): string;");
+            sb.AppendLine($"    toString(format: string, formatProvider: {Qualified("IFormatProvider")}): string;");
             // ref is from @tsonic/types, so never qualify it
-            sb.AppendLine($"    TryFormat(destination: {Qualified("Span_1")}<{Qualified("CLROf")}<char>>, charsWritten: {{ value: ref<int> }}, format: {Qualified("ReadOnlySpan_1")}<{Qualified("CLROf")}<char>>, provider: {Qualified("IFormatProvider")}): boolean;");
+            sb.AppendLine($"    tryFormat(destination: {Qualified("Span_1")}<{Qualified("CLROf")}<char>>, charsWritten: {{ value: ref<int> }}, format: {Qualified("ReadOnlySpan_1")}<{Qualified("CLROf")}<char>>, provider: {Qualified("IFormatProvider")}): boolean;");
         }
 
-        // IBinaryInteger<TSelf> - GetByteCount, TryWriteBigEndian, WriteBigEndian
+        // IUtf8SpanFormattable - tryFormat UTF-8 overload (byte version)
+        // This overload is required when the interface hierarchy includes IUtf8SpanFormattable
+        if (numericInterfaces.Contains("IUtf8SpanFormattable"))
+        {
+            sb.AppendLine($"    tryFormat(utf8Destination: {Qualified("Span_1")}<{Qualified("CLROf")}<byte>>, bytesWritten: {{ value: ref<int> }}, format: {Qualified("ReadOnlySpan_1")}<{Qualified("CLROf")}<char>>, provider: {Qualified("IFormatProvider")}): boolean;");
+        }
+
+        // IBinaryInteger<TSelf> - getByteCount, tryWriteBigEndian, writeBigEndian
+        // camelCase to match emitted interface members
         if (numericInterfaces.Contains("IBinaryInteger"))
         {
-            sb.AppendLine("    GetByteCount(): int;");
-            // TryWriteBigEndian with out parameter
-            sb.AppendLine($"    TryWriteBigEndian(destination: {Qualified("Span_1")}<{Qualified("CLROf")}<byte>>, bytesWritten: {{ value: ref<int> }}): boolean;");
-            // WriteBigEndian overloads
-            sb.AppendLine("    WriteBigEndian(destination: byte[], startIndex: int): int;");
-            sb.AppendLine("    WriteBigEndian(destination: byte[]): int;");
-            sb.AppendLine($"    WriteBigEndian(destination: {Qualified("Span_1")}<{Qualified("CLROf")}<byte>>): int;");
+            sb.AppendLine("    getByteCount(): int;");
+            // tryWriteBigEndian with out parameter
+            sb.AppendLine($"    tryWriteBigEndian(destination: {Qualified("Span_1")}<{Qualified("CLROf")}<byte>>, bytesWritten: {{ value: ref<int> }}): boolean;");
+            // writeBigEndian overloads
+            sb.AppendLine("    writeBigEndian(destination: byte[], startIndex: int): int;");
+            sb.AppendLine("    writeBigEndian(destination: byte[]): int;");
+            sb.AppendLine($"    writeBigEndian(destination: {Qualified("Span_1")}<{Qualified("CLROf")}<byte>>): int;");
         }
 
-        // IFloatingPoint<TSelf> - GetExponentByteCount, GetExponentShortestBitLength, TryWriteExponentBigEndian, WriteExponentBigEndian
+        // IFloatingPoint<TSelf> - getExponentByteCount, getExponentShortestBitLength, tryWriteExponentBigEndian, writeExponentBigEndian
+        // camelCase to match emitted interface members
         if (numericInterfaces.Contains("IFloatingPoint"))
         {
-            sb.AppendLine("    GetExponentByteCount(): int;");
-            sb.AppendLine("    GetExponentShortestBitLength(): int;");
-            // TryWriteExponentBigEndian with out parameter
-            sb.AppendLine($"    TryWriteExponentBigEndian(destination: {Qualified("Span_1")}<{Qualified("CLROf")}<byte>>, bytesWritten: {{ value: ref<int> }}): boolean;");
-            // WriteExponentBigEndian overloads
-            sb.AppendLine("    WriteExponentBigEndian(destination: byte[], startIndex: int): int;");
-            sb.AppendLine("    WriteExponentBigEndian(destination: byte[]): int;");
-            sb.AppendLine($"    WriteExponentBigEndian(destination: {Qualified("Span_1")}<{Qualified("CLROf")}<byte>>): int;");
+            sb.AppendLine("    getExponentByteCount(): int;");
+            sb.AppendLine("    getExponentShortestBitLength(): int;");
+            // tryWriteExponentBigEndian with out parameter
+            sb.AppendLine($"    tryWriteExponentBigEndian(destination: {Qualified("Span_1")}<{Qualified("CLROf")}<byte>>, bytesWritten: {{ value: ref<int> }}): boolean;");
+            // writeExponentBigEndian overloads
+            sb.AppendLine("    writeExponentBigEndian(destination: byte[], startIndex: int): int;");
+            sb.AppendLine("    writeExponentBigEndian(destination: byte[]): int;");
+            sb.AppendLine($"    writeExponentBigEndian(destination: {Qualified("Span_1")}<{Qualified("CLROf")}<byte>>): int;");
         }
     }
 
