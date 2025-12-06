@@ -113,7 +113,19 @@ public static class InternalIndexEmitter
             // Add System_Internal namespace import for CLROf if not already present
             if (needsSystemInternalForCLROf)
             {
-                var systemPath = Plan.PathPlanner.GetSpecifier(nsOrder.Namespace.Name, "System");
+                // Use library package specifier if in library mode and System types are in the library
+                // Check for a specific System type (Int32) rather than namespace membership for correctness
+                string systemPath;
+                if (ctx.LibraryContract != null && ctx.LibraryContract.AllowedClrFullNames.Contains("System.Int32"))
+                {
+                    // Library mode: import from external package facade
+                    systemPath = $"{ctx.LibraryContract.PackageName}/System.js";
+                }
+                else
+                {
+                    // Normal mode: relative path
+                    systemPath = Plan.PathPlanner.GetSpecifier(nsOrder.Namespace.Name, "System");
+                }
                 sb.AppendLine($"import * as System_Internal from \"{systemPath}\";");
             }
 

@@ -25,6 +25,15 @@ public static class LibraryContractLoader
             throw new DirectoryNotFoundException($"Library package directory not found: {packagePath}");
         }
 
+        // Read package name from package.json
+        var packageJsonPath = Path.Combine(packagePath, "package.json");
+        if (!File.Exists(packageJsonPath))
+        {
+            throw new FileNotFoundException($"No package.json found in library package: {packagePath}");
+        }
+
+        var packageName = ReadPackageName(packageJsonPath);
+
         var allowedTypes = new HashSet<string>();
         var allowedMembers = new HashSet<string>();
         var namespaceToTypes = new Dictionary<string, HashSet<string>>();
@@ -57,15 +66,59 @@ public static class LibraryContractLoader
             ProcessBindingsFile(bindingsFile, allowedBindings);
         }
 
+        // Build derived structures for per-type membership checks
+        // AllowedClrFullNames: Extract CLR full name from StableId (format: "AssemblyName:ClrFullName")
+        var allowedClrFullNames = new HashSet<string>();
+        foreach (var stableId in allowedTypes)
+        {
+            var colonIndex = stableId.IndexOf(':');
+            if (colonIndex >= 0 && colonIndex < stableId.Length - 1)
+            {
+                allowedClrFullNames.Add(stableId.Substring(colonIndex + 1));
+            }
+        }
+
+        // ClrFullNameToNamespace: Map each CLR full name to its namespace
+        var clrFullNameToNamespace = new Dictionary<string, string>();
+        foreach (var (namespaceName, typeStableIds) in namespaceToTypes)
+        {
+            foreach (var stableId in typeStableIds)
+            {
+                var colonIndex = stableId.IndexOf(':');
+                if (colonIndex >= 0 && colonIndex < stableId.Length - 1)
+                {
+                    var clrFullName = stableId.Substring(colonIndex + 1);
+                    clrFullNameToNamespace[clrFullName] = namespaceName;
+                }
+            }
+        }
+
         return new LibraryContract
         {
+            PackageName = packageName,
             AllowedTypeStableIds = allowedTypes.ToImmutableHashSet(),
             AllowedMemberStableIds = allowedMembers.ToImmutableHashSet(),
             AllowedBindingStableIds = allowedBindings.ToImmutableHashSet(),
             NamespaceToTypes = namespaceToTypes.ToImmutableDictionary(
                 kvp => kvp.Key,
-                kvp => kvp.Value.ToImmutableHashSet())
+                kvp => kvp.Value.ToImmutableHashSet()),
+            AllowedClrFullNames = allowedClrFullNames.ToImmutableHashSet(),
+            ClrFullNameToNamespace = clrFullNameToNamespace.ToImmutableDictionary()
         };
+    }
+
+    private static string ReadPackageName(string packageJsonPath)
+    {
+        var json = File.ReadAllText(packageJsonPath);
+        using var doc = JsonDocument.Parse(json);
+        var root = doc.RootElement;
+
+        if (!root.TryGetProperty("name", out var nameElement))
+        {
+            throw new InvalidOperationException($"Missing 'name' field in package.json: {packageJsonPath}");
+        }
+
+        return nameElement.GetString() ?? throw new InvalidOperationException($"Null package name in {packageJsonPath}");
     }
 
     private static void ProcessMetadataFile(

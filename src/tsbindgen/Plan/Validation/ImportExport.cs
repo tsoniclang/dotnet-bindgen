@@ -332,11 +332,21 @@ internal static class ImportExport
 
         int checkedImports = 0;
         int missingExports = 0;
+        int skippedLibraryImports = 0;
 
         foreach (var (namespaceName, importStatements) in imports.NamespaceImports)
         {
             foreach (var importStmt in importStatements)
             {
+                // Library mode: Skip validation for external library imports
+                // Check the actual import path (e.g., "@tsonic/dotnet/System.js") rather than namespace name
+                // This is more robust than checking namespace because it validates based on ImportPlanner's decision
+                if (ctx.LibraryContract != null && importStmt.ImportPath.StartsWith(ctx.LibraryContract.PackageName + "/"))
+                {
+                    skippedLibraryImports += importStmt.TypeImports.Count;
+                    continue;
+                }
+
                 // Get the exports from the target namespace
                 if (!imports.NamespaceExports.TryGetValue(importStmt.TargetNamespace, out var exports))
                 {
@@ -374,7 +384,8 @@ internal static class ImportExport
             }
         }
 
-        ctx.Log("PhaseGate", $"Validated {checkedImports} imports. Missing exports: {missingExports}");
+        var libraryNote = skippedLibraryImports > 0 ? $" (skipped {skippedLibraryImports} library imports)" : "";
+        ctx.Log("PhaseGate", $"Validated {checkedImports} imports. Missing exports: {missingExports}{libraryNote}");
     }
 
     /// <summary>
@@ -555,6 +566,14 @@ internal static class ImportExport
             if (string.IsNullOrEmpty(targetNamespace) && !string.IsNullOrEmpty(importStmt.TargetNamespace))
             {
                 targetNamespace = importStmt.TargetNamespace;
+            }
+
+            // Library mode: Skip validation for external library imports
+            // Check the actual import path rather than namespace name for robustness
+            if (ctx.LibraryContract != null && importStmt.ImportPath.StartsWith(ctx.LibraryContract.PackageName + "/"))
+            {
+                checkedQualifiedNames++;
+                continue;
             }
 
             // Validate: Target namespace exports the type
