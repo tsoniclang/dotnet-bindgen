@@ -39,7 +39,7 @@ public enum ReferenceKind
 
 ## ImportPlanner
 
-Generates import statements for each namespace.
+Generates import statements for each namespace. Uses `FacadeFamilyIndex` for drift-proof multi-arity family resolution.
 
 ```csharp
 public sealed record ImportPlan

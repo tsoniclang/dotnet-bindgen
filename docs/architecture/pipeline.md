@@ -81,5 +81,6 @@ public static void Build(BuildContext ctx, GenerateOptions options)
     // Phase 5: Emit
     InternalIndexEmitter.Emit(ctx, emissionPlan, options.OutDir);
     FacadeEmitter.Emit(ctx, emissionPlan, options.OutDir);
+    FamilyIndexEmitter.Emit(ctx, families, options.OutDir);  // families.json
 }
 ```

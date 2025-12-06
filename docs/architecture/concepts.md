@@ -1661,3 +1661,119 @@ TypeStableId: System.Private.CoreLib:System.Collections.Generic.List`1+Enumerato
 
 The bindings.json maps TypeScript names back to CLR nested type paths.
 
+## Multi-arity Families
+
+### The Problem
+
+.NET has type families with varying generic arity:
+- `Action` (0 params) through `Action<T1,...,T16>` (16 params)
+- `Func<TResult>` (1 param) through `Func<T1,...,T17>` (17 params)
+- `Tuple<T1>` through `Tuple<T1,...,T8>`
+- `ValueTuple` through `ValueTuple<T1,...,T8>`
+
+These are separate CLR types but conceptually one "family". Users expect to write `Action<string, int>` not `Action_2<string, int>`.
+
+### The Solution: Sentinel-Ladder Pattern
+
+Multi-arity families use a unique sentinel symbol to detect which arity variant to dispatch to:
+
+```typescript
+// Sentinel symbol - uniquely identifies "unspecified" type parameter
+declare const __unspecified: unique symbol;
+export type __ = typeof __unspecified;
+
+// Multi-arity facade with default sentinel values
+export type Action<T1 = __, T2 = __, T3 = __> =
+  [T1] extends [__] ? Internal.Action :           // Action()
+  [T2] extends [__] ? Internal.Action_1<T1> :     // Action<T1>
+  [T3] extends [__] ? Internal.Action_2<T1, T2> : // Action<T1, T2>
+  Internal.Action_3<T1, T2, T3>;                  // Action<T1, T2, T3>
+```
+
+### How It Works
+
+1. **Default sentinel**: Each type parameter defaults to `__` (the sentinel)
+2. **Conditional dispatch**: `[T] extends [__]` checks if parameter was specified
+3. **Ladder evaluation**: TypeScript evaluates top-to-bottom, first match wins
+4. **Internal dispatch**: Routes to correct internal type with arity suffix
+
+### Real Example: Func
+
+```typescript
+// System/index.d.ts (facade)
+export type Func<T1 = __, T2 = __, TResult = __> =
+  [T1] extends [__] ? never :                           // Func needs at least TResult
+  [T2] extends [__] ? Internal.Func_1<T1> :             // Func<TResult>
+  [TResult] extends [__] ? Internal.Func_2<T1, T2> :    // Func<T, TResult>
+  Internal.Func_3<T1, T2, TResult>;                     // Func<T1, T2, TResult>
+
+// Usage:
+type MyCallback = Func<string>;           // → Func_1<string>
+type MyMapper = Func<int, string>;        // → Func_2<int, string>
+type MyReducer = Func<int, int, int>;     // → Func_3<int, int, int>
+```
+
+### Nested Constraint Guards
+
+When internal types have generic constraints, the facade must verify constraints before dispatch:
+
+```typescript
+// SearchValues<T> requires T extends IEquatable<T>
+export type SearchValues<T1 = __> =
+  [T1] extends [__] ? Internal.SearchValues :
+  [T1] extends [IEquatable_1<T1>] ? Internal.SearchValues_1<T1> : never;
+```
+
+For multi-parameter constraints, guards are nested:
+
+```typescript
+// JSType_Function<T1, T2, T3, T4> requires all T extends JSType
+export type JSType_Function<T1 = __, T2 = __, T3 = __, T4 = __> =
+  [T1] extends [__] ? Internal.JSType_Function :
+  [T2] extends [__] ? [T1] extends [Internal.JSType] ? Internal.JSType_Function_1<T1> : never :
+  [T3] extends [__] ? [T1] extends [Internal.JSType] ? [T2] extends [Internal.JSType] ? Internal.JSType_Function_2<T1, T2> : never : never :
+  [T4] extends [__] ? [T1] extends [Internal.JSType] ? [T2] extends [Internal.JSType] ? [T3] extends [Internal.JSType] ? Internal.JSType_Function_3<T1, T2, T3> : never : never : never :
+  [T1] extends [Internal.JSType] ? [T2] extends [Internal.JSType] ? [T3] extends [Internal.JSType] ? [T4] extends [Internal.JSType] ? Internal.JSType_Function_4<T1, T2, T3, T4> : never : never : never : never;
+```
+
+### Implementation Files
+
+| File | Purpose |
+|------|---------|
+| `Emit/MultiArityFamilyDetect.cs` | Detects multi-arity families from CLR types |
+| `Emit/MultiArityAliasEmit.cs` | Generates sentinel-ladder type aliases |
+| `Emit/FamilyIndexEmitter.cs` | Emits `families.json` canonical family index |
+
+### FacadeFamilyIndex
+
+The `families.json` file provides a canonical index of multi-arity families for cross-package imports:
+
+```json
+{
+  "System.Action": {
+    "stem": "Action",
+    "namespace": "System",
+    "minArity": 0,
+    "maxArity": 16,
+    "isDelegate": true
+  },
+  "System.Func": {
+    "stem": "Func",
+    "namespace": "System",
+    "minArity": 1,
+    "maxArity": 17,
+    "isDelegate": true
+  }
+}
+```
+
+This enables `ImportPlanner` to resolve cross-package multi-arity imports without runtime type inspection.
+
+### Constraint Invariants
+
+Three invariants are enforced by `test-facade-constraint-invariants.sh`:
+
+1. **No `Internal.Internal.*`**: Double-qualification is never valid
+2. **No `Internal.unknown/any/never`**: TypeScript built-ins shouldn't be qualified
+3. **No `bigint` carrier**: Long/ULong use branded types, not raw bigint
+

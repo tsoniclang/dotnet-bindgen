@@ -131,7 +131,7 @@ Expected output:
 ```
 Generated 130 namespaces
 0 syntax errors
-16 semantic errors (expected - property covariance)
+0 semantic errors (v0.7.4+)
 ```
 
 ## Next Steps
