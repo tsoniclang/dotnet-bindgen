@@ -236,6 +236,18 @@ public static class MethodPrinter
     {
         var sb = new StringBuilder();
 
+        // TS1016 FIX: Handle params arrays as TypeScript rest parameters
+        // C# params T[] → TypeScript ...name: T[]
+        // Rest params MUST be last and are implicitly optional, avoiding "required after optional" error
+        if (param.IsParams)
+        {
+            sb.Append("...");
+            sb.Append(TypeScriptReservedWords.SanitizeParameterName(param.Name));
+            sb.Append(": ");
+            sb.Append(TypeRefPrinter.Print(param.Type, resolver, ctx, allowedTypeParams));
+            return sb.ToString();
+        }
+
         // Parameter name - sanitize reserved words (break → break_, finally → finally_)
         sb.Append(TypeScriptReservedWords.SanitizeParameterName(param.Name));
 
@@ -253,12 +265,6 @@ public static class MethodPrinter
             // Map to { value: T } wrapper (metadata tracks original semantics)
             var innerType = TypeRefPrinter.Print(param.Type, resolver, ctx, allowedTypeParams);
             sb.Append($"{{ value: {innerType} }}");
-        }
-        else if (param.IsParams)
-        {
-            // params T[] → ...args: T[]
-            // Note: params keyword handled by caller (adds ... to parameter name)
-            sb.Append(TypeRefPrinter.Print(param.Type, resolver, ctx, allowedTypeParams));
         }
         else
         {

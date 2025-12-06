@@ -53,6 +53,11 @@ public static class ImportPlanner
         var imports = new List<ImportStatement>();
         var aliases = new Dictionary<string, string>();
 
+        // TS2300 FIX: Track ALL imported local names across ALL modules in this file
+        // Maps localName -> modulePath (import path) that first claimed this name
+        // This enables cross-module collision detection and deterministic aliasing
+        var globalImportedNames = new Dictionary<string, string>();
+
         foreach (var targetNamespace in dependencies.OrderBy(d => d))
         {
             // Get all types referenced from target namespace (CLR names)
@@ -153,7 +158,7 @@ public static class ImportPlanner
                     continue; // Skip this import to prevent emission
                 }
 
-                // LIBRARY FACADE FIX: Skip if this facade name was already imported
+                // LIBRARY FACADE FIX: Skip if this facade name was already imported FROM THE SAME MODULE
                 // Multiple arity types (Action_1, Action_2, Action_3) all map to same facade name (Action)
                 if (typeImports.Any(ti => ti.TypeName == tsName))
                 {
@@ -161,8 +166,29 @@ public static class ImportPlanner
                     continue;
                 }
 
+                // TS2300 FIX: Check for cross-module name collisions (global across all imports)
+                // If this name was already imported from a DIFFERENT module, we need an alias
+                string? crossModuleAlias = null;
+                if (globalImportedNames.TryGetValue(tsName, out var existingModulePath))
+                {
+                    if (existingModulePath != importPath)
+                    {
+                        // Same name from different module - need deterministic alias
+                        // Scheme: {name}__{SanitizedNamespace} e.g., IEnumerable__System_Collections
+                        crossModuleAlias = $"{tsName}__{SanitizeNamespaceForAlias(targetNamespace)}";
+                        ctx.Log("ImportPlanner", $"Cross-module collision: {tsName} (from {existingModulePath}) " +
+                            $"vs {importPath} → aliasing to {crossModuleAlias}");
+                    }
+                }
+                else
+                {
+                    // First time seeing this name - claim it for this module
+                    globalImportedNames[tsName] = importPath;
+                }
+
                 // C.5.3 FIX: Pass namespace symbol to detect collisions with local types
-                var alias = DetermineAlias(ctx, ns, targetNamespace, tsName, aliases);
+                // Use cross-module alias if we detected a collision, otherwise normal alias detection
+                var alias = crossModuleAlias ?? DetermineAlias(ctx, ns, targetNamespace, tsName, aliases);
 
                 // TS2693 FIX: Determine if this type needs a value import (not just type import)
                 // Base classes and interfaces used in extends/implements need to be imported as values
@@ -261,8 +287,13 @@ public static class ImportPlanner
                     tsName = GetFacadeExportName(tsName, clrName, ctx.LibraryContract!);
                 }
 
-                // Record the alias mapping: CLR full name → imported TypeScript name
-                plan.TypeImportAliasNames[(ns.Name, clrName)] = tsName;
+                // TS2300 FIX: Check if this type was aliased due to cross-module collision
+                // Look up the actual imported name (which may be aliased)
+                var typeImport = typeImports.FirstOrDefault(ti => ti.TypeName == tsName);
+                var importedName = typeImport?.Alias ?? tsName;
+
+                // Record the alias mapping: CLR full name → imported TypeScript name (with alias if applicable)
+                plan.TypeImportAliasNames[(ns.Name, clrName)] = importedName;
             }
 
             ctx.Log("ImportPlanner", $"{ns.Name} imports {typeImports.Count} types from {targetNamespace}");
@@ -362,6 +393,18 @@ public static class ImportPlanner
         return lastDot >= 0 ? namespaceName.Substring(lastDot + 1) : namespaceName;
     }
 
+    /// <summary>
+    /// TS2300 FIX: Sanitize namespace name for use in cross-module aliases.
+    /// Converts dots to underscores to create valid TypeScript identifier.
+    /// Examples:
+    ///   "System.Collections" → "System_Collections"
+    ///   "System.Collections.Generic" → "System_Collections_Generic"
+    /// </summary>
+    private static string SanitizeNamespaceForAlias(string namespaceName)
+    {
+        return namespaceName.Replace('.', '_');
+    }
+
     private static bool IsTypeScriptBuiltinIdentifier(string typeName)
     {
         // TypeScript global types/constructors that we must not shadow with CLR imports
@@ -453,8 +496,10 @@ public static class ImportPlanner
     ///   Dictionary_2 → Dictionary
     ///   Action_1 → Action
     ///   IEnumerable_1 → IEnumerable
-    /// Non-generic types with generic siblings get _0 suffix:
-    ///   Task → Task_0 (because Task_1 exists as Task)
+    /// Multi-arity families use conditional types, so both generic and non-generic
+    /// members use the stem name:
+    ///   Task (non-generic) → Task
+    ///   Task_1 (generic) → Task
     /// </summary>
     private static string GetFacadeExportName(string internalName, string clrFullName, LibraryContract libraryContract)
     {
@@ -478,32 +523,10 @@ public static class ImportPlanner
         }
         else
         {
-            // Non-generic type: check if it has exactly one generic sibling (arity 1)
-            // This pattern is used by Task/ValueTask where facade exports Task_0 and Task
-            // Delegates like Action/Func use conditional types and shouldn't get _0 suffix
-            var hasSingleGenericSibling = HasSingleGenericSibling(clrFullName, libraryContract);
-            if (hasSingleGenericSibling)
-            {
-                return internalName + "_0";
-            }
+            // Non-generic type: multi-arity families use conditional types, so use stem name
+            // No _0 suffix needed - the conditional type handles arity routing
             return internalName;
         }
-    }
-
-    /// <summary>
-    /// Check if a non-generic type has a single generic sibling (arity 1) in the library.
-    /// This is the pattern used by Task/ValueTask where Task_0 and Task coexist.
-    /// Types like Action/Func have many arities (1-16) and use conditional types,
-    /// so they shouldn't get the _0 suffix.
-    /// </summary>
-    private static bool HasSingleGenericSibling(string nonGenericClrFullName, LibraryContract libraryContract)
-    {
-        var prefix = nonGenericClrFullName + "`";
-        var genericSiblings = libraryContract.AllowedClrFullNames.Where(n => n.StartsWith(prefix)).ToList();
-
-        // Only return true if there's exactly one generic sibling (arity 1)
-        // This handles Task/Task`1 but not Action/Action`1/Action`2/.../Action`16
-        return genericSiblings.Count == 1 && genericSiblings[0] == nonGenericClrFullName + "`1";
     }
 }
 

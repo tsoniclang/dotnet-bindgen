@@ -64,7 +64,11 @@ public static class FacadeEmitter
 
             var nonGenericRenames = new Dictionary<string, string>(StringComparer.Ordinal); // original export name -> renamed alias
             var stemsWithGeneric = new HashSet<string>(StringComparer.Ordinal);
-            var reservedStems = new HashSet<string>(StringComparer.Ordinal) { "Action", "Func" };
+
+            // Detect multi-arity families based on CLR identity (types sharing CLR base name with different arities)
+            var multiArityFamilies = MultiArityFamilyDetect.FromExports(exports, ctx);
+            var reservedStems = multiArityFamilies.Select(f => f.PublicStem).ToHashSet(StringComparer.Ordinal);
+
             var potentialFriendlyStems = new HashSet<string>(exports
                 .Where(e => e.SourceType.GenericParameters.Length > 0)
                 .Select(e => GetStem(e.ExportName)), StringComparer.Ordinal);
@@ -146,8 +150,8 @@ public static class FacadeEmitter
 
             foreach (var export in exports)
             {
-                // Skip base Action to allow custom delegate alias below
-                if (ns.Name == "System" && export.ExportName == "Action")
+                // Skip all multi-arity family members - they get sentinel-ladder aliases below
+                if (reservedStems.Contains(GetStem(export.ExportName)))
                 {
                     continue;
                 }
@@ -210,14 +214,16 @@ public static class FacadeEmitter
                 }
             }
 
-        }
-
-
-        // Delegate convenience aliases (Action/Func) with callable compatibility
-        // Only for System namespace which defines the standard delegates
-        if (ns.Name == "System")
-        {
-            AppendDelegateAliases(sb, ctx, plan.Graph);
+            // Emit sentinel-ladder aliases for all detected multi-arity families
+            if (multiArityFamilies.Length > 0)
+            {
+                sb.AppendLine();
+                MultiArityAliasEmit.EmitSentinelDeclaration(sb);
+                foreach (var family in multiArityFamilies.OrderBy(f => f.PublicStem))
+                {
+                    MultiArityAliasEmit.Emit(sb, family, ctx);
+                }
+            }
         }
 
         // Re-export extension method helper from __internal bucket file
@@ -229,114 +235,6 @@ public static class FacadeEmitter
         }
 
         return sb.ToString();
-    }
-
-    /// <summary>
-    /// Appends Action/Func helper aliases that route to the correct arity and accept TS lambdas.
-    /// </summary>
-    private static void AppendDelegateAliases(StringBuilder sb, BuildContext ctx, SymbolGraph graph)
-    {
-        var systemNamespace = graph.Namespaces.FirstOrDefault(n => n.Name == "System");
-        if (systemNamespace == null)
-            return;
-
-        var actionTypes = systemNamespace.Types
-            .Where(t => t.ClrFullName.StartsWith("System.Action"))
-            .ToDictionary(t => t.GenericParameters.Length, t => t);
-
-        var funcTypes = systemNamespace.Types
-            .Where(t => t.ClrFullName.StartsWith("System.Func"))
-            .ToDictionary(t => t.GenericParameters.Length, t => t);
-
-        var maxActionArity = actionTypes.Keys.Any() ? actionTypes.Keys.Max() : -1;
-        var maxFuncArity = funcTypes.Keys.Any() ? funcTypes.Keys.Max() : -1;
-
-        if (maxActionArity < 0 && maxFuncArity < 0)
-            return; // No delegates found
-
-        sb.AppendLine();
-        sb.AppendLine("// Delegate shortcut aliases (support TS lambdas)");
-        sb.AppendLine("declare const __unspecified: unique symbol;");
-        sb.AppendLine("export type __ = typeof __unspecified;");
-        sb.AppendLine();
-
-        if (maxActionArity == 0)
-        {
-            var action0 = actionTypes[0];
-            var tsName = ctx.Renamer.GetFinalTypeName(action0);
-            sb.AppendLine($"export type Action = ((() => void) | Internal.{tsName});");
-            sb.AppendLine();
-        }
-        else if (maxActionArity > 0)
-        {
-            sb.AppendLine("export type Action<");
-            for (int i = 1; i <= maxActionArity; i++)
-            {
-                sb.AppendLine($"  T{i} = __,");
-            }
-            sb.AppendLine("> =");
-
-            for (int g = 0; g <= maxActionArity; g++)
-            {
-                if (!actionTypes.TryGetValue(g, out var actionType))
-                    continue;
-
-                var tsName = ctx.Renamer.GetFinalTypeName(actionType);
-                var callSig = g == 0
-                    ? "() => void"
-                    : $"({string.Join(", ", Enumerable.Range(1, g).Select(n => $"arg{n}: T{n}"))}) => void";
-
-                var typeArgs = g == 0 ? string.Empty : $"<{string.Join(", ", Enumerable.Range(1, g).Select(n => $"T{n}"))}>";
-                var isLast = g == maxActionArity;
-                var conditionIndex = g + 1;
-                if (!isLast)
-                {
-                    sb.AppendLine($"  [T{conditionIndex}] extends [__] ? (({callSig}) | Internal.{tsName}{typeArgs}) :");
-                }
-                else
-                {
-                    sb.AppendLine($"  (({callSig}) | Internal.{tsName}{typeArgs});");
-                }
-            }
-
-            sb.AppendLine();
-        }
-
-        if (maxFuncArity >= 1)
-        {
-            sb.AppendLine("export type Func<");
-            for (int i = 1; i <= maxFuncArity; i++)
-            {
-                sb.AppendLine($"  T{i} = __,");
-            }
-            sb.AppendLine("> =");
-
-            for (int g = 1; g <= maxFuncArity; g++)
-            {
-                if (!funcTypes.TryGetValue(g, out var funcType))
-                    continue;
-
-                var argCount = g - 1;
-                var resultIndex = g;
-                var tsName = ctx.Renamer.GetFinalTypeName(funcType);
-
-                var callSig = argCount == 0
-                    ? $"() => T{resultIndex}"
-                    : $"({string.Join(", ", Enumerable.Range(1, argCount).Select(n => $"arg{n}: T{n}"))}) => T{resultIndex}";
-
-                var typeArgs = string.Join(", ", Enumerable.Range(1, g).Select(n => $"T{n}"));
-                var isLast = g == maxFuncArity;
-                var conditionIndex = g + 1;
-                if (!isLast)
-                {
-                    sb.AppendLine($"  [T{conditionIndex}] extends [__] ? (({callSig}) | Internal.{tsName}<{typeArgs}>) :");
-                }
-                else
-                {
-                    sb.AppendLine($"  (({callSig}) | Internal.{tsName}<{typeArgs}>);");
-                }
-            }
-        }
     }
 
     /// <summary>
