@@ -15,7 +15,10 @@ public sealed record MultiArityMember(
     string InternalExportName,
 
     /// <summary>Full CLR name (e.g., "System.ValueTuple`2")</summary>
-    string ClrFullName
+    string ClrFullName,
+
+    /// <summary>Generic parameters with constraints from original TypeSymbol</summary>
+    ImmutableArray<GenericParameterSymbol> GenericParameters
 );
 
 /// <summary>
@@ -108,7 +111,8 @@ public static class MultiArityFamilyDetect
                 .Select(t => new MultiArityMember(
                     Arity: t.Arity,
                     InternalExportName: renamer.GetFinalTypeName(t),
-                    ClrFullName: t.ClrFullName))
+                    ClrFullName: t.ClrFullName,
+                    GenericParameters: t.GenericParameters))
                 .ToImmutableArray();
 
             // Public stem is the internal name without arity suffix

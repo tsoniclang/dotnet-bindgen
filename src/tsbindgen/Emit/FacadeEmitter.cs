@@ -222,7 +222,7 @@ public static class FacadeEmitter
                 MultiArityAliasEmit.EmitSentinelDeclaration(sb);
                 foreach (var family in multiArityFamilies.OrderBy(f => f.PublicStem))
                 {
-                    MultiArityAliasEmit.Emit(sb, family, ctx);
+                    MultiArityAliasEmit.Emit(sb, family, resolver, ctx, ns.Name);
                 }
             }
         }

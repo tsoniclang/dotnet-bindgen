@@ -47,7 +47,7 @@ public static class ClassPrinter
             TypeKind.Struct => PrintStruct(type, resolver, ctx, graph, bindingsProvider: bindingsProvider, staticFlattening: staticFlattening, staticConflicts: staticConflicts, propertyOverrides: propertyOverrides, honestEmission: honestEmission),
             TypeKind.Enum => PrintEnum(type, ctx),
             TypeKind.Delegate => PrintDelegate(type, resolver, ctx),
-            TypeKind.Interface => PrintInterface(type, resolver, ctx),
+            TypeKind.Interface => PrintInterface(type, resolver, ctx, graph),
             _ => $"// Unknown type kind: {type.Kind}"
         };
     }
@@ -499,7 +499,7 @@ public static class ClassPrinter
         return sb.ToString();
     }
 
-    private static string PrintInterface(TypeSymbol type, TypeNameResolver resolver, BuildContext ctx)
+    private static string PrintInterface(TypeSymbol type, TypeNameResolver resolver, BuildContext ctx, SymbolGraph graph)
     {
         var sb = new StringBuilder();
 
@@ -527,7 +527,8 @@ public static class ClassPrinter
         sb.AppendLine(" {");
 
         // Emit members (interfaces only have instance members)
-        EmitInterfaceMembers(sb, type, resolver, ctx);
+        // Pass graph to collect inherited method overloads for TS2430 fix
+        EmitInterfaceMembers(sb, type, resolver, ctx, graph);
 
         sb.AppendLine("}");
 
@@ -1130,7 +1131,7 @@ public static class ClassPrinter
         }
     }
 
-    private static void EmitInterfaceMembers(StringBuilder sb, TypeSymbol type, TypeNameResolver resolver, BuildContext ctx)
+    private static void EmitInterfaceMembers(StringBuilder sb, TypeSymbol type, TypeNameResolver resolver, BuildContext ctx, SymbolGraph graph)
     {
         var members = type.Members;
 
@@ -1152,6 +1153,12 @@ public static class ClassPrinter
             sb.AppendLine(";");
         }
 
+        // TS2430 FIX: Collect inherited method signatures that need to be emitted as overloads
+        // When an interface extends multiple interfaces with same method name but different signatures,
+        // TypeScript requires the derived interface to be compatible with ALL parent signatures.
+        // We emit all distinct inherited signatures as overloads.
+        var inheritedMethodSignatures = CollectInheritedMethodSignatures(type, resolver, ctx, graph);
+
         // Methods - only emit ClassSurface members, skip static (TypeScript doesn't support static interface members)
         // Group by CLR name, emit as TypeScript overload sets
         var interfaceMethods = members.Methods
@@ -1160,20 +1167,368 @@ public static class ClassPrinter
 
         var methodGroups = GroupMethodsByClrName(interfaceMethods, isStatic: false);
 
+        // Track which methods we've emitted (by emitName) so we can add inherited overloads
+        var emittedMethodNames = new HashSet<string>();
+
         foreach (var (clrName, overloads) in methodGroups.OrderBy(kvp => kvp.Key))
         {
             // Get final name from Renamer using first method in overload group
             var firstMethod = overloads.First();
             var emitName = ctx.Renamer.GetFinalMemberName(firstMethod.StableId, instanceScope);
+            emittedMethodNames.Add(emitName);
+
+            // Collect signatures we're emitting to avoid duplicates with inherited
+            var emittedSignatures = new HashSet<string>();
 
             // Emit each overload signature (interfaces have no abstract keyword)
             foreach (var method in overloads)
             {
+                var sig = MethodPrinter.PrintWithName(method, type, emitName, resolver, ctx);
                 sb.Append("    ");
-                sb.Append(MethodPrinter.PrintWithName(method, type, emitName, resolver, ctx));
+                sb.Append(sig);
                 sb.AppendLine(";");
+                emittedSignatures.Add(sig);
+            }
+
+            // TS2430 FIX: Emit inherited overloads with different signatures
+            if (inheritedMethodSignatures.TryGetValue(emitName, out var inheritedSigs))
+            {
+                foreach (var inheritedSig in inheritedSigs.OrderBy(s => s))
+                {
+                    // Only emit if we haven't already emitted an identical signature
+                    if (!emittedSignatures.Contains(inheritedSig))
+                    {
+                        sb.Append("    ");
+                        sb.Append(inheritedSig);
+                        sb.AppendLine(";");
+                        emittedSignatures.Add(inheritedSig);
+                    }
+                }
             }
         }
+
+        // TS2430 FIX: Emit inherited methods that this interface doesn't declare at all
+        // These are needed for TypeScript to see the interface as compatible with base interfaces
+        foreach (var (methodName, inheritedSigs) in inheritedMethodSignatures.OrderBy(kvp => kvp.Key))
+        {
+            if (emittedMethodNames.Contains(methodName))
+                continue; // Already handled above
+
+            var emittedSignatures = new HashSet<string>();
+            foreach (var sig in inheritedSigs.OrderBy(s => s))
+            {
+                if (!emittedSignatures.Contains(sig))
+                {
+                    sb.Append("    ");
+                    sb.Append(sig);
+                    sb.AppendLine(";");
+                    emittedSignatures.Add(sig);
+                }
+            }
+        }
+    }
+
+    /// <summary>
+    /// TS2430 FIX: Collect method signatures from inherited interfaces.
+    /// When an interface extends multiple interfaces with conflicting method signatures,
+    /// we need to emit all distinct signatures as overloads.
+    /// Returns: Dictionary of methodEmitName → List of signature strings
+    /// </summary>
+    private static Dictionary<string, List<string>> CollectInheritedMethodSignatures(
+        TypeSymbol type,
+        TypeNameResolver resolver,
+        BuildContext ctx,
+        SymbolGraph graph)
+    {
+        var result = new Dictionary<string, List<string>>();
+
+        // Recursively collect from all inherited interfaces
+        CollectMethodSignaturesRecursive(type.Interfaces, resolver, ctx, graph, result, new Dictionary<string, TypeReference>());
+
+        return result;
+    }
+
+    /// <summary>
+    /// Recursively collect method signatures from parent interfaces.
+    /// Skip methods that use self-referential generic parameters (like compareTo(other: TSelf))
+    /// because these create recursive constraints that are hard to satisfy.
+    /// </summary>
+    private static void CollectMethodSignaturesRecursive(
+        IReadOnlyList<TypeReference> interfaces,
+        TypeNameResolver resolver,
+        BuildContext ctx,
+        SymbolGraph graph,
+        Dictionary<string, List<string>> result,
+        Dictionary<string, TypeReference> substitutionMap)
+    {
+        foreach (var ifaceRef in interfaces)
+        {
+            // Find the interface in the graph
+            var ifaceSymbol = FindInterfaceInGraph(ifaceRef, graph);
+            if (ifaceSymbol == null)
+                continue;
+
+            // Build substitution map for this interface's generic parameters
+            var localSubMap = BuildInterfaceSubstitutionMap(ifaceSymbol, ifaceRef, substitutionMap);
+
+            // Get the set of generic parameter names that map to self-referential types
+            // These are parameters like TSelf in IBinaryInteger_1<TSelf extends IBinaryInteger_1<TSelf>>
+            var selfRefParams = GetSelfReferentialParams(ifaceSymbol);
+
+            // Collect methods from this interface
+            var instanceScope = ScopeFactory.ClassInstance(ifaceSymbol);
+            foreach (var method in ifaceSymbol.Members.Methods.Where(m => !m.IsStatic))
+            {
+                // Skip methods that use self-referential parameters in their signature
+                // (except for return types - those are fine)
+                if (MethodUsesSelfRefParamInParameters(method, selfRefParams))
+                    continue;
+
+                var emitName = ctx.Renamer.GetFinalMemberName(method.StableId, instanceScope);
+
+                // Build the signature string with substitution
+                var sig = BuildMethodSignatureWithSubstitution(method, ifaceSymbol, emitName, resolver, ctx, localSubMap);
+
+                if (!result.TryGetValue(emitName, out var list))
+                {
+                    list = new List<string>();
+                    result[emitName] = list;
+                }
+
+                // Only add if this exact signature isn't already present
+                if (!list.Contains(sig))
+                {
+                    list.Add(sig);
+                }
+            }
+
+            // Recurse to parent interfaces
+            CollectMethodSignaturesRecursive(ifaceSymbol.Interfaces, resolver, ctx, graph, result, localSubMap);
+        }
+    }
+
+    /// <summary>
+    /// Get the set of generic parameter names that are self-referential (like TSelf in IBinaryInteger_1).
+    /// These typically have constraints that reference the interface itself.
+    /// </summary>
+    private static HashSet<string> GetSelfReferentialParams(TypeSymbol ifaceSymbol)
+    {
+        var result = new HashSet<string>();
+
+        foreach (var gp in ifaceSymbol.GenericParameters)
+        {
+            // Check if any constraint references the interface itself
+            foreach (var constraint in gp.Constraints)
+            {
+                if (constraint is NamedTypeReference named)
+                {
+                    // If constraint contains the interface's name, it's self-referential
+                    // e.g., TSelf extends IBinaryInteger_1<TSelf>
+                    var clrBaseName = ExtractClrBaseName(ifaceSymbol.ClrFullName);
+                    var constraintBaseName = ExtractClrBaseName(named.FullName);
+                    if (clrBaseName == constraintBaseName)
+                    {
+                        result.Add(gp.Name);
+                        break;
+                    }
+                }
+            }
+        }
+
+        return result;
+    }
+
+    /// <summary>
+    /// Extract the base name (without namespace and arity suffix) from a CLR full name.
+    /// </summary>
+    private static string ExtractClrBaseName(string clrFullName)
+    {
+        // Remove assembly qualification
+        var commaIdx = clrFullName.IndexOf(',');
+        if (commaIdx >= 0)
+            clrFullName = clrFullName.Substring(0, commaIdx);
+
+        // Get the simple name (after last dot)
+        var lastDot = clrFullName.LastIndexOf('.');
+        var simpleName = lastDot >= 0 ? clrFullName.Substring(lastDot + 1) : clrFullName;
+
+        // Remove arity suffix (`1, `2, etc.)
+        var backtick = simpleName.IndexOf('`');
+        return backtick >= 0 ? simpleName.Substring(0, backtick) : simpleName;
+    }
+
+    /// <summary>
+    /// Check if a method uses any of the self-referential parameters in its parameter list.
+    /// </summary>
+    private static bool MethodUsesSelfRefParamInParameters(MethodSymbol method, HashSet<string> selfRefParams)
+    {
+        if (selfRefParams.Count == 0)
+            return false;
+
+        foreach (var param in method.Parameters)
+        {
+            if (TypeRefUsesSelfRefParam(param.Type, selfRefParams))
+                return true;
+        }
+
+        return false;
+    }
+
+    /// <summary>
+    /// Check if a type reference uses any of the self-referential parameters.
+    /// </summary>
+    private static bool TypeRefUsesSelfRefParam(TypeReference typeRef, HashSet<string> selfRefParams)
+    {
+        return typeRef switch
+        {
+            GenericParameterReference gp => selfRefParams.Contains(gp.Name),
+            NamedTypeReference named => named.TypeArguments.Any(arg => TypeRefUsesSelfRefParam(arg, selfRefParams)),
+            ArrayTypeReference arr => TypeRefUsesSelfRefParam(arr.ElementType, selfRefParams),
+            ByRefTypeReference byref => TypeRefUsesSelfRefParam(byref.ReferencedType, selfRefParams),
+            _ => false
+        };
+    }
+
+    /// <summary>
+    /// Find an interface by its type reference in the graph.
+    /// </summary>
+    private static TypeSymbol? FindInterfaceInGraph(TypeReference ifaceRef, SymbolGraph graph)
+    {
+        var fullName = ifaceRef switch
+        {
+            NamedTypeReference named => named.FullName,
+            NestedTypeReference nested => nested.FullReference.FullName,
+            _ => null
+        };
+
+        if (fullName == null)
+            return null;
+
+        return graph.Namespaces
+            .SelectMany(ns => ns.Types)
+            .FirstOrDefault(t => t.ClrFullName == fullName && t.Kind == TypeKind.Interface);
+    }
+
+    /// <summary>
+    /// Build substitution map for interface generic parameters.
+    /// </summary>
+    private static Dictionary<string, TypeReference> BuildInterfaceSubstitutionMap(
+        TypeSymbol ifaceSymbol,
+        TypeReference ifaceRef,
+        Dictionary<string, TypeReference> outerSubMap)
+    {
+        var result = new Dictionary<string, TypeReference>(outerSubMap);
+
+        if (ifaceRef is not NamedTypeReference named)
+            return result;
+
+        if (named.TypeArguments.Count == 0)
+            return result;
+
+        if (ifaceSymbol.GenericParameters.Length != named.TypeArguments.Count)
+            return result;
+
+        for (int i = 0; i < ifaceSymbol.GenericParameters.Length; i++)
+        {
+            var param = ifaceSymbol.GenericParameters[i];
+            var arg = named.TypeArguments[i];
+
+            // Apply outer substitution to the argument
+            var substitutedArg = SubstituteTypeReference(arg, outerSubMap);
+            result[param.Name] = substitutedArg;
+        }
+
+        return result;
+    }
+
+    /// <summary>
+    /// Substitute type references using the substitution map.
+    /// </summary>
+    private static TypeReference SubstituteTypeReference(TypeReference typeRef, Dictionary<string, TypeReference> subMap)
+    {
+        if (subMap.Count == 0)
+            return typeRef;
+
+        return typeRef switch
+        {
+            GenericParameterReference gp when subMap.TryGetValue(gp.Name, out var sub) => sub,
+
+            NamedTypeReference named when named.TypeArguments.Count > 0 =>
+                named with
+                {
+                    TypeArguments = named.TypeArguments
+                        .Select(arg => SubstituteTypeReference(arg, subMap))
+                        .ToImmutableArray()
+                },
+
+            ArrayTypeReference arr =>
+                arr with { ElementType = SubstituteTypeReference(arr.ElementType, subMap) },
+
+            _ => typeRef
+        };
+    }
+
+    /// <summary>
+    /// Build method signature string with generic substitution for inherited methods.
+    /// </summary>
+    private static string BuildMethodSignatureWithSubstitution(
+        MethodSymbol method,
+        TypeSymbol declaringType,
+        string emitName,
+        TypeNameResolver resolver,
+        BuildContext ctx,
+        Dictionary<string, TypeReference> substitutionMap)
+    {
+        var sb = new StringBuilder();
+        sb.Append(emitName);
+
+        // Generic parameters (if any)
+        if (method.GenericParameters.Length > 0)
+        {
+            sb.Append('<');
+            sb.Append(string.Join(", ", method.GenericParameters.Select(gp => gp.Name)));
+            sb.Append('>');
+        }
+
+        // Parameters
+        sb.Append('(');
+        var paramParts = new List<string>();
+        foreach (var p in method.Parameters)
+        {
+            var paramType = SubstituteTypeReference(p.Type, substitutionMap);
+            var typeStr = TypeRefPrinter.Print(paramType, resolver, ctx);
+
+            // Sanitize parameter name (handle reserved words)
+            var paramName = TypeScriptReservedWords.SanitizeParameterName(p.Name);
+
+            // Handle out/ref parameters - wrap in { value: T }
+            if (p.IsOut || p.IsRef)
+            {
+                typeStr = $"{{ value: {typeStr} }}";
+            }
+
+            // Handle optional and rest parameters
+            if (p.IsParams)
+            {
+                paramParts.Add($"...{paramName}: {typeStr}");
+            }
+            else if (p.HasDefaultValue)
+            {
+                paramParts.Add($"{paramName}?: {typeStr}");
+            }
+            else
+            {
+                paramParts.Add($"{paramName}: {typeStr}");
+            }
+        }
+        sb.Append(string.Join(", ", paramParts));
+        sb.Append("): ");
+
+        // Return type
+        var returnType = SubstituteTypeReference(method.ReturnType, substitutionMap);
+        sb.Append(TypeRefPrinter.Print(returnType, resolver, ctx));
+
+        return sb.ToString();
     }
 
     private static string PrintGenericParameter(GenericParameterSymbol gp, TypeNameResolver resolver, BuildContext ctx)
