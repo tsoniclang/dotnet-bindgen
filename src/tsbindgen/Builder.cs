@@ -416,6 +416,9 @@ public static class Builder
         // Emit facade/index.d.ts for each namespace
         FacadeEmitter.Emit(ctx, plan, outputDirectory);
 
+        // Emit families.json (canonical family index for library consumers)
+        FamilyIndexEmitter.Emit(ctx, plan, outputDirectory);
+
         // Emit metadata.json for each namespace
         MetadataEmitter.Emit(ctx, plan, outputDirectory);
 

@@ -1,10 +1,11 @@
 using System.Collections.Immutable;
+using tsbindgen.Emit;
 
 namespace tsbindgen.Library;
 
 /// <summary>
 /// Represents the contract defined by an existing tsbindgen library package.
-/// Loaded from metadata.json and bindings.json files.
+/// Loaded from metadata.json, bindings.json, and families.json files.
 /// Used to filter emission to only symbols present in the library.
 /// </summary>
 public sealed record LibraryContract
@@ -53,6 +54,15 @@ public sealed record LibraryContract
     /// Example: "System.Exception" → "System"
     /// </summary>
     public required ImmutableDictionary<string, string> ClrFullNameToNamespace { get; init; }
+
+    /// <summary>
+    /// Canonical facade family index.
+    /// Maps CLR base name (e.g., "System.ValueTuple") to family entry with stem/namespace/arity info.
+    /// ImportPlanner uses this to determine if a type belongs to a multi-arity family
+    /// WITHOUT recomputing from AllowedClrFullNames (prevents drift).
+    /// Empty if families.json doesn't exist (backwards compatibility).
+    /// </summary>
+    public required ImmutableDictionary<string, FacadeFamilyEntry> FacadeFamilies { get; init; }
 
     /// <summary>
     /// Total number of types in the contract.

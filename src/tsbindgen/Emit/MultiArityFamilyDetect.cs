@@ -130,6 +130,21 @@ public static class MultiArityFamilyDetect
                 $"Detected: {publicStem} (CLR: {group.Key}, arities: {minArity}..{maxArity}, delegate: {isDelegateFamily})");
         }
 
+        // HARD FAIL: Detect PublicStem collisions within namespace
+        // Two unrelated CLR base names mapping to the same stem is a correctness bug
+        var stemGroups = families.GroupBy(f => f.PublicStem, StringComparer.Ordinal);
+        foreach (var stemGroup in stemGroups)
+        {
+            if (stemGroup.Count() > 1)
+            {
+                var colliders = string.Join(", ", stemGroup.Select(f => f.ClrBaseName));
+                throw new InvalidOperationException(
+                    $"Facade stem collision in namespace '{ns.Name}': " +
+                    $"multiple multi-arity families map to stem '{stemGroup.Key}'. " +
+                    $"Colliding CLR base names: [{colliders}]");
+            }
+        }
+
         return families.ToImmutableArray();
     }
 

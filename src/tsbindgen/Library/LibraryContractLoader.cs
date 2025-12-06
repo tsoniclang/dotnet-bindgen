@@ -1,5 +1,6 @@
 using System.Collections.Immutable;
 using System.Text.Json;
+using tsbindgen.Emit;
 
 namespace tsbindgen.Library;
 
@@ -66,6 +67,12 @@ public static class LibraryContractLoader
             ProcessBindingsFile(bindingsFile, allowedBindings);
         }
 
+        // Load families.json if it exists (optional for backwards compatibility)
+        var familiesPath = Path.Combine(packagePath, "families.json");
+        var facadeFamilies = File.Exists(familiesPath)
+            ? LoadFamilies(familiesPath)
+            : ImmutableDictionary<string, FacadeFamilyEntry>.Empty;
+
         // Build derived structures for per-type membership checks
         // AllowedClrFullNames: Extract CLR full name from StableId (format: "AssemblyName:ClrFullName")
         var allowedClrFullNames = new HashSet<string>();
@@ -103,7 +110,8 @@ public static class LibraryContractLoader
                 kvp => kvp.Key,
                 kvp => kvp.Value.ToImmutableHashSet()),
             AllowedClrFullNames = allowedClrFullNames.ToImmutableHashSet(),
-            ClrFullNameToNamespace = clrFullNameToNamespace.ToImmutableDictionary()
+            ClrFullNameToNamespace = clrFullNameToNamespace.ToImmutableDictionary(),
+            FacadeFamilies = facadeFamilies
         };
     }
 
@@ -204,5 +212,39 @@ public static class LibraryContractLoader
         {
             bindings.Add(property.Name);
         }
+    }
+
+    private static ImmutableDictionary<string, FacadeFamilyEntry> LoadFamilies(string familiesPath)
+    {
+        var json = File.ReadAllText(familiesPath);
+        using var doc = JsonDocument.Parse(json);
+        var root = doc.RootElement;
+
+        var families = new Dictionary<string, FacadeFamilyEntry>();
+
+        foreach (var property in root.EnumerateObject())
+        {
+            var clrBaseName = property.Name;
+            var entry = property.Value;
+
+            // Parse family entry (camelCase from JSON)
+            var stem = entry.GetProperty("stem").GetString()
+                ?? throw new InvalidOperationException($"Missing 'stem' in families.json entry: {clrBaseName}");
+            var ns = entry.GetProperty("namespace").GetString()
+                ?? throw new InvalidOperationException($"Missing 'namespace' in families.json entry: {clrBaseName}");
+            var minArity = entry.GetProperty("minArity").GetInt32();
+            var maxArity = entry.GetProperty("maxArity").GetInt32();
+            var isDelegate = entry.TryGetProperty("isDelegate", out var isDelegateElem) && isDelegateElem.GetBoolean();
+
+            families[clrBaseName] = new FacadeFamilyEntry(
+                Stem: stem,
+                Namespace: ns,
+                MinArity: minArity,
+                MaxArity: maxArity,
+                IsDelegate: isDelegate
+            );
+        }
+
+        return families.ToImmutableDictionary();
     }
 }
