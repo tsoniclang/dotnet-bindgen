@@ -498,7 +498,7 @@ public static class ImportPlanner
     ///   IEnumerable_1 → IEnumerable
     /// Multi-arity families use conditional types, so both generic and non-generic
     /// members use the stem name:
-    ///   Task (non-generic) → Task
+    ///   Task (non-generic) → Task (if part of Task/Task`1 family)
     ///   Task_1 (generic) → Task
     /// </summary>
     private static string GetFacadeExportName(string internalName, string clrFullName, LibraryContract libraryContract)
@@ -523,10 +523,76 @@ public static class ImportPlanner
         }
         else
         {
-            // Non-generic type: multi-arity families use conditional types, so use stem name
-            // No _0 suffix needed - the conditional type handles arity routing
-            return internalName;
+            // Non-generic type: check if it's part of a multi-arity family
+            // Only use stem name if facade emits a conditional type alias for this family
+            if (IsPartOfMultiArityFamily(clrFullName, libraryContract))
+            {
+                // Multi-arity family: use stem name (conditional type handles routing)
+                return internalName;
+            }
+            else
+            {
+                // Not part of a family: use original name as-is
+                return internalName;
+            }
         }
+    }
+
+    /// <summary>
+    /// Check if a CLR type is part of a multi-arity family in the library.
+    /// A multi-arity family exists when there are types with the same CLR base name
+    /// but different arities (e.g., Task and Task`1).
+    ///
+    /// This is used to determine if imports should use stem name (family alias)
+    /// or original name (no family alias).
+    /// </summary>
+    private static bool IsPartOfMultiArityFamily(string clrFullName, LibraryContract libraryContract)
+    {
+        // Extract CLR base name (strip backtick-arity if present)
+        var baseName = Emit.MultiArityFamilyDetect.ExtractClrBaseName(clrFullName);
+
+        // Check if library has types with this base name at different arities
+        // A family requires at least 2 different arities
+        var familyMembers = libraryContract.AllowedClrFullNames
+            .Where(n => Emit.MultiArityFamilyDetect.ExtractClrBaseName(n) == baseName)
+            .ToList();
+
+        if (familyMembers.Count < 2)
+            return false;
+
+        // Check for contiguous arities (required for conditional type emission)
+        var arities = familyMembers
+            .Select(n => GetArityFromClrName(n))
+            .Distinct()
+            .OrderBy(a => a)
+            .ToList();
+
+        if (arities.Count < 2)
+            return false;
+
+        // Validate contiguous: arities must be minArity..maxArity with no gaps
+        var minArity = arities.Min();
+        var maxArity = arities.Max();
+        var expectedArities = Enumerable.Range(minArity, maxArity - minArity + 1).ToList();
+
+        return arities.SequenceEqual(expectedArities);
+    }
+
+    /// <summary>
+    /// Extract generic arity from CLR full name.
+    /// Examples:
+    ///   System.Task → 0
+    ///   System.Task`1 → 1
+    ///   System.ValueTuple`8 → 8
+    /// </summary>
+    private static int GetArityFromClrName(string clrFullName)
+    {
+        var backtickIndex = clrFullName.LastIndexOf('`');
+        if (backtickIndex < 0)
+            return 0;
+
+        var arityStr = clrFullName.Substring(backtickIndex + 1);
+        return int.TryParse(arityStr, out var arity) ? arity : 0;
     }
 }
 

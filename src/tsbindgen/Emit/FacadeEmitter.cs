@@ -66,7 +66,8 @@ public static class FacadeEmitter
             var stemsWithGeneric = new HashSet<string>(StringComparer.Ordinal);
 
             // Detect multi-arity families based on CLR identity (types sharing CLR base name with different arities)
-            var multiArityFamilies = MultiArityFamilyDetect.FromExports(exports, ctx);
+            // Uses symbol-based detection (TypeSymbol) for stability before any facade renaming
+            var multiArityFamilies = MultiArityFamilyDetect.FromNamespace(ns, ctx.Renamer, ctx);
             var reservedStems = multiArityFamilies.Select(f => f.PublicStem).ToHashSet(StringComparer.Ordinal);
 
             var potentialFriendlyStems = new HashSet<string>(exports

@@ -47,22 +47,26 @@ public static class MultiArityAliasEmit
 
     /// <summary>
     /// Emit a sentinel-ladder alias for a non-delegate family (e.g., ValueTuple, Tuple).
-    /// Maps each arity to the corresponding internal type.
+    /// Uses explicit k-based generation from MinArity to MaxArity.
     /// </summary>
     private static void EmitNonDelegateFamily(StringBuilder sb, MultiArityFamily family, BuildContext ctx)
     {
+        var minArity = family.MinArity;
         var maxArity = family.MaxArity;
 
-        if (maxArity == 0)
+        if (minArity == maxArity)
         {
-            // Single non-generic member only - emit simple type alias
+            // Single member only - emit simple type alias
             var member = family.Members[0];
-            sb.AppendLine($"export type {family.PublicStem} = Internal.{member.InternalExportName};");
+            var typeArgs = member.Arity == 0
+                ? ""
+                : $"<{string.Join(", ", Enumerable.Range(1, member.Arity).Select(n => $"T{n}"))}>";
+            sb.AppendLine($"export type {family.PublicStem}{typeArgs} = Internal.{member.InternalExportName}{typeArgs};");
             sb.AppendLine();
             return;
         }
 
-        // Type parameters with defaults
+        // Type parameters: T1 through TmaxArity, all defaulting to __
         sb.AppendLine($"export type {family.PublicStem}<");
         for (int i = 1; i <= maxArity; i++)
         {
@@ -70,24 +74,27 @@ public static class MultiArityAliasEmit
         }
         sb.AppendLine("> =");
 
-        // Conditional ladder - each branch checks if the NEXT parameter is unspecified
-        for (int i = 0; i < family.Members.Length; i++)
+        // Explicit k-based conditional ladder
+        // For each arity k from minArity to maxArity-1:
+        //   [T{k+1}] extends [__] ? Internal.Stem_k<T1..Tk> :
+        // Final branch (arity = maxArity):
+        //   Internal.Stem_max<T1..Tmax>;
+        for (int k = minArity; k <= maxArity; k++)
         {
-            var member = family.Members[i];
-            var typeArgs = member.Arity == 0
+            var member = family.Members.First(m => m.Arity == k);
+            var typeArgs = k == 0
                 ? ""
-                : $"<{string.Join(", ", Enumerable.Range(1, member.Arity).Select(n => $"T{n}"))}>";
-            var isLast = i == family.Members.Length - 1;
+                : $"<{string.Join(", ", Enumerable.Range(1, k).Select(n => $"T{n}"))}>";
 
-            if (!isLast)
+            if (k < maxArity)
             {
-                // Check if the NEXT parameter slot is unspecified
-                var conditionIndex = member.Arity + 1;
+                // Condition: is T{k+1} unspecified?
+                var conditionIndex = k + 1;
                 sb.AppendLine($"  [T{conditionIndex}] extends [__] ? Internal.{member.InternalExportName}{typeArgs} :");
             }
             else
             {
-                // Last branch - no condition needed
+                // Last branch - no condition
                 sb.AppendLine($"  Internal.{member.InternalExportName}{typeArgs};");
             }
         }
@@ -98,24 +105,31 @@ public static class MultiArityAliasEmit
     /// Emit a sentinel-ladder alias for a delegate family (Action, Func).
     /// Includes callable signatures for TypeScript lambda compatibility:
     ///   ((...args) => ReturnType) | Internal.Delegate_N&lt;...&gt;
+    /// Uses explicit k-based generation from MinArity to MaxArity.
     /// </summary>
     private static void EmitDelegateFamily(StringBuilder sb, MultiArityFamily family, BuildContext ctx)
     {
         // Func-like delegates have return type as last type parameter
         // Detect by checking if CLR base name ends with "Func"
         var isFunc = family.ClrBaseName.EndsWith("Func", StringComparison.Ordinal);
+        var minArity = family.MinArity;
         var maxArity = family.MaxArity;
 
-        if (maxArity == 0)
+        if (minArity == maxArity)
         {
-            // Non-generic delegate (e.g., Action with no type params)
+            // Single member only
             var member = family.Members[0];
-            sb.AppendLine($"export type {family.PublicStem} = ((() => void) | Internal.{member.InternalExportName});");
+            var arity = member.Arity;
+            var callSig = BuildCallableSignature(arity, isFunc);
+            var typeArgs = arity == 0
+                ? ""
+                : $"<{string.Join(", ", Enumerable.Range(1, arity).Select(n => $"T{n}"))}>";
+            sb.AppendLine($"export type {family.PublicStem}{typeArgs} = (({callSig}) | Internal.{member.InternalExportName}{typeArgs});");
             sb.AppendLine();
             return;
         }
 
-        // Type parameters with defaults
+        // Type parameters: T1 through TmaxArity, all defaulting to __
         sb.AppendLine($"export type {family.PublicStem}<");
         for (int i = 1; i <= maxArity; i++)
         {
@@ -123,48 +137,50 @@ public static class MultiArityAliasEmit
         }
         sb.AppendLine("> =");
 
-        // Conditional ladder with callable signatures
-        for (int i = 0; i < family.Members.Length; i++)
+        // Explicit k-based conditional ladder with callable signatures
+        for (int k = minArity; k <= maxArity; k++)
         {
-            var member = family.Members[i];
-            var arity = member.Arity;
-            var isLast = i == family.Members.Length - 1;
-
-            // Build callable signature
-            string callSig;
-            if (isFunc && arity >= 1)
-            {
-                // Func: last type param is return type
-                var argCount = arity - 1;
-                var retIdx = arity;
-                callSig = argCount == 0
-                    ? $"() => T{retIdx}"
-                    : $"({string.Join(", ", Enumerable.Range(1, argCount).Select(n => $"arg{n}: T{n}"))}) => T{retIdx}";
-            }
-            else
-            {
-                // Action: all type params are arguments, returns void
-                callSig = arity == 0
-                    ? "() => void"
-                    : $"({string.Join(", ", Enumerable.Range(1, arity).Select(n => $"arg{n}: T{n}"))}) => void";
-            }
-
-            var typeArgs = arity == 0
+            var member = family.Members.First(m => m.Arity == k);
+            var callSig = BuildCallableSignature(k, isFunc);
+            var typeArgs = k == 0
                 ? ""
-                : $"<{string.Join(", ", Enumerable.Range(1, arity).Select(n => $"T{n}"))}>";
+                : $"<{string.Join(", ", Enumerable.Range(1, k).Select(n => $"T{n}"))}>";
 
-            if (!isLast)
+            if (k < maxArity)
             {
-                // Check if the NEXT parameter slot is unspecified
-                var condIdx = arity + 1;
-                sb.AppendLine($"  [T{condIdx}] extends [__] ? (({callSig}) | Internal.{member.InternalExportName}{typeArgs}) :");
+                var conditionIndex = k + 1;
+                sb.AppendLine($"  [T{conditionIndex}] extends [__] ? (({callSig}) | Internal.{member.InternalExportName}{typeArgs}) :");
             }
             else
             {
-                // Last branch - no condition needed
                 sb.AppendLine($"  (({callSig}) | Internal.{member.InternalExportName}{typeArgs});");
             }
         }
         sb.AppendLine();
+    }
+
+    /// <summary>
+    /// Build a callable signature for a delegate with given arity.
+    /// For Func-like: last type param is return type.
+    /// For Action-like: all params are arguments, returns void.
+    /// </summary>
+    private static string BuildCallableSignature(int arity, bool isFunc)
+    {
+        if (isFunc && arity >= 1)
+        {
+            // Func: last type param is return type
+            var argCount = arity - 1;
+            var retIdx = arity;
+            return argCount == 0
+                ? $"() => T{retIdx}"
+                : $"({string.Join(", ", Enumerable.Range(1, argCount).Select(n => $"arg{n}: T{n}"))}) => T{retIdx}";
+        }
+        else
+        {
+            // Action: all type params are arguments, returns void
+            return arity == 0
+                ? "() => void"
+                : $"({string.Join(", ", Enumerable.Range(1, arity).Select(n => $"arg{n}: T{n}"))}) => void";
+        }
     }
 }
