@@ -27,7 +27,19 @@ node --version  # v18.0.0 or higher
 
 ## Installation
 
-### Building from Source
+### Via npm (recommended)
+
+```bash
+npm install tsbindgen
+```
+
+Verify:
+
+```bash
+npx tsbindgen --help
+```
+
+### From Source
 
 ```bash
 git clone https://github.com/tsoniclang/tsbindgen
@@ -39,14 +51,6 @@ Verify:
 
 ```bash
 dotnet run --project src/tsbindgen/tsbindgen.csproj -- --help
-```
-
-### Release Build
-
-For better performance:
-
-```bash
-dotnet build src/tsbindgen/tsbindgen.csproj -c Release
 ```
 
 ## Generating BCL Declarations
@@ -61,10 +65,12 @@ dotnet --list-runtimes
 ### Generate
 
 ```bash
+# Via npm
+npx tsbindgen generate -d /usr/share/dotnet/shared/Microsoft.NETCore.App/10.0.0 -o ./output
+
+# Via dotnet (from source)
 dotnet run --project src/tsbindgen/tsbindgen.csproj -- \
-  generate \
-  -d /usr/share/dotnet/shared/Microsoft.NETCore.App/10.0.0 \
-  -o ./output
+  generate -d /usr/share/dotnet/shared/Microsoft.NETCore.App/10.0.0 -o ./output
 ```
 
 This generates declarations for all 130 BCL namespaces.

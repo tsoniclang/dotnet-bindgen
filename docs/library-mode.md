@@ -16,7 +16,7 @@ Either generate BCL or use the published package:
 
 ```bash
 # Option A: Generate BCL yourself
-dotnet run -- generate -d $DOTNET_RUNTIME -o ./bcl-types
+npx tsbindgen generate -d $DOTNET_RUNTIME -o ./bcl-types
 
 # Option B: Use published package
 npm install @tsonic/dotnet
@@ -26,7 +26,7 @@ npm install @tsonic/dotnet
 ### Step 2: Generate Your Library
 
 ```bash
-dotnet run -- generate \
+npx tsbindgen generate \
   -a ./MyLibrary.dll \
   -d $DOTNET_RUNTIME \
   -o ./my-lib-types \
@@ -91,7 +91,7 @@ namespace MyCompany.Utils
 ### Generate
 
 ```bash
-dotnet run -- generate \
+npx tsbindgen generate \
   -a ./MyLibrary.dll \
   -d $DOTNET_RUNTIME \
   -o ./my-lib-types \

@@ -22,7 +22,7 @@ Error: Could not load assembly 'MyLibrary.dll'
 ls -la ./MyLibrary.dll
 
 # Ensure runtime directory contains dependencies
-dotnet run -- generate -a ./MyLibrary.dll -d $DOTNET_RUNTIME -o ./out
+npx tsbindgen generate -a ./MyLibrary.dll -d $DOTNET_RUNTIME -o ./out
 ```
 
 ### Missing Runtime Directory
@@ -38,7 +38,7 @@ Error: Runtime directory not specified
 dotnet --list-runtimes
 
 # Use the path
-dotnet run -- generate -d ~/.dotnet/shared/Microsoft.NETCore.App/10.0.0 -o ./out
+npx tsbindgen generate -d ~/.dotnet/shared/Microsoft.NETCore.App/10.0.0 -o ./out
 ```
 
 ### Namespace Not Generated
@@ -50,7 +50,7 @@ If a namespace is missing from output:
 3. Check verbose output for skip reasons
 
 ```bash
-dotnet run -- generate -d $DOTNET_RUNTIME -o ./out -v 2>&1 | grep "MyNamespace"
+npx tsbindgen generate -d $DOTNET_RUNTIME -o ./out -v 2>&1 | grep "MyNamespace"
 ```
 
 ## TypeScript Errors
@@ -150,8 +150,8 @@ Error LIB002: Member signature mismatch for 'List.Add'
 
 ```bash
 # Both must use same naming
-dotnet run -- generate -d $DOTNET_RUNTIME -o ./bcl --naming js
-dotnet run -- generate -a ./MyLib.dll -d $DOTNET_RUNTIME -o ./out --lib ./bcl --naming js
+npx tsbindgen generate -d $DOTNET_RUNTIME -o ./bcl --naming js
+npx tsbindgen generate -a ./MyLib.dll -d $DOTNET_RUNTIME -o ./out --lib ./bcl --naming js
 ```
 
 ## Performance Issues
@@ -162,7 +162,7 @@ Full BCL generation takes 30-60 seconds. For faster iteration:
 
 ```bash
 # Generate specific namespaces only
-dotnet run -- generate -d $DOTNET_RUNTIME -o ./out -n System,System.Collections.Generic
+npx tsbindgen generate -d $DOTNET_RUNTIME -o ./out -n System,System.Collections.Generic
 ```
 
 ### Out of Memory
@@ -170,8 +170,8 @@ dotnet run -- generate -d $DOTNET_RUNTIME -o ./out -n System,System.Collections.
 For very large assemblies:
 
 ```bash
-# Increase heap size
-DOTNET_GCHeapHardLimit=2g dotnet run -- generate -d $DOTNET_RUNTIME -o ./out
+# Increase heap size (only works with dotnet run from source)
+DOTNET_GCHeapHardLimit=2g npx tsbindgen generate -d $DOTNET_RUNTIME -o ./out
 ```
 
 ## Validation Issues
@@ -184,7 +184,7 @@ Full validation runs TypeScript on 130 namespaces (2-3 minutes).
 
 ```bash
 # Generate subset
-dotnet run -- generate -d $DOTNET_RUNTIME -o .tests/subset -n System
+npx tsbindgen generate -d $DOTNET_RUNTIME -o .tests/subset -n System
 
 # Validate just that
 npx tsc --noEmit .tests/subset/System/index.d.ts
@@ -208,13 +208,13 @@ node test/validate/verify-completeness.js 2>&1 | grep "MISSING"
 ### Enable Verbose Output
 
 ```bash
-dotnet run -- generate -d $DOTNET_RUNTIME -o ./out -v
+npx tsbindgen generate -d $DOTNET_RUNTIME -o ./out -v
 ```
 
 ### Enable Specific Logs
 
 ```bash
-dotnet run -- generate -d $DOTNET_RUNTIME -o ./out --logs ImportPlanner,FacadeEmitter
+npx tsbindgen generate -d $DOTNET_RUNTIME -o ./out --logs ImportPlanner,FacadeEmitter
 ```
 
 Available log categories:

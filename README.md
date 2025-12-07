@@ -16,8 +16,19 @@ tsbindgen generates TypeScript declaration files (`.d.ts`) from .NET assemblies 
 
 ## Installation
 
+### Via npm (recommended)
+
 ```bash
-# Clone and build
+npm install tsbindgen
+# or
+npm install @tsonic/tsbindgen
+```
+
+Requires .NET 10 runtime installed.
+
+### From source
+
+```bash
 git clone https://github.com/tsoniclang/tsbindgen
 cd tsbindgen
 dotnet build src/tsbindgen/tsbindgen.csproj
@@ -28,30 +39,33 @@ dotnet build src/tsbindgen/tsbindgen.csproj
 ### Generate BCL declarations
 
 ```bash
-# Generate TypeScript declarations for .NET BCL
+# Via npm
+npx tsbindgen generate -d ~/.dotnet/shared/Microsoft.NETCore.App/10.0.0 -o ./output
+
+# Via dotnet (from source)
 dotnet run --project src/tsbindgen/tsbindgen.csproj -- \
-  generate -d ~/.dotnet/shared/Microsoft.NETCore.App/10.0.0 \
-  -o ./output
+  generate -d ~/.dotnet/shared/Microsoft.NETCore.App/10.0.0 -o ./output
 ```
 
 ### Generate for a custom assembly
 
 ```bash
-# Generate for your own assembly
+# Via npm
+npx tsbindgen generate -a ./MyLibrary.dll -d $DOTNET_RUNTIME -o ./output
+
+# Via dotnet (from source)
 dotnet run --project src/tsbindgen/tsbindgen.csproj -- \
-  generate -a ./MyLibrary.dll \
-  -d ~/.dotnet/shared/Microsoft.NETCore.App/10.0.0 \
-  -o ./output
+  generate -a ./MyLibrary.dll -d $DOTNET_RUNTIME -o ./output
 ```
 
 ### Library mode (exclude BCL types)
 
 ```bash
 # First, generate BCL types
-dotnet run -- generate -d $DOTNET_RUNTIME -o ./bcl-types
+npx tsbindgen generate -d $DOTNET_RUNTIME -o ./bcl-types
 
 # Then generate your library, importing BCL from the pre-existing package
-dotnet run -- generate -a ./MyLibrary.dll -d $DOTNET_RUNTIME -o ./my-lib --lib ./bcl-types
+npx tsbindgen generate -a ./MyLibrary.dll -d $DOTNET_RUNTIME -o ./my-lib --lib ./bcl-types
 ```
 
 ## CLI Reference
@@ -80,16 +94,16 @@ dotnet run -- generate -a ./MyLibrary.dll -d $DOTNET_RUNTIME -o ./my-lib --lib .
 
 ```bash
 # Generate BCL with JavaScript naming
-dotnet run -- generate -d $DOTNET_RUNTIME -o ./out --naming js
+npx tsbindgen generate -d $DOTNET_RUNTIME -o ./out --naming js
 
 # Generate specific namespaces only
-dotnet run -- generate -d $DOTNET_RUNTIME -o ./out -n System,System.Collections.Generic
+npx tsbindgen generate -d $DOTNET_RUNTIME -o ./out -n System,System.Collections.Generic
 
 # Verbose output with specific log categories
-dotnet run -- generate -d $DOTNET_RUNTIME -o ./out -v --logs ImportPlanner,FacadeEmitter
+npx tsbindgen generate -d $DOTNET_RUNTIME -o ./out -v --logs ImportPlanner,FacadeEmitter
 
 # Strict mode (additional validation)
-dotnet run -- generate -d $DOTNET_RUNTIME -o ./out --strict
+npx tsbindgen generate -d $DOTNET_RUNTIME -o ./out --strict
 ```
 
 ## Output Structure
