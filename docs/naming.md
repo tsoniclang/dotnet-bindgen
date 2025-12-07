@@ -7,9 +7,9 @@ tsbindgen supports two naming conventions for members.
 Members retain their C#/CLR PascalCase names.
 
 ```bash
-dotnet run -- generate -d $DOTNET_RUNTIME -o ./out
+npx tsbindgen generate -d $DOTNET_RUNTIME -o ./out
 # or explicitly:
-dotnet run -- generate -d $DOTNET_RUNTIME -o ./out --naming clr
+npx tsbindgen generate -d $DOTNET_RUNTIME -o ./out --naming clr
 ```
 
 **Output:**
@@ -26,7 +26,7 @@ array.Sort();
 Members are converted to camelCase.
 
 ```bash
-dotnet run -- generate -d $DOTNET_RUNTIME -o ./out --naming js
+npx tsbindgen generate -d $DOTNET_RUNTIME -o ./out --naming js
 ```
 
 **Output:**

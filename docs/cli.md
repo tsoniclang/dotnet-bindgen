@@ -2,6 +2,18 @@
 
 Complete reference for the tsbindgen command-line interface.
 
+## Installation
+
+```bash
+# Via npm (recommended)
+npm install tsbindgen
+
+# Or install globally
+npm install -g tsbindgen
+```
+
+Requires .NET 10 runtime installed.
+
 ## Commands
 
 ### generate
@@ -9,7 +21,11 @@ Complete reference for the tsbindgen command-line interface.
 Generate TypeScript declarations from .NET assemblies.
 
 ```bash
-tsbindgen generate [options]
+# Via npm
+npx tsbindgen generate [options]
+
+# Via dotnet (from source)
+dotnet run --project src/tsbindgen/tsbindgen.csproj -- generate [options]
 ```
 
 ## Options
@@ -27,13 +43,13 @@ At least one of `--assembly` or `--assembly-dir` is required.
 
 ```bash
 # Generate from runtime directory (BCL)
-dotnet run -- generate -d ~/.dotnet/shared/Microsoft.NETCore.App/10.0.0
+npx tsbindgen generate -d ~/.dotnet/shared/Microsoft.NETCore.App/10.0.0
 
 # Generate from specific assembly
-dotnet run -- generate -a ./MyLibrary.dll -d $DOTNET_RUNTIME
+npx tsbindgen generate -a ./MyLibrary.dll -d $DOTNET_RUNTIME
 
 # Multiple assemblies
-dotnet run -- generate -a ./Lib1.dll -a ./Lib2.dll -d $DOTNET_RUNTIME
+npx tsbindgen generate -a ./Lib1.dll -a ./Lib2.dll -d $DOTNET_RUNTIME
 ```
 
 ### Output
@@ -45,7 +61,7 @@ dotnet run -- generate -a ./Lib1.dll -a ./Lib2.dll -d $DOTNET_RUNTIME
 **Example:**
 
 ```bash
-dotnet run -- generate -d $DOTNET_RUNTIME -o ./declarations
+npx tsbindgen generate -d $DOTNET_RUNTIME -o ./declarations
 ```
 
 ### Filtering
@@ -58,7 +74,7 @@ dotnet run -- generate -d $DOTNET_RUNTIME -o ./declarations
 
 ```bash
 # Only generate System and System.Collections.Generic
-dotnet run -- generate -d $DOTNET_RUNTIME -o ./out \
+npx tsbindgen generate -d $DOTNET_RUNTIME -o ./out \
   -n System,System.Collections.Generic
 ```
 
@@ -85,7 +101,7 @@ dotnet run -- generate -d $DOTNET_RUNTIME -o ./out \
 **Example:**
 
 ```bash
-dotnet run -- generate -d $DOTNET_RUNTIME -o ./out --naming js
+npx tsbindgen generate -d $DOTNET_RUNTIME -o ./out --naming js
 ```
 
 ### Library Mode
@@ -99,7 +115,7 @@ See [Library Mode](library-mode.md) for details.
 **Example:**
 
 ```bash
-dotnet run -- generate -a ./MyLib.dll -d $DOTNET_RUNTIME -o ./out --lib ./bcl-types
+npx tsbindgen generate -a ./MyLib.dll -d $DOTNET_RUNTIME -o ./out --lib ./bcl-types
 ```
 
 ### Diagnostics
@@ -123,21 +139,20 @@ dotnet run -- generate -a ./MyLib.dll -d $DOTNET_RUNTIME -o ./out --lib ./bcl-ty
 
 ```bash
 # Verbose output
-dotnet run -- generate -d $DOTNET_RUNTIME -o ./out -v
+npx tsbindgen generate -d $DOTNET_RUNTIME -o ./out -v
 
 # Specific log categories
-dotnet run -- generate -d $DOTNET_RUNTIME -o ./out --logs ImportPlanner,FacadeEmitter
+npx tsbindgen generate -d $DOTNET_RUNTIME -o ./out --logs ImportPlanner,FacadeEmitter
 
 # Strict mode
-dotnet run -- generate -d $DOTNET_RUNTIME -o ./out --strict
+npx tsbindgen generate -d $DOTNET_RUNTIME -o ./out --strict
 ```
 
 ## Full Example
 
 ```bash
 # Complete example with all common options
-dotnet run --project src/tsbindgen/tsbindgen.csproj -- \
-  generate \
+npx tsbindgen generate \
   -d ~/.dotnet/shared/Microsoft.NETCore.App/10.0.0 \
   -o ./output \
   --naming js \
@@ -154,5 +169,5 @@ dotnet run --project src/tsbindgen/tsbindgen.csproj -- \
 
 ```bash
 export DOTNET_RUNTIME=~/.dotnet/shared/Microsoft.NETCore.App/10.0.0
-dotnet run -- generate -d $DOTNET_RUNTIME -o ./out
+npx tsbindgen generate -d $DOTNET_RUNTIME -o ./out
 ```

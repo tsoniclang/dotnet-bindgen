@@ -196,7 +196,7 @@ All diagnostics use prefix `TBG` (tsbindgen) with 3-digit codes. Severity (ERROR
 When `--strict` is enabled, non-whitelisted warnings are promoted to errors:
 
 ```bash
-dotnet run -- generate -d $DOTNET_RUNTIME -o ./out --strict
+npx tsbindgen generate -d $DOTNET_RUNTIME -o ./out --strict
 ```
 
 Strict mode ensures zero warnings in output. Certain warnings are whitelisted (documented, expected limitations like property covariance).
