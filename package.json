@@ -1,6 +1,6 @@
 {
   "name": "@tsonic/tsbindgen",
-  "version": "0.7.5",
+  "version": "0.7.6",
   "description": "Generate TypeScript declarations from .NET assemblies",
   "type": "module",
   "bin": {
@@ -13,16 +13,11 @@
   "files": [
     "bin.js",
     "index.js",
+    "lib",
     "README.md"
   ],
   "scripts": {
-    "build": "./scripts/build-native.sh"
-  },
-  "optionalDependencies": {
-    "@tsonic/tsbindgen-darwin-arm64": "0.7.4",
-    "@tsonic/tsbindgen-darwin-x64": "0.7.4",
-    "@tsonic/tsbindgen-linux-arm64": "0.7.4",
-    "@tsonic/tsbindgen-linux-x64": "0.7.4"
+    "build": "dotnet publish src/tsbindgen/tsbindgen.csproj -c Release -o lib/"
   },
   "keywords": [
     "tsonic",
