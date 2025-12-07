@@ -4,19 +4,20 @@
   "description": "Generate TypeScript declarations from .NET assemblies",
   "type": "module",
   "bin": {
-    "tsbindgen": "./bin.js"
+    "tsbindgen": "./bin/tsbindgen"
   },
   "main": "./index.js",
   "exports": {
     ".": "./index.js"
   },
   "files": [
-    "bin.js",
+    "postinstall.js",
     "index.js",
     "README.md"
   ],
   "scripts": {
-    "build": "./scripts/build-native.sh"
+    "build": "./scripts/build-native.sh",
+    "postinstall": "node postinstall.js"
   },
   "optionalDependencies": {
     "@tsonic/tsbindgen-darwin-arm64": "0.7.4",
