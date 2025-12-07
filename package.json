@@ -1,6 +1,6 @@
 {
   "name": "@tsonic/tsbindgen",
-  "version": "0.7.6",
+  "version": "0.7.7",
   "description": "Generate TypeScript declarations from .NET assemblies",
   "type": "module",
   "bin": {
@@ -8,7 +8,8 @@
   },
   "main": "./index.js",
   "exports": {
-    ".": "./index.js"
+    ".": "./index.js",
+    "./bin.js": "./bin.js"
   },
   "files": [
     "bin.js",
