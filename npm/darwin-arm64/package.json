@@ -1,0 +1,15 @@
+{
+  "name": "@tsonic/tsbindgen-darwin-arm64",
+  "version": "0.7.4",
+  "description": "tsbindgen native binary for macOS ARM64",
+  "os": ["darwin"],
+  "cpu": ["arm64"],
+  "files": [
+    "tsbindgen"
+  ],
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/tsoniclang/tsbindgen.git"
+  }
+}
