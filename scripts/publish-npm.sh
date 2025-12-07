@@ -9,6 +9,14 @@ WRAPPER_DIR="$(cd "$ROOT_DIR/../tsbindgen-wrapper" && pwd)"
 
 cd "$ROOT_DIR"
 
+# Check if on main branch - can't push directly to main due to branch rules
+CURRENT_BRANCH=$(git branch --show-current)
+if [ "$CURRENT_BRANCH" = "main" ]; then
+    echo "Error: Cannot run publish script on main branch."
+    echo "Create a feature branch first: git checkout -b release/vX.Y.Z"
+    exit 1
+fi
+
 echo "=== Building tsbindgen ==="
 dotnet publish src/tsbindgen/tsbindgen.csproj -c Release -o lib/
 
@@ -45,6 +53,11 @@ if [ "$LOCAL_VERSION" = "$PUBLISHED_VERSION" ]; then
     "
     LOCAL_VERSION="$NEW_VERSION"
 fi
+
+echo "=== Committing tsbindgen changes ==="
+git add package.json
+git commit -m "chore: bump version to $LOCAL_VERSION" || echo "No changes to commit"
+git push
 
 echo "=== Publishing @tsonic/tsbindgen@$LOCAL_VERSION ==="
 npm publish --access public
