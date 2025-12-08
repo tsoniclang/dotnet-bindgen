@@ -1400,61 +1400,36 @@ export type Func_2<T, TResult> = ...;
 |------|-------------|
 | TBG201 | Circular inheritance/dependency detected (handled by SCC bucketing) |
 
-## CLROf Lifting
+## Primitive Lifting in Generic Type Arguments
 
-### The Problem
+### The Principle
 
-TypeScript primitive aliases (`int`, `float`, `char`) don't match their CLR type names (`Int32`, `Single`, `Char`). This causes issues in generic constraints:
+tsbindgen emits CLR type names directly in generic type argument positions. This ensures:
+1. CLR type identity is preserved at the type level
+2. Generic constraints are satisfied without runtime type inference
+3. The Tsonic compiler can enforce numeric correctness at compile time
 
-```csharp
-// C#: Interface expects CLR type
-public interface IEquatable<T> {
-    bool Equals(T other);
-}
+### Type Emission Layers
 
-// int implements IEquatable<int>
-public readonly struct Int32 : IEquatable<Int32> {
-    public bool Equals(Int32 other) { ... }
-}
-```
+The type system has three distinct layers:
 
-In TypeScript:
+| Layer | Responsibility | Example |
+|-------|----------------|---------|
+| **tsbindgen** | Emits CLR-true surface names | `Span_1<Char>`, `IEquatable_1<Int32>` |
+| **@tsonic/types** | Defines what CLR names mean in TS | `type Int32 = number`, `type Char = string` |
+| **Tsonic compiler** | Enforces numeric correctness | `42 as int` validates bounds |
 
-```typescript
-// User code uses primitive alias
-const x: int = 42;
+### How It Works
 
-// But interface uses CLR type
-interface IEquatable_1<T> {
-    equals(other: T): boolean;
-}
-
-// Problem: int (alias) ≠ Int32 (CLR type)
-// extends IEquatable_1<int> wouldn't work with Int32 methods
-```
-
-### The Solution: CLROf<T> Utility Type
-
-`CLROf<T>` is a conditional type that maps primitive aliases to CLR types:
+When a primitive type appears as a generic type argument, tsbindgen emits the CLR type name instead of the TypeScript primitive alias:
 
 ```typescript
-// Generated in System/internal/index.d.ts
-export type CLROf<T> =
-    T extends sbyte ? SByte :
-    T extends short ? Int16 :
-    T extends int ? Int32 :
-    T extends long ? Int64 :
-    T extends byte ? Byte :
-    T extends ushort ? UInt16 :
-    T extends uint ? UInt32 :
-    T extends ulong ? UInt64 :
-    T extends float ? Single :
-    T extends double ? Double :
-    T extends decimal ? Decimal :
-    T extends char ? Char :
-    T extends boolean ? Boolean :
-    T extends string ? String :
-    T;  // Non-primitive passes through
+// Value positions use TS aliases for ergonomics
+function add(a: int, b: int): int;
+
+// Generic type arguments use CLR names
+type IntList = List_1<Int32>;  // Not List_1<int>
+tryFormat(destination: Span_1<Char>): boolean;  // Not Span_1<char>
 ```
 
 ### Implementation: PrimitiveLift
@@ -1479,55 +1454,50 @@ internal static class PrimitiveLift
         ("string",  "System.String",  "String",  "string"),
         // ... all primitives
     };
+
+    // Returns CLR simple name for a TS primitive, or null if not a primitive
+    public static string? GetClrSimpleName(string tsPrimitive) { ... }
 }
 ```
 
 ### Real Example: IEquatable<int>
 
 ```typescript
-// Interface definition
-export interface IEquatable_1$instance<T> {
-    equals(other: CLROf<T>): boolean;  // CLROf wraps T
+// @tsonic/types defines the aliases
+type int = number;
+type Int32 = number;
+
+// tsbindgen emits CLR name in generic position
+interface Int32$instance extends IEquatable_1$instance<Int32> { ... }
+
+// Interface method uses the type parameter directly
+interface IEquatable_1$instance<T> {
+    equals(other: T): boolean;  // T is Int32 when used with Int32
 }
-
-// Usage with int
-const x: int = 42;
-
-// When T = int:
-// CLROf<int> = Int32
-// equals(other: Int32) - matches CLR signature
-
-// Type-safe comparison:
-x.equals(42 as int);  // ✅ Works
 ```
 
-### When CLROf Is Applied
+### Cross-Namespace Qualification
 
-`CLROf<T>` wrapping happens in these contexts:
+When CLR type names are used outside the System namespace, they are qualified with `System_Internal.`:
 
-1. **Generic type arguments in extends clauses**:
-   ```typescript
-   interface CharEnumerator$instance
-       extends IEnumerator_1$instance<CLROf<char>> { ... }
-   ```
+```typescript
+// In System.Collections.Generic/internal/index.d.ts
+import * as System_Internal from "../../System/internal/index.js";
 
-2. **Interface member signatures**:
-   ```typescript
-   interface IEquatable_1$instance<T> {
-       equals(other: CLROf<T>): boolean;
-   }
-   ```
+// CLR names qualified to resolve correctly
+interface List_1$instance<T> {
+    tryFormat(destination: Span_1<System_Internal.Char>): boolean;
+}
+```
 
-3. **Constraint bounds**:
-   ```typescript
-   interface IComparable_1$instance<T extends CLROf<int>> { ... }
-   ```
+### Why Direct CLR Names?
 
-### Diagnostic Code
+The direct approach has several advantages over alternatives:
 
-| Code | Description |
-|------|-------------|
-| TBG8P1 | Primitive type argument not covered by CLROf lifting rules |
+1. **No conditional type overhead**: No `CLROf<T>` wrapper to resolve at type-check time
+2. **Clear semantics**: What you see is what the CLR type system expects
+3. **Clean separation**: tsbindgen emits structure, @tsonic/types provides TS semantics
+4. **Simpler output**: Generated declarations are more readable
 
 ## Nested Type Flattening
 

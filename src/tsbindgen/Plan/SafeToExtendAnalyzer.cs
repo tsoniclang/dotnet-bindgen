@@ -598,11 +598,11 @@ public static class SafeToExtendAnalyzer
     /// Prints a type reference with optional generic substitution.
     ///
     /// CRITICAL: When a generic parameter T is substituted with a primitive type (e.g., System.Char),
-    /// the extends clause prints the interface with CLROf-wrapped type arguments:
-    ///   extends IEnumerator_1$instance&lt;CLROf&lt;char&gt;&gt;
+    /// the extends clause prints the interface with CLR type names:
+    ///   extends IEnumerator_1$instance&lt;Char&gt;
     ///
-    /// TypeScript sees T as Char (the wrapper), not char (the primitive).
-    /// So we must wrap substituted primitives with CLROf&lt;&gt; to match what tsc sees.
+    /// TypeScript sees T as Char (the CLR type name), not char (the primitive).
+    /// So we must lift substituted primitives to their CLR names to match what tsc sees.
     /// </summary>
     private static string PrintTypeWithSubstitution(
         TypeReference typeRef,
@@ -612,7 +612,7 @@ public static class SafeToExtendAnalyzer
     {
         // Special case: generic parameter being substituted
         // When T gets substituted with a primitive (like System.Char), we need to
-        // wrap with CLROf<> because that's what the extends clause uses.
+        // lift to CLR type name because that's what the extends clause uses.
         if (substitutionMap != null && typeRef is GenericParameterReference gp)
         {
             if (substitutionMap.TryGetValue(gp.Name, out var substituted))
@@ -620,10 +620,10 @@ public static class SafeToExtendAnalyzer
                 // Print the substituted type
                 var printed = TypeRefPrinter.Print(substituted, resolver, ctx);
 
-                // Wrap with CLROf<> if it's a liftable primitive
+                // Lift to CLR type name if it's a liftable primitive
                 // This matches what TypeRefPrinter does for type arguments in the extends clause
-                var isPrimitive = PrimitiveLift.IsLiftableTs(printed);
-                return isPrimitive ? $"CLROf<{printed}>" : printed;
+                var clrName = PrimitiveLift.GetClrSimpleName(printed);
+                return clrName ?? printed;
             }
         }
 

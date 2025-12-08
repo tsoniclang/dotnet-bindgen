@@ -42,7 +42,8 @@ public static class BindingEmitter
             {
                 WriteIndented = true,
                 DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull,
-                PropertyNamingPolicy = JsonNamingPolicy.CamelCase
+                PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
+                Converters = { new JsonStringEnumConverter(JsonNamingPolicy.CamelCase) }
             };
             var json = JsonSerializer.Serialize(bindings, jsonOptions);
             File.WriteAllText(outputFile, json);
@@ -147,6 +148,16 @@ public static class BindingEmitter
         // Generate normalized signature for universal matching
         var normalizedSignature = SignatureNormalization.NormalizeMethod(method);
 
+        // Generate parameter modifier vector for ref/out/in semantics
+        var modifiers = method.Parameters
+            .Select((p, i) => new ParameterModifierMetadata
+            {
+                Index = i,
+                Modifier = p.GetModifier()
+            })
+            .Where(m => m.Modifier != ParameterModifier.None)
+            .ToList();
+
         return new MethodBinding
         {
             StableId = method.StableId.ToString(),
@@ -161,7 +172,8 @@ public static class BindingEmitter
             // V2: Add declaring type information from StableId
             DeclaringClrType = method.StableId.DeclaringClrFullName,
             DeclaringAssemblyName = method.StableId.AssemblyName,
-            IsExtensionMethod = method.IsExtensionMethod
+            IsExtensionMethod = method.IsExtensionMethod,
+            ParameterModifiers = modifiers.Count > 0 ? modifiers : null
         };
     }
 
@@ -257,6 +269,16 @@ public static class BindingEmitter
         // Generate normalized signature for universal matching
         var normalizedSignature = SignatureNormalization.NormalizeConstructor(ctor);
 
+        // Generate parameter modifier vector for ref/out/in semantics
+        var modifiers = ctor.Parameters
+            .Select((p, i) => new ParameterModifierMetadata
+            {
+                Index = i,
+                Modifier = p.GetModifier()
+            })
+            .Where(m => m.Modifier != ParameterModifier.None)
+            .ToList();
+
         return new ConstructorBinding
         {
             StableId = ctor.StableId.ToString(),
@@ -267,7 +289,8 @@ public static class BindingEmitter
             ParameterCount = ctor.Parameters.Length,
             // V2: Add declaring type information from StableId
             DeclaringClrType = ctor.StableId.DeclaringClrFullName,
-            DeclaringAssemblyName = ctor.StableId.AssemblyName
+            DeclaringAssemblyName = ctor.StableId.AssemblyName,
+            ParameterModifiers = modifiers.Count > 0 ? modifiers : null
         };
     }
 
@@ -725,6 +748,13 @@ public sealed record MethodBinding
     public string? DeclaringClrType { get; init; }
     public string? DeclaringAssemblyName { get; init; }
     public bool IsExtensionMethod { get; init; }
+
+    /// <summary>
+    /// Parameter modifier vector for ref/out/in semantics.
+    /// Only included if any parameter has a non-"none" modifier.
+    /// Used by Tsonic compiler for ABI enforcement.
+    /// </summary>
+    public List<ParameterModifierMetadata>? ParameterModifiers { get; init; }
 }
 
 /// <summary>
@@ -798,6 +828,12 @@ public sealed record ConstructorBinding
     // V2: Declaring type information
     public string? DeclaringClrType { get; init; }
     public string? DeclaringAssemblyName { get; init; }
+
+    /// <summary>
+    /// Parameter modifier vector for ref/out/in semantics.
+    /// Only included if any parameter has a non-"none" modifier.
+    /// </summary>
+    public List<ParameterModifierMetadata>? ParameterModifiers { get; init; }
 }
 
 // ============================================================================

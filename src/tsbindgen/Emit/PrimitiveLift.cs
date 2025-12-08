@@ -4,15 +4,13 @@ using System.Collections.Generic;
 namespace tsbindgen.Emit;
 
 /// <summary>
-/// Defines the primitive lifting rules for CLROf utility type.
+/// Defines the primitive type mappings for tsbindgen.
 /// This is the single source of truth for which primitives get lifted to their CLR types in generic contexts.
 ///
-/// Contract (PG_GENERIC_PRIM_LIFT_001):
-/// - Every primitive type used as a generic type argument is covered by these rules
-/// - CLROf emitter uses these rules to generate the conditional type mapping
-/// - TypeRefPrinter uses these rules to determine which concrete types to wrap with CLROf
-/// - PhaseGate validator ensures all primitive type arguments are covered
-/// - Constraint relaxation uses TsCarrier to derive the primitive union
+/// Usage:
+/// - TypeRefPrinter uses GetClrSimpleName to emit CLR type names in generic type arguments
+/// - InternalIndexEmitter uses GetTsPrimitiveName to emit primitive type aliases
+/// - Constraint relaxation uses GetTsCarrierKinds to build the union type that admits all primitives
 /// </summary>
 internal static class PrimitiveLift
 {
@@ -27,8 +25,7 @@ internal static class PrimitiveLift
     private static readonly HashSet<string> AllowedCarriers = new() { "number", "string", "boolean" };
 
     /// <summary>
-    /// Primitive lifting rules: TypeScript primitive name → CLR full type name → TypeScript carrier type.
-    /// Order matters for CLROf conditional type (more specific types first).
+    /// Primitive lifting rules: TypeScript primitive name → CLR full type name → CLR simple name → TypeScript carrier type.
     ///
     /// TsCarrier is the underlying TypeScript type that the branded primitive extends.
     /// Per @tsonic/types contract:
@@ -65,20 +62,6 @@ internal static class PrimitiveLift
         ("boolean", "System.Boolean", "Boolean", "boolean"),
         ("string",  "System.String",  "String",  "string"),
     };
-
-    /// <summary>
-    /// Check if a CLR type (by full name) is a liftable primitive.
-    /// Used by PhaseGate validator to detect primitive type arguments.
-    /// </summary>
-    internal static bool IsLiftableClr(string clrFullName) =>
-        Rules.Any(r => r.ClrFullName == clrFullName);
-
-    /// <summary>
-    /// Check if a TypeScript type name is a liftable primitive.
-    /// Used by TypeRefPrinter to determine which concrete types to wrap with CLROf.
-    /// </summary>
-    internal static bool IsLiftableTs(string tsName) =>
-        Rules.Any(r => r.TsName == tsName);
 
     /// <summary>
     /// Get the CLR simple name (for emission) for a given TS primitive.

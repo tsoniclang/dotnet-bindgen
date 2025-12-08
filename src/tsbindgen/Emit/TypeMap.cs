@@ -92,7 +92,7 @@ public static class TypeMap
                 tsType = "decimal";
                 return true;
 
-            // Char (branded type - distinct from string for CLROf resolution)
+            // Char (branded type - distinct from string)
             case "System.Char":
                 tsType = "char";
                 return true;

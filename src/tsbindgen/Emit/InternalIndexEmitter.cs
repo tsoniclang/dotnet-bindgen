@@ -88,33 +88,33 @@ public static class InternalIndexEmitter
         // Branded primitive types are sourced from @tsonic/types
         EmitBrandedPrimitiveImports(sb);
 
-        // Check if namespace uses unsafe markers (pointers/byrefs) and emit support import if needed
+        // Check if namespace uses pointer types and emit support import if needed
+        // Note: ref/out/in modifiers are ABI semantics tracked in metadata, not TS types
         var needsSupportTypes = NamespaceUsesSupportTypes(nsOrder.Namespace);
         if (needsSupportTypes)
         {
             sb.AppendLine("// Import support types from @tsonic/types");
-            sb.AppendLine("import type { ptr, ref } from \"@tsonic/types\";");
+            sb.AppendLine("import type { ptr } from \"@tsonic/types\";");
             sb.AppendLine();
         }
 
         // Emit import statements for cross-namespace type references
         var imports = importPlan.GetImportsFor(nsOrder.Namespace.Name);
 
-        // CLROf utility requires System_Internal namespace import
-        // Check if we need to add it (for non-System namespaces)
+        // CLR type names (Char, Int32, etc.) are defined in System namespace
+        // Check if we need to add System_Internal for non-System namespaces
         var systemImport = imports.FirstOrDefault(i => i.TargetNamespace == "System");
-        var needsSystemInternalForCLROf = nsOrder.Namespace.Name != "System"
+        var needsSystemInternalForClrTypes = nsOrder.Namespace.Name != "System"
             && (systemImport == null || systemImport.TypeImports.All(ti => !ti.IsValueImport));
 
-        if (imports.Count > 0 || needsSystemInternalForCLROf)
+        if (imports.Count > 0 || needsSystemInternalForClrTypes)
         {
             sb.AppendLine("// Import types from other namespaces");
 
-            // Add System_Internal namespace import for CLROf if not already present
-            if (needsSystemInternalForCLROf)
+            // Add System_Internal namespace import for CLR type aliases if not already present
+            if (needsSystemInternalForClrTypes)
             {
                 // Use library package specifier if in library mode and System types are in the library
-                // Check for a specific System type (Int32) rather than namespace membership for correctness
                 string systemPath;
                 if (ctx.LibraryContract != null && ctx.LibraryContract.AllowedClrFullNames.Contains("System.Int32"))
                 {
@@ -185,9 +185,6 @@ public static class InternalIndexEmitter
 
             sb.AppendLine(); // Blank line after imports
         }
-
-        // Emit CLROf utility after cross-namespace imports (so System_Internal is available)
-        EmitCLROfUtility(sb, nsOrder.Namespace.Name);
 
         var indent = string.Empty;
 
@@ -390,7 +387,7 @@ public static class InternalIndexEmitter
             }
             else
             {
-                // Print each constraint using TypeRefPrinter (handles CLROf, imports, etc.)
+                // Print each constraint using TypeRefPrinter (handles imports, qualification, etc.)
                 // PRIMITIVE CONSTRAINT RELAXATION: Widen value semantics constraints
                 var constraintStrings = typeConstraints
                     .Select(c =>
@@ -433,28 +430,6 @@ public static class InternalIndexEmitter
         sb.AppendLine();
     }
 
-    private static void EmitCLROfUtility(StringBuilder sb, string currentNamespace)
-    {
-        // CLROf<T> - Primitive Lifting Utility
-        // CRITICAL: Uses PrimitiveLift.Rules as single source of truth (PG_GENERIC_PRIM_LIFT_001)
-        sb.AppendLine("// CLROf<T> - Maps ergonomic primitives to their CLR types for generic constraints");
-        sb.AppendLine("// This utility is used ONLY in generic type arguments to satisfy CLR interface constraints");
-        sb.AppendLine("// Value positions (parameters, return types) use lowercase primitives for ergonomics");
-        sb.AppendLine("export type CLROf<T> =");
-
-        // Generate conditional type branches from PrimitiveLift.Rules
-        // For System namespace, use direct type names (no prefix)
-        // For other namespaces, use System_Internal.TypeName (namespace-qualified)
-        var isSystemNamespace = currentNamespace == "System";
-        foreach (var (tsName, _, clrSimpleName, _) in PrimitiveLift.Rules)
-        {
-            var typeRef = isSystemNamespace ? clrSimpleName : $"System_Internal.{clrSimpleName}";
-            sb.AppendLine($"    T extends {tsName} ? {typeRef} :");
-        }
-
-        sb.AppendLine("    T; // Identity fallback for non-primitive types");
-        sb.AppendLine();
-    }
 
     /// <summary>
     /// LINQ ASSIGNABILITY: Emit a merged interface declaration that extends safe interfaces.
@@ -847,15 +822,16 @@ public static class InternalIndexEmitter
             numericInterfaces.Contains("ITrigonometricFunctions"))
         {
             sb.AppendLine($"    toString(format: string, formatProvider: {Qualified("IFormatProvider")}): string;");
-            // ref is from @tsonic/types, so never qualify it
-            sb.AppendLine($"    tryFormat(destination: {Qualified("Span_1")}<{Qualified("CLROf")}<char>>, charsWritten: {{ value: ref<int> }}, format: {Qualified("ReadOnlySpan_1")}<{Qualified("CLROf")}<char>>, provider: {Qualified("IFormatProvider")}): boolean;");
+            // ref/out modifiers are ABI semantics tracked in metadata, not TS types - emit plain element type
+            sb.AppendLine($"    tryFormat(destination: {Qualified("Span_1")}<{Qualified("Char")}>, charsWritten: int, format: {Qualified("ReadOnlySpan_1")}<{Qualified("Char")}>, provider: {Qualified("IFormatProvider")}): boolean;");
         }
 
         // IUtf8SpanFormattable - tryFormat UTF-8 overload (byte version)
         // This overload is required when the interface hierarchy includes IUtf8SpanFormattable
         if (numericInterfaces.Contains("IUtf8SpanFormattable"))
         {
-            sb.AppendLine($"    tryFormat(utf8Destination: {Qualified("Span_1")}<{Qualified("CLROf")}<byte>>, bytesWritten: {{ value: ref<int> }}, format: {Qualified("ReadOnlySpan_1")}<{Qualified("CLROf")}<char>>, provider: {Qualified("IFormatProvider")}): boolean;");
+            // ref/out modifiers are ABI semantics tracked in metadata, not TS types - emit plain element type
+            sb.AppendLine($"    tryFormat(utf8Destination: {Qualified("Span_1")}<{Qualified("Byte")}>, bytesWritten: int, format: {Qualified("ReadOnlySpan_1")}<{Qualified("Char")}>, provider: {Qualified("IFormatProvider")}): boolean;");
         }
 
         // IBinaryInteger<TSelf> - getByteCount, tryWriteBigEndian, writeBigEndian
@@ -863,12 +839,12 @@ public static class InternalIndexEmitter
         if (numericInterfaces.Contains("IBinaryInteger"))
         {
             sb.AppendLine("    getByteCount(): int;");
-            // tryWriteBigEndian with out parameter
-            sb.AppendLine($"    tryWriteBigEndian(destination: {Qualified("Span_1")}<{Qualified("CLROf")}<byte>>, bytesWritten: {{ value: ref<int> }}): boolean;");
+            // ref/out modifiers are ABI semantics tracked in metadata, not TS types - emit plain element type
+            sb.AppendLine($"    tryWriteBigEndian(destination: {Qualified("Span_1")}<{Qualified("Byte")}>, bytesWritten: int): boolean;");
             // writeBigEndian overloads
             sb.AppendLine("    writeBigEndian(destination: byte[], startIndex: int): int;");
             sb.AppendLine("    writeBigEndian(destination: byte[]): int;");
-            sb.AppendLine($"    writeBigEndian(destination: {Qualified("Span_1")}<{Qualified("CLROf")}<byte>>): int;");
+            sb.AppendLine($"    writeBigEndian(destination: {Qualified("Span_1")}<{Qualified("Byte")}>): int;");
         }
 
         // IFloatingPoint<TSelf> - getExponentByteCount, getExponentShortestBitLength, tryWriteExponentBigEndian, writeExponentBigEndian
@@ -877,12 +853,12 @@ public static class InternalIndexEmitter
         {
             sb.AppendLine("    getExponentByteCount(): int;");
             sb.AppendLine("    getExponentShortestBitLength(): int;");
-            // tryWriteExponentBigEndian with out parameter
-            sb.AppendLine($"    tryWriteExponentBigEndian(destination: {Qualified("Span_1")}<{Qualified("CLROf")}<byte>>, bytesWritten: {{ value: ref<int> }}): boolean;");
+            // ref/out modifiers are ABI semantics tracked in metadata, not TS types - emit plain element type
+            sb.AppendLine($"    tryWriteExponentBigEndian(destination: {Qualified("Span_1")}<{Qualified("Byte")}>, bytesWritten: int): boolean;");
             // writeExponentBigEndian overloads
             sb.AppendLine("    writeExponentBigEndian(destination: byte[], startIndex: int): int;");
             sb.AppendLine("    writeExponentBigEndian(destination: byte[]): int;");
-            sb.AppendLine($"    writeExponentBigEndian(destination: {Qualified("Span_1")}<{Qualified("CLROf")}<byte>>): int;");
+            sb.AppendLine($"    writeExponentBigEndian(destination: {Qualified("Span_1")}<{Qualified("Byte")}>): int;");
         }
     }
 

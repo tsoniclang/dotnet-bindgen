@@ -102,6 +102,19 @@ public class TypeModel
 
 **See CODING-STANDARDS.md for complete functional programming guidelines.**
 
+### TYPE EMISSION INVARIANTS
+
+**Non-negotiable rules for type emission:**
+
+1. **tsbindgen never infers CLR identity from a TS type** - No "if `T extends number` then CLR.Int32". All type decisions come from CLR metadata.
+2. **tsbindgen only emits types derived from CLR metadata** - TypeScript is for shape/callability/ergonomics, not CLR identity.
+3. **Primitive identity does not exist in TS for numerics** - Any API relying on TS to distinguish `Int32` vs `SByte` is invalid. The Tsonic compiler is the numeric authority.
+
+**Primitive emission pattern:**
+- Value positions (parameters, returns): lowercase TS aliases (`int`, `char`, `decimal`)
+- Generic type arguments: CLR type names (`Int32`, `Char`, `Decimal`)
+- Example: `List<int>` → `List_1<Int32>` (not `List_1<int>`)
+
 ### NEVER USE AUTOMATED SCRIPTS FOR FIXES
 
 **🚨 CRITICAL RULE: NEVER EVER attempt automated fixes via scripts or mass updates. 🚨**

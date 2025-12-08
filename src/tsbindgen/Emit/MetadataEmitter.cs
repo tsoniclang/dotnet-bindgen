@@ -45,7 +45,8 @@ public static class MetadataEmitter
             {
                 WriteIndented = true,
                 DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull,
-                PropertyNamingPolicy = JsonNamingPolicy.CamelCase
+                PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
+                Converters = { new JsonStringEnumConverter(JsonNamingPolicy.CamelCase) }
             };
             var json = JsonSerializer.Serialize(metadata, jsonOptions);
             File.WriteAllText(outputFile, json);
@@ -122,6 +123,16 @@ public static class MetadataEmitter
         // Generate normalized signature for universal matching
         var normalizedSignature = SignatureNormalization.NormalizeMethod(method);
 
+        // Generate parameter modifier vector for ref/out/in semantics
+        var modifiers = method.Parameters
+            .Select((p, i) => new ParameterModifierMetadata
+            {
+                Index = i,
+                Modifier = p.GetModifier()
+            })
+            .Where(m => m.Modifier != ParameterModifier.None)
+            .ToList();
+
         return new MethodMetadata
         {
             StableId = method.StableId.ToString(),
@@ -138,7 +149,8 @@ public static class MetadataEmitter
             Arity = method.Arity,
             ParameterCount = method.Parameters.Length,
             SourceInterface = method.SourceInterface != null ? GetTypeRefName(method.SourceInterface) : null,
-            IsExtensionMethod = method.IsExtensionMethod
+            IsExtensionMethod = method.IsExtensionMethod,
+            ParameterModifiers = modifiers.Count > 0 ? modifiers : null
         };
     }
 
@@ -228,11 +240,22 @@ public static class MetadataEmitter
         // Generate normalized signature for universal matching
         var normalizedSignature = SignatureNormalization.NormalizeConstructor(ctor);
 
+        // Generate parameter modifier vector for ref/out/in semantics
+        var modifiers = ctor.Parameters
+            .Select((p, i) => new ParameterModifierMetadata
+            {
+                Index = i,
+                Modifier = p.GetModifier()
+            })
+            .Where(m => m.Modifier != ParameterModifier.None)
+            .ToList();
+
         return new ConstructorMetadata
         {
             NormalizedSignature = normalizedSignature,
             IsStatic = ctor.IsStatic,
-            ParameterCount = ctor.Parameters.Length
+            ParameterCount = ctor.Parameters.Length,
+            ParameterModifiers = modifiers.Count > 0 ? modifiers : null
         };
     }
 
@@ -280,6 +303,16 @@ public sealed record TypeMetadata
 }
 
 /// <summary>
+/// Parameter modifier information for Tsonic enforcement.
+/// ref/out/in are ABI modifiers tracked in metadata, not TS types.
+/// </summary>
+public sealed record ParameterModifierMetadata
+{
+    public required int Index { get; init; }
+    public required ParameterModifier Modifier { get; init; }
+}
+
+/// <summary>
 /// Metadata for a method.
 /// </summary>
 public sealed record MethodMetadata
@@ -299,6 +332,13 @@ public sealed record MethodMetadata
     public required int ParameterCount { get; init; }
     public string? SourceInterface { get; init; }
     public bool IsExtensionMethod { get; init; }
+
+    /// <summary>
+    /// Parameter modifier vector for ref/out/in semantics.
+    /// Only included if any parameter has a non-"none" modifier.
+    /// Used by Tsonic compiler for ABI enforcement.
+    /// </summary>
+    public List<ParameterModifierMetadata>? ParameterModifiers { get; init; }
 }
 
 /// <summary>
@@ -356,4 +396,10 @@ public sealed record ConstructorMetadata
     public required string NormalizedSignature { get; init; }
     public required bool IsStatic { get; init; }
     public required int ParameterCount { get; init; }
+
+    /// <summary>
+    /// Parameter modifier vector for ref/out/in semantics.
+    /// Only included if any parameter has a non-"none" modifier.
+    /// </summary>
+    public List<ParameterModifierMetadata>? ParameterModifiers { get; init; }
 }

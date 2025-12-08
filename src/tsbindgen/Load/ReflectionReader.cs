@@ -498,17 +498,124 @@ public sealed class ReflectionReader
         var paramName = param.Name ?? $"arg{param.Position}";
         var sanitizedName = TypeScriptReservedWords.SanitizeParameterName(paramName);
 
+        // Note: param.IsOut can be true for non-byref parameters (marshalling hint via [Out] attribute)
+        // We only track actual C# `out` parameters (which require both IsOut AND IsByRef)
+        var isOut = param.IsOut && param.ParameterType.IsByRef;
+
+        // COMPILER-GRADE: 'in' detection with modreq as ground truth when present
+        // The CLR marks readonly-byref ('in') with modreq(IsReadOnlyAttribute).
+        // ParameterInfo.IsIn is a metadata flag that can also appear in interop scenarios.
+        //
+        // Detection strategy:
+        // 1. If modreq(IsReadOnlyAttribute) IS FOUND → definitive 'in' (ground truth)
+        // 2. If modreq is empty or throws → inconclusive (MetadataLoadContext returns empty
+        //    arrays because it can't resolve modifier types) → fall back to IsIn flag
+        //
+        // This means: non-empty modreq is authoritative; empty/failed modreq defers to IsIn.
+        var isIn = false;
+        if (param.ParameterType.IsByRef && !isOut)
+        {
+            var modreqResult = TryGetIsReadOnlyModifier(param.ParameterType);
+            if (modreqResult == ModreqResult.Found)
+            {
+                // Ground truth: modreq found, definitely 'in'
+                isIn = true;
+            }
+            else
+            {
+                // Inconclusive (empty or exception): fall back to IsIn flag
+                // Empty modreq in MetadataLoadContext doesn't mean "no modreq"
+                isIn = param.IsIn;
+            }
+        }
+
+        // Compute IsRef: byref but not out or in
+        var isRef = param.ParameterType.IsByRef && !isOut && !isIn;
+
+        // CRITICAL: Validate mutual exclusivity (CLR constraint)
+        // At most one of ref/out/in can be true for any parameter
+        var modifierCount = (isRef ? 1 : 0) + (isOut ? 1 : 0) + (isIn ? 1 : 0);
+        if (modifierCount > 1)
+        {
+            throw new InvalidOperationException(
+                $"Parameter '{paramName}' has multiple modifiers (IsRef={isRef}, IsOut={isOut}, IsIn={isIn}). " +
+                "Only one of ref/out/in is allowed per CLR specification.");
+        }
+
+        // Note: IsByRef implications are guaranteed by construction above
+        // (isOut/isIn/isRef all include IsByRef in their computation)
+
         return new ParameterSymbol
         {
             Name = _ctx.Intern(sanitizedName),
             Type = _typeFactory.Create(param.ParameterType),
-            IsRef = param.ParameterType.IsByRef && !param.IsOut,
-            IsOut = param.IsOut,
+            IsRef = isRef,
+            IsOut = isOut,
+            IsIn = isIn,
             IsParams = param.GetCustomAttributesData()
                 .Any(attr => attr.AttributeType.Name == "ParamArrayAttribute"),
             HasDefaultValue = param.HasDefaultValue,
             DefaultValue = param.HasDefaultValue ? param.RawDefaultValue : null
         };
+    }
+
+    /// <summary>
+    /// Result of attempting to read IsReadOnlyAttribute modreq.
+    /// </summary>
+    /// <remarks>
+    /// COMPILER-GRADE SEMANTICS:
+    /// - Found: modreq(IsReadOnlyAttribute) present → definitive 'in' (ground truth)
+    /// - NotFound: modreq array empty or doesn't contain it → treated as INCONCLUSIVE
+    /// - Error: exception thrown → inconclusive
+    ///
+    /// NOTE on NotFound: In normal reflection, empty modreq IS informative (means "not readonly-byref").
+    /// However, in MetadataLoadContext, empty modreq is often caused by type resolution failures
+    /// (modifier types can't be resolved), NOT by the absence of modifiers.
+    ///
+    /// Since tsbindgen uses MetadataLoadContext for BCL assemblies, we conservatively treat
+    /// NotFound as "inconclusive" and fall back to ParameterInfo.IsIn. This is safe because:
+    /// 1. In MLC: NotFound may be false negative → IsIn provides correct answer
+    /// 2. In normal reflection: NotFound is true negative, but IsIn also returns false → same result
+    ///
+    /// If a future version needs to distinguish "readable empty" (definitive not-in) from
+    /// "MLC limitation" (inconclusive), we would need to detect the reflection context.
+    /// </remarks>
+    private enum ModreqResult
+    {
+        /// <summary>modreq(IsReadOnlyAttribute) was found - definitive 'in'</summary>
+        Found,
+        /// <summary>modreq array was empty or didn't contain IsReadOnlyAttribute - inconclusive (see remarks)</summary>
+        NotFound,
+        /// <summary>Exception thrown reading modreq - inconclusive</summary>
+        Error
+    }
+
+    /// <summary>
+    /// Try to check if a type has the IsReadOnlyAttribute required modifier.
+    /// This is how C# marks 'in' parameters in metadata (modreq).
+    ///
+    /// Returns:
+    /// - Found: modreq(IsReadOnlyAttribute) is present → definitive 'in'
+    /// - NotFound: modreq array empty or doesn't contain it → inconclusive (could be MLC issue)
+    /// - Error: exception thrown → inconclusive
+    ///
+    /// Note: MetadataLoadContext returns empty arrays (not exceptions) because modifier types
+    /// can't be resolved. So NotFound is NOT the same as "definitely not 'in'".
+    /// </summary>
+    private static ModreqResult TryGetIsReadOnlyModifier(Type type)
+    {
+        try
+        {
+            var modifiers = type.GetRequiredCustomModifiers();
+            var hasModreq = modifiers.Any(m =>
+                m.Name == "IsReadOnlyAttribute" ||
+                m.FullName == "System.Runtime.CompilerServices.IsReadOnlyAttribute");
+            return hasModreq ? ModreqResult.Found : ModreqResult.NotFound;
+        }
+        catch
+        {
+            return ModreqResult.Error;
+        }
     }
 
     private string CreateMethodSignature(MethodInfo method)

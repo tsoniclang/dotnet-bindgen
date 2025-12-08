@@ -248,7 +248,7 @@ public static class FacadeEmitter
     ///   Multiple constraints: "<T extends IComparable_1<T> & IEquatable_1<T>>"
     ///   Mixed: "<T, U extends IComparer_1<T>>"
     ///
-    /// CLROf wrapping is automatically applied by TypeRefPrinter for primitive type arguments in constraints.
+    /// CLR type names are automatically emitted by TypeRefPrinter for primitive type arguments in constraints.
     /// </summary>
     private static string GenerateTypeParametersWithConstraints(
         Model.Symbols.TypeSymbol sourceType,
@@ -276,7 +276,7 @@ public static class FacadeEmitter
             }
             else
             {
-                // Print each constraint using TypeRefPrinter (handles CLROf, imports, etc.)
+                // Print each constraint using TypeRefPrinter (handles imports, qualification, etc.)
                 // PRIMITIVE CONSTRAINT RELAXATION: Widen value semantics constraints
                 var constraintStrings = typeConstraints
                     .Select(c =>
