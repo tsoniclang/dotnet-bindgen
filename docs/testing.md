@@ -77,7 +77,7 @@ Individual test scripts verify specific behaviors.
 | `test-strict-mode.sh` | Strict mode validation |
 | `test-delegate-callable.sh` | Delegate callable signatures |
 | `test-primitive-identity.sh` | Primitive type mappings |
-| `test-clrof-regression.sh` | CLROf utility type |
+| `test-primitive-lifting.sh` | Primitive type lifting in generic args |
 | `test-camelcase-regression.sh` | CamelCase conversion |
 | `test-multiarity-import.sh` | Multi-arity types import correctly |
 | `test-multiarity-no-wrong-export.sh` | Facades don't export wrong arity |
@@ -129,7 +129,7 @@ C# allows properties to return more specific types than interfaces require. Type
 
 ### TS2430 - Interface Method Conflicts (FIXED)
 
-Method signature mismatch between class and inherited interface (e.g., `char` vs `CLROf<char>`).
+Method signature mismatch between class and inherited interface (e.g., different method overloads).
 
 **Status**: **FIXED** in v0.7.4 - ClassPrinter emits inherited method overloads.
 

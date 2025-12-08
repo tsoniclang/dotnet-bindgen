@@ -31,6 +31,12 @@ public sealed class TypeNameResolver
     public bool IsFacadeMode => _facadeMode;
 
     /// <summary>
+    /// The current namespace being emitted (if known).
+    /// Used by TypeRefPrinter to qualify CLR type names when needed.
+    /// </summary>
+    public string? CurrentNamespace => _currentNamespace;
+
+    /// <summary>
     /// Resolve the final TypeScript identifier for a TypeSymbol.
     /// This directly queries the Renamer - the single source of truth.
     /// </summary>

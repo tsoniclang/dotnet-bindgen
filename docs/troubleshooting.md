@@ -108,7 +108,7 @@ error TS2320: Interface 'X' cannot simultaneously extend types 'A' and 'B'.
 error TS2430: Interface 'X' incorrectly extends interface 'Y'.
 ```
 
-**Cause:** Method signature mismatch between class and inherited interface (e.g., `char` vs `CLROf<char>`).
+**Cause:** Method signature mismatch between class and inherited interface (e.g., different method overloads for numeric types).
 
 **Status:** Fixed in v0.7.4. The `ClassPrinter` now emits inherited method overloads to satisfy both the class and interface contracts.
 

@@ -171,24 +171,20 @@ export abstract class Console {
 | `ReadOnlySpan<T>` | `ReadOnlySpan_1<T>` |
 | `Span<T>` | `Span_1<T>` |
 
-## CLROf Utility
+## Primitive Lifting in Generic Type Arguments
 
-For generic constraints, `CLROf<T>` maps ergonomic primitives to CLR types:
-
-```typescript
-type CLROf<T> =
-    T extends int ? Int32 :
-    T extends string ? String :
-    T extends boolean ? Boolean :
-    T;
-```
-
-This enables:
+For generic type arguments, tsbindgen emits CLR type names directly instead of TS primitive aliases:
 
 ```typescript
-interface IEquatable_1<T> {
-    equals(other: CLROf<T>): boolean;
-}
+// Value positions use TS aliases for ergonomics
+function add(a: int, b: int): int;
 
-// int satisfies IEquatable_1<int> because CLROf<int> = Int32
+// Generic type arguments use CLR names
+type List = List_1<Int32>;  // Not List_1<int>
+tryFormat(destination: Span_1<Char>): boolean;  // Not Span_1<char>
 ```
+
+This ensures:
+1. CLR type identity is preserved in type-level positions
+2. Generic constraints are satisfied without runtime type inference
+3. Tsonic compiler can enforce numeric correctness at compile time

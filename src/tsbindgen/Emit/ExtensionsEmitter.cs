@@ -99,9 +99,10 @@ public static class ExtensionsEmitter
         sb.AppendLine("import type { sbyte, byte, short, ushort, int, uint, long, ulong, int128, uint128, half, float, double, decimal, nint, nuint, char } from '@tsonic/types';");
         sb.AppendLine();
 
-        // Import CLROf utility type from System namespace (needed for generic constraints)
-        sb.AppendLine("// Import CLROf utility for primitive type lifting");
-        sb.AppendLine("import type { CLROf } from '../../System/internal/index.js';");
+        // Import CLR primitive type aliases from System namespace
+        // These are needed for generic type arguments (e.g., Span_1<Char> instead of Span_1<char>)
+        sb.AppendLine("// Import CLR type aliases for generic type arguments");
+        sb.AppendLine("import * as System_Internal from \"../../System/internal/index.js\";");
         sb.AppendLine();
 
         // Import ptr and ref from @tsonic/types (needed for ref/out parameters and pointers)

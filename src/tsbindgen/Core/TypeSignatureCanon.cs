@@ -8,7 +8,7 @@ namespace tsbindgen.Core;
 ///
 /// CRITICAL: This must match the emitted TypeScript surface, not CLR names.
 /// - Primitives map to their TS branded types (int, decimal, NOT number)
-/// - Generic type arguments for primitives get CLROf&lt;&gt; wrapping
+/// - Generic type arguments for primitives get CLR type names (int → Int32)
 /// - Generic parameters stay as their names (T, TKey, etc.)
 ///
 /// This is the SINGLE SOURCE OF TRUTH for signature canonicalization.
@@ -33,7 +33,7 @@ public static class TypeSignatureCanon
     /// This matches what TypeRefPrinter.Print() would produce.
     /// </summary>
     /// <param name="typeRef">The type reference to canonicalize</param>
-    /// <param name="isGenericArg">If true, wrap liftable primitives with CLROf&lt;&gt;</param>
+    /// <param name="isGenericArg">If true, lift primitives to their CLR type names (int → Int32)</param>
     public static string CanonicalizeType(TypeReference typeRef, bool isGenericArg = false)
     {
         return typeRef switch
@@ -54,10 +54,11 @@ public static class TypeSignatureCanon
         var tsType = MapPrimitiveType(named.FullName);
         if (tsType != null)
         {
-            // If in generic position, wrap liftable primitives with CLROf<>
-            if (isGenericArg && IsLiftablePrimitive(tsType))
+            // If in generic position, lift to CLR type name (int → Int32)
+            if (isGenericArg)
             {
-                return $"CLROf<{tsType}>";
+                var clrName = GetClrSimpleName(tsType);
+                return clrName ?? tsType;
             }
             return tsType;
         }
@@ -133,41 +134,42 @@ public static class TypeSignatureCanon
     }
 
     /// <summary>
-    /// Check if a TypeScript type name is a liftable primitive that needs CLROf wrapping.
-    /// MUST match PrimitiveLift.IsLiftableTs exactly.
+    /// Get the CLR simple name for a TypeScript primitive type.
+    /// Returns null if not a liftable primitive.
+    /// MUST match PrimitiveLift.GetClrSimpleName exactly.
     /// </summary>
-    private static bool IsLiftablePrimitive(string tsType)
+    private static string? GetClrSimpleName(string tsType)
     {
         return tsType switch
         {
             // Signed integers
-            "sbyte" => true,
-            "short" => true,
-            "int" => true,
-            "long" => true,
-            "int128" => true,
-            "nint" => true,
+            "sbyte" => "SByte",
+            "short" => "Int16",
+            "int" => "Int32",
+            "long" => "Int64",
+            "int128" => "Int128",
+            "nint" => "IntPtr",
 
             // Unsigned integers
-            "byte" => true,
-            "ushort" => true,
-            "uint" => true,
-            "ulong" => true,
-            "uint128" => true,
-            "nuint" => true,
+            "byte" => "Byte",
+            "ushort" => "UInt16",
+            "uint" => "UInt32",
+            "ulong" => "UInt64",
+            "uint128" => "UInt128",
+            "nuint" => "UIntPtr",
 
             // Floating point
-            "half" => true,
-            "float" => true,
-            "double" => true,
-            "decimal" => true,
+            "half" => "Half",
+            "float" => "Single",
+            "double" => "Double",
+            "decimal" => "Decimal",
 
             // Other
-            "char" => true,
-            "boolean" => true,
-            "string" => true,
+            "char" => "Char",
+            "boolean" => "Boolean",
+            "string" => "String",
 
-            _ => false
+            _ => null
         };
     }
 }

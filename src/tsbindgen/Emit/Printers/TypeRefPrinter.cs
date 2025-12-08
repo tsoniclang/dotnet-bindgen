@@ -99,17 +99,28 @@ public static class TypeRefPrinter
             return baseName;
 
         // Print generic type with arguments: Foo<T, U>
-        // CRITICAL: Wrap ONLY concrete primitive types with CLROf<> to lift to their CLR types
-        // This ensures generic constraints (IEquatable_1<Int32>, IComparable_1<Int32>) are satisfied
-        // CLROf<T> maps: int → Int32, string → String, byte → Byte, etc.
-        // Generic parameters (T, U, TKey) pass through unchanged to avoid double-wrapping
-        // Uses PrimitiveLift.IsLiftableTs as single source of truth (PG_GENERIC_PRIM_LIFT_001)
+        // CRITICAL: Emit CLR type names directly for primitives in generic type arguments
+        // This ensures generic constraints are satisfied with direct CLR type names
+        // Example: List<int> → List_1<Int32> (Int32 is the CLR type, int is the TS alias)
+        // Generic parameters (T, U, TKey) pass through unchanged
         var argParts = named.TypeArguments.Select(arg =>
         {
             var printed = Print(arg, resolver, ctx, allowedTypeParameterNames);
-            // Only wrap liftable primitives with CLROf<>
-            var isPrimitive = PrimitiveLift.IsLiftableTs(printed);
-            return isPrimitive ? $"CLROf<{printed}>" : printed;
+            // Lift primitives to their CLR type names: int → Int32, char → Char, etc.
+            // Qualify with System_Internal when outside System namespace
+            var clrName = PrimitiveLift.GetClrSimpleName(printed);
+            if (clrName != null)
+            {
+                // CLR primitive types are defined in System namespace
+                // Qualify when not in System namespace
+                var currentNs = resolver.CurrentNamespace;
+                if (currentNs != null && currentNs != "System")
+                {
+                    return $"System_Internal.{clrName}";
+                }
+                return clrName;
+            }
+            return printed;
         }).ToList();
         var nonEmptyArgs = argParts.Where(a => !string.IsNullOrWhiteSpace(a)).ToList();
 
