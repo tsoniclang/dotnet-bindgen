@@ -106,14 +106,16 @@ fi
 echo "          ✓ out modifier tracked"
 
 # Check for in modifier (ReadOnly(in int x))
-# Note: 'in' detection depends on modreq(IsReadOnlyAttribute) which may not be detected
-# in all reflection contexts. If 'in' is not detected, it falls back to 'ref' which
-# is still correct for stableId purposes (both are byref).
-if grep -q '"modifier": "in"' "$METADATA"; then
-    echo "          ✓ in modifier tracked"
-else
-    echo "          ⚠ in modifier not detected (falls back to ref - acceptable)"
+# CRITICAL: 'in' must be detected correctly - it differs from 'ref' for:
+# - ABI (readonly byref vs mutable byref)
+# - Call legality (readonly rules)
+# - Overload resolution (overloads can differ only by in/ref)
+if ! grep -q '"modifier": "in"' "$METADATA"; then
+    echo -e "${RED}❌ FAILED: in modifier not detected${NC}"
+    echo "  'in' vs 'ref' must be distinguished for correct ABI and overload resolution"
+    exit 1
 fi
+echo "          ✓ in modifier tracked"
 
 # Step 5: TypeScript compilation test (UserLib only, skip BCL known issues)
 echo "[6/6] Testing TypeScript compilation (UserLib only)..."

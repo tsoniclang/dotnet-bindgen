@@ -1,38 +1,44 @@
 {
-  "version": "1.0.0",
+  "version": "1.1.0",
   "description": "Expected TypeScript semantic errors (known limitations)",
   "generatedAt": "2025-12-08",
   "expectedErrors": [
     {
       "code": "TS2344",
-      "file": "System.Numerics/internal/index.d.ts",
-      "message": "BigInteger missing TryWriteBigEndian, WriteBigEndian from IBinaryInteger_1",
-      "category": "interface-conformance"
+      "namespace": "System.Numerics",
+      "typeName": "BigInteger",
+      "constraintToken": "IBinaryInteger",
+      "note": "TryWriteBigEndian/WriteBigEndian surface mismatch"
     },
     {
       "code": "TS2344",
-      "file": "System.Numerics/internal/index.d.ts",
-      "message": "BigInteger TryFormat incompatible with INumber_1 (missing UTF-8 overload)",
-      "category": "interface-conformance"
+      "namespace": "System.Numerics",
+      "typeName": "BigInteger",
+      "constraintToken": "INumber",
+      "note": "TryFormat UTF-8 overload mismatch"
     },
     {
       "code": "TS2344",
-      "file": "System.Numerics/internal/index.d.ts",
-      "message": "BigInteger TryFormat incompatible with INumberBase_1",
-      "category": "interface-conformance"
+      "namespace": "System.Numerics",
+      "typeName": "BigInteger",
+      "constraintToken": "INumberBase",
+      "note": "TryFormat incompatible"
     },
     {
       "code": "TS2344",
-      "file": "System.Runtime.InteropServices/internal/index.d.ts",
-      "message": "NFloat missing GetExponentByteCount, TryWriteExponentBigEndian, WriteExponentBigEndian",
-      "category": "interface-conformance"
+      "namespace": "System.Runtime.InteropServices",
+      "typeName": "NFloat",
+      "constraintToken": "IFloatingPoint",
+      "note": "GetExponentByteCount/TryWriteExponentBigEndian/WriteExponentBigEndian missing"
     }
   ],
   "totalExpected": 4,
   "notes": [
-    "These errors are pre-existing interface conformance issues in .NET BCL types.",
-    "BigInteger and NFloat don't fully implement all interface methods.",
-    "This is a .NET BCL issue, not a tsbindgen issue.",
+    "Known tsbindgen/TypeScript type-system impedance mismatches.",
+    "BigInteger and NFloat DO implement all interface methods in .NET, but:",
+    "  - TypeScript cannot express certain .NET overload patterns (TryFormat UTF-8 overload)",
+    "  - Some interface methods are inherited differently than TypeScript expects",
+    "These are tsbindgen representation limitations, not .NET BCL bugs.",
     "Zero syntax errors (TS1xxx) is required - these must always be zero."
   ]
 }
