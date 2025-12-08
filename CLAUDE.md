@@ -536,21 +536,27 @@ if (type.FullName == "System.Boolean") return "boolean";
 
 ## Type Mapping Rules (Tsonic Conventions)
 
-### Primitive Types → Branded Types
+### Primitive Types → Simple Aliases
 
 ```typescript
-// All C# numeric types get branded type aliases
-type int = number & { __brand: "int" };
-type uint = number & { __brand: "uint" };
-type byte = number & { __brand: "byte" };
-type decimal = number & { __brand: "decimal" };
+// All C# numeric types are simple number aliases
+type int = number;      // System.Int32
+type uint = number;     // System.UInt32
+type byte = number;     // System.Byte
+type decimal = number;  // System.Decimal
 // etc.
+
+// Only bool and char are branded
+type bool = boolean & { __brand: "bool" };
+type char = string & { __brand: "char" };
 
 // Usage in generated code
 class List_1<T> {
-    readonly Count: int;  // Not just 'number'
+    readonly Count: int;  // Alias for number
 }
 ```
+
+Tsonic enforces numeric correctness at compile time via a proof system, not TypeScript's structural typing.
 
 ### Collections → ReadonlyArray
 
@@ -625,7 +631,7 @@ node test/validate/verify-completeness.js | tee .tests/completeness-$(date +%s).
 ```
 TS1xxx - Syntax errors (CRITICAL - must be zero)
 TS2xxx - Semantic errors (FIXED in v0.7.4 - now zero)
-TS6200 - Duplicate type aliases (expected for branded types)
+TS6200 - Duplicate type aliases (expected for primitive type aliases)
 ```
 
 ## Common Tasks

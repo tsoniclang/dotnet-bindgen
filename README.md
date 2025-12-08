@@ -8,7 +8,7 @@ tsbindgen generates TypeScript declaration files (`.d.ts`) from .NET assemblies 
 
 - **Complete BCL coverage** - Generates declarations for all 130 BCL namespaces, 4,296 types, and 50,675+ members
 - **Zero TypeScript errors** - Output validates cleanly with `tsc --strict`
-- **Branded primitives** - Type-safe numeric types (`int`, `long`, `decimal`, etc.) via `@tsonic/types`
+- **CLR primitives** - Numeric type aliases (`int`, `long`, `decimal`, etc.) via `@tsonic/types`
 - **Dual naming modes** - CLR PascalCase (`GetEnumerator`) or JavaScript camelCase (`getEnumerator`)
 - **Generic type preservation** - Full generic type parameter support with constraints
 - **Metadata sidecars** - CLR-specific information (static, virtual, override) in companion JSON files
@@ -134,19 +134,19 @@ output/
 
 ### Primitive Types
 
-CLR primitive types map to branded TypeScript types from `@tsonic/types`:
+CLR primitive types map to type aliases from `@tsonic/types`:
 
 | CLR Type | TypeScript Type |
 |----------|----------------|
-| `System.Int32` | `int` |
-| `System.Int64` | `long` |
-| `System.Single` | `float` |
-| `System.Double` | `double` |
-| `System.Decimal` | `decimal` |
-| `System.Byte` | `byte` |
-| `System.Boolean` | `boolean` |
+| `System.Int32` | `int` (alias for `number`) |
+| `System.Int64` | `long` (alias for `number`) |
+| `System.Single` | `float` (alias for `number`) |
+| `System.Double` | `double` (alias for `number`) |
+| `System.Decimal` | `decimal` (alias for `number`) |
+| `System.Byte` | `byte` (alias for `number`) |
+| `System.Boolean` | `bool` (branded) |
 | `System.String` | `string` |
-| `System.Char` | `char` |
+| `System.Char` | `char` (branded) |
 
 ### Generic Types
 
@@ -254,7 +254,7 @@ dotnet run --project src/tsbindgen/tsbindgen.csproj -- <args>
 
 - **[@tsonic/dotnet](https://www.npmjs.com/package/@tsonic/dotnet)** - Pre-generated BCL types with JavaScript naming
 - **[@tsonic/dotnet-pure](https://www.npmjs.com/package/@tsonic/dotnet-pure)** - Pre-generated BCL types with CLR naming
-- **[@tsonic/types](https://www.npmjs.com/package/@tsonic/types)** - Branded primitive types
+- **[@tsonic/types](https://www.npmjs.com/package/@tsonic/types)** - CLR primitive type aliases
 
 ## License
 
