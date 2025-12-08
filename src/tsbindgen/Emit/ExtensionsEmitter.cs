@@ -105,9 +105,10 @@ public static class ExtensionsEmitter
         sb.AppendLine("import * as System_Internal from \"../../System/internal/index.js\";");
         sb.AppendLine();
 
-        // Import ptr and ref from @tsonic/types (needed for ref/out parameters and pointers)
+        // Import ptr from @tsonic/types (needed for pointer types)
+        // Note: ref/out/in modifiers are ABI semantics tracked in metadata, not TS types
         sb.AppendLine("// Import unsafe type markers");
-        sb.AppendLine("import type { ptr, ref } from '@tsonic/types';");
+        sb.AppendLine("import type { ptr } from '@tsonic/types';");
         sb.AppendLine();
 
         // Create TypeNameResolver for this file

@@ -88,12 +88,13 @@ public static class InternalIndexEmitter
         // Branded primitive types are sourced from @tsonic/types
         EmitBrandedPrimitiveImports(sb);
 
-        // Check if namespace uses unsafe markers (pointers/byrefs) and emit support import if needed
+        // Check if namespace uses pointer types and emit support import if needed
+        // Note: ref/out/in modifiers are ABI semantics tracked in metadata, not TS types
         var needsSupportTypes = NamespaceUsesSupportTypes(nsOrder.Namespace);
         if (needsSupportTypes)
         {
             sb.AppendLine("// Import support types from @tsonic/types");
-            sb.AppendLine("import type { ptr, ref } from \"@tsonic/types\";");
+            sb.AppendLine("import type { ptr } from \"@tsonic/types\";");
             sb.AppendLine();
         }
 
@@ -821,15 +822,16 @@ public static class InternalIndexEmitter
             numericInterfaces.Contains("ITrigonometricFunctions"))
         {
             sb.AppendLine($"    toString(format: string, formatProvider: {Qualified("IFormatProvider")}): string;");
-            // ref is from @tsonic/types, so never qualify it
-            sb.AppendLine($"    tryFormat(destination: {Qualified("Span_1")}<{Qualified("Char")}>, charsWritten: {{ value: ref<int> }}, format: {Qualified("ReadOnlySpan_1")}<{Qualified("Char")}>, provider: {Qualified("IFormatProvider")}): boolean;");
+            // ref/out modifiers are ABI semantics tracked in metadata, not TS types - emit plain element type
+            sb.AppendLine($"    tryFormat(destination: {Qualified("Span_1")}<{Qualified("Char")}>, charsWritten: int, format: {Qualified("ReadOnlySpan_1")}<{Qualified("Char")}>, provider: {Qualified("IFormatProvider")}): boolean;");
         }
 
         // IUtf8SpanFormattable - tryFormat UTF-8 overload (byte version)
         // This overload is required when the interface hierarchy includes IUtf8SpanFormattable
         if (numericInterfaces.Contains("IUtf8SpanFormattable"))
         {
-            sb.AppendLine($"    tryFormat(utf8Destination: {Qualified("Span_1")}<{Qualified("Byte")}>, bytesWritten: {{ value: ref<int> }}, format: {Qualified("ReadOnlySpan_1")}<{Qualified("Char")}>, provider: {Qualified("IFormatProvider")}): boolean;");
+            // ref/out modifiers are ABI semantics tracked in metadata, not TS types - emit plain element type
+            sb.AppendLine($"    tryFormat(utf8Destination: {Qualified("Span_1")}<{Qualified("Byte")}>, bytesWritten: int, format: {Qualified("ReadOnlySpan_1")}<{Qualified("Char")}>, provider: {Qualified("IFormatProvider")}): boolean;");
         }
 
         // IBinaryInteger<TSelf> - getByteCount, tryWriteBigEndian, writeBigEndian
@@ -837,8 +839,8 @@ public static class InternalIndexEmitter
         if (numericInterfaces.Contains("IBinaryInteger"))
         {
             sb.AppendLine("    getByteCount(): int;");
-            // tryWriteBigEndian with out parameter
-            sb.AppendLine($"    tryWriteBigEndian(destination: {Qualified("Span_1")}<{Qualified("Byte")}>, bytesWritten: {{ value: ref<int> }}): boolean;");
+            // ref/out modifiers are ABI semantics tracked in metadata, not TS types - emit plain element type
+            sb.AppendLine($"    tryWriteBigEndian(destination: {Qualified("Span_1")}<{Qualified("Byte")}>, bytesWritten: int): boolean;");
             // writeBigEndian overloads
             sb.AppendLine("    writeBigEndian(destination: byte[], startIndex: int): int;");
             sb.AppendLine("    writeBigEndian(destination: byte[]): int;");
@@ -851,8 +853,8 @@ public static class InternalIndexEmitter
         {
             sb.AppendLine("    getExponentByteCount(): int;");
             sb.AppendLine("    getExponentShortestBitLength(): int;");
-            // tryWriteExponentBigEndian with out parameter
-            sb.AppendLine($"    tryWriteExponentBigEndian(destination: {Qualified("Span_1")}<{Qualified("Byte")}>, bytesWritten: {{ value: ref<int> }}): boolean;");
+            // ref/out modifiers are ABI semantics tracked in metadata, not TS types - emit plain element type
+            sb.AppendLine($"    tryWriteExponentBigEndian(destination: {Qualified("Span_1")}<{Qualified("Byte")}>, bytesWritten: int): boolean;");
             // writeExponentBigEndian overloads
             sb.AppendLine("    writeExponentBigEndian(destination: byte[], startIndex: int): int;");
             sb.AppendLine("    writeExponentBigEndian(destination: byte[]): int;");

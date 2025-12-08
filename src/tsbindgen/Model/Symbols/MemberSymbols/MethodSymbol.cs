@@ -1,4 +1,5 @@
 using System.Collections.Immutable;
+using System.Diagnostics;
 using tsbindgen.Renaming;
 using tsbindgen.Model.Types;
 
@@ -149,6 +150,11 @@ public sealed record ParameterSymbol
     public bool IsOut { get; init; }
 
     /// <summary>
+    /// True if this is an in (readonly ref) parameter.
+    /// </summary>
+    public bool IsIn { get; init; }
+
+    /// <summary>
     /// True if this is a params array.
     /// </summary>
     public bool IsParams { get; init; }
@@ -250,4 +256,49 @@ public enum EmitScope
     /// Omitted from emission (unified away by OverloadUnifier).
     /// </summary>
     Omitted
+}
+
+/// <summary>
+/// Parameter passing modifier for ABI semantics.
+/// ref/out/in are tracked in metadata, not TS types.
+/// </summary>
+public enum ParameterModifier
+{
+    None = 0,
+    Ref = 1,
+    Out = 2,
+    In = 3
+}
+
+/// <summary>
+/// Extension methods for ParameterSymbol.
+/// </summary>
+public static class ParameterSymbolExtensions
+{
+    /// <summary>
+    /// Gets the parameter modifier (ref/out/in/none).
+    /// Only one of IsRef/IsOut/IsIn can be true (CLR constraint).
+    /// </summary>
+    public static ParameterModifier GetModifier(this ParameterSymbol param)
+    {
+        // Debug assertion for mutual exclusivity
+        AssertMutualExclusivity(param);
+
+        if (param.IsOut) return ParameterModifier.Out;
+        if (param.IsIn) return ParameterModifier.In;
+        if (param.IsRef) return ParameterModifier.Ref;
+        return ParameterModifier.None;
+    }
+
+    /// <summary>
+    /// Validates that at most one of IsRef/IsOut/IsIn is true.
+    /// Only active in debug builds.
+    /// </summary>
+    [Conditional("DEBUG")]
+    private static void AssertMutualExclusivity(ParameterSymbol param)
+    {
+        var count = (param.IsRef ? 1 : 0) + (param.IsOut ? 1 : 0) + (param.IsIn ? 1 : 0);
+        Debug.Assert(count <= 1,
+            $"ParameterSymbol '{param.Name}' has multiple modifiers: IsRef={param.IsRef}, IsOut={param.IsOut}, IsIn={param.IsIn}");
+    }
 }

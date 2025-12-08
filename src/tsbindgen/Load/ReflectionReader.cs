@@ -498,17 +498,49 @@ public sealed class ReflectionReader
         var paramName = param.Name ?? $"arg{param.Position}";
         var sanitizedName = TypeScriptReservedWords.SanitizeParameterName(paramName);
 
+        // Detect in (readonly ref) via required modifier on the parameter type
+        // C# marks 'in' parameters with modreq(IsReadOnlyAttribute) on the byref type
+        var isIn = param.ParameterType.IsByRef
+            && !param.IsOut
+            && HasIsReadOnlyModifier(param.ParameterType);
+
+        // Compute IsRef: byref but not out or in
+        var isRef = param.ParameterType.IsByRef && !param.IsOut && !isIn;
+
+        // CRITICAL: Validate mutual exclusivity (CLR constraint)
+        // At most one of ref/out/in can be true for any parameter
+        var modifierCount = (isRef ? 1 : 0) + (param.IsOut ? 1 : 0) + (isIn ? 1 : 0);
+        if (modifierCount > 1)
+        {
+            throw new InvalidOperationException(
+                $"Parameter '{paramName}' has multiple modifiers (IsRef={isRef}, IsOut={param.IsOut}, IsIn={isIn}). " +
+                "Only one of ref/out/in is allowed per CLR specification.");
+        }
+
         return new ParameterSymbol
         {
             Name = _ctx.Intern(sanitizedName),
             Type = _typeFactory.Create(param.ParameterType),
-            IsRef = param.ParameterType.IsByRef && !param.IsOut,
+            IsRef = isRef,
             IsOut = param.IsOut,
+            IsIn = isIn,
             IsParams = param.GetCustomAttributesData()
                 .Any(attr => attr.AttributeType.Name == "ParamArrayAttribute"),
             HasDefaultValue = param.HasDefaultValue,
             DefaultValue = param.HasDefaultValue ? param.RawDefaultValue : null
         };
+    }
+
+    /// <summary>
+    /// Check if a type has the IsReadOnlyAttribute required modifier.
+    /// This is how C# marks 'in' parameters in metadata.
+    /// </summary>
+    private static bool HasIsReadOnlyModifier(Type type)
+    {
+        var modifiers = type.GetRequiredCustomModifiers();
+        return modifiers.Any(m =>
+            m.Name == "IsReadOnlyAttribute" ||
+            m.FullName == "System.Runtime.CompilerServices.IsReadOnlyAttribute");
     }
 
     private string CreateMethodSignature(MethodInfo method)

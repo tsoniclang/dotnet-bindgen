@@ -1501,11 +1501,8 @@ public static class ClassPrinter
             // Sanitize parameter name (handle reserved words)
             var paramName = TypeScriptReservedWords.SanitizeParameterName(p.Name);
 
-            // Handle out/ref parameters - wrap in { value: T }
-            if (p.IsOut || p.IsRef)
-            {
-                typeStr = $"{{ value: {typeStr} }}";
-            }
+            // ref/out/in modifiers are ABI semantics tracked in metadata, not TS types
+            // Emit plain element type for all parameters
 
             // Handle optional and rest parameters
             if (p.IsParams)

@@ -258,18 +258,9 @@ public static class MethodPrinter
         // Parameter type: name: int
         sb.Append(": ");
 
-        // Handle ref/out parameters
-        if (param.IsOut || param.IsRef)
-        {
-            // TypeScript has no ref/out
-            // Map to { value: T } wrapper (metadata tracks original semantics)
-            var innerType = TypeRefPrinter.Print(param.Type, resolver, ctx, allowedTypeParams);
-            sb.Append($"{{ value: {innerType} }}");
-        }
-        else
-        {
-            sb.Append(TypeRefPrinter.Print(param.Type, resolver, ctx, allowedTypeParams));
-        }
+        // Emit plain element type for all parameters
+        // ref/out/in modifiers are ABI semantics tracked in metadata, not TS types
+        sb.Append(TypeRefPrinter.Print(param.Type, resolver, ctx, allowedTypeParams));
 
         return sb.ToString();
     }

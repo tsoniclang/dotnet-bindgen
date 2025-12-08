@@ -199,11 +199,9 @@ public static class TypeRefPrinter
         HashSet<string>? allowedTypeParameterNames,
         bool forValuePosition = false)
     {
-        // TypeScript has no ref types (ref/out/in parameters)
-        // Use ref<T> from @tsonic/types (phantom type marker)
-        // Note: We can't distinguish ref/out/in at this level - would need parameter context
-        var referencedType = Print(byref.ReferencedType, resolver, ctx, allowedTypeParameterNames, forValuePosition);
-        return $"ref<{referencedType}>";
+        // Emit element type only - ref/out/in are ABI modifiers tracked in metadata, not TS types
+        // Parameter modifier semantics are enforced by Tsonic compiler using metadata
+        return Print(byref.ReferencedType, resolver, ctx, allowedTypeParameterNames, forValuePosition);
     }
 
     private static string PrintNested(
