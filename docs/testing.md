@@ -98,7 +98,7 @@ Individual test scripts verify specific behaviors.
 ```
 TS1xxx - Syntax errors (CRITICAL - must be zero)
 TS2xxx - Semantic errors (FIXED in v0.7.4 - now zero)
-TS6200 - Duplicate type aliases (expected for branded types)
+TS6200 - Duplicate type aliases (expected for primitive type aliases)
 ```
 
 ### Finding Specific Errors
@@ -141,7 +141,7 @@ Multi-arity facade type parameters passed to constrained internal types without 
 
 ### TS6200 - Duplicate Type Aliases
 
-Expected for branded primitive types that may be declared in multiple namespaces.
+Expected for primitive type aliases that may be declared in multiple namespaces.
 
 **Status**: Harmless, declaration merging handles it.
 

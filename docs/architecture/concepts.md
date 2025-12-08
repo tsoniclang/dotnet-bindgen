@@ -1404,7 +1404,7 @@ export type Func_2<T, TResult> = ...;
 
 ### The Problem
 
-TypeScript branded primitives (`int`, `float`, `char`) don't match their CLR type names (`Int32`, `Single`, `Char`). This causes issues in generic constraints:
+TypeScript primitive aliases (`int`, `float`, `char`) don't match their CLR type names (`Int32`, `Single`, `Char`). This causes issues in generic constraints:
 
 ```csharp
 // C#: Interface expects CLR type
@@ -1421,7 +1421,7 @@ public readonly struct Int32 : IEquatable<Int32> {
 In TypeScript:
 
 ```typescript
-// User code uses branded primitive
+// User code uses primitive alias
 const x: int = 42;
 
 // But interface uses CLR type
@@ -1429,13 +1429,13 @@ interface IEquatable_1<T> {
     equals(other: T): boolean;
 }
 
-// Problem: int (branded) ≠ Int32 (CLR type)
+// Problem: int (alias) ≠ Int32 (CLR type)
 // extends IEquatable_1<int> wouldn't work with Int32 methods
 ```
 
 ### The Solution: CLROf<T> Utility Type
 
-`CLROf<T>` is a conditional type that maps branded primitives to CLR types:
+`CLROf<T>` is a conditional type that maps primitive aliases to CLR types:
 
 ```typescript
 // Generated in System/internal/index.d.ts
@@ -1775,5 +1775,5 @@ Three invariants are enforced by `test-facade-constraint-invariants.sh`:
 
 1. **No `Internal.Internal.*`**: Double-qualification is never valid
 2. **No `Internal.unknown/any/never`**: TypeScript built-ins shouldn't be qualified
-3. **No `bigint` carrier**: Long/ULong use branded types, not raw bigint
+3. **No `bigint` carrier**: Long/ULong use `number` aliases, not raw bigint
 

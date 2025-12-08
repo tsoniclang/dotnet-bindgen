@@ -4,38 +4,37 @@ How CLR types map to TypeScript declarations.
 
 ## Primitive Types
 
-CLR primitives map to branded TypeScript types from `@tsonic/types`:
+CLR primitives map to type aliases from `@tsonic/types`:
 
 | CLR Type | TypeScript | Underlying |
 |----------|-----------|------------|
-| `System.SByte` | `sbyte` | `number & { __brand: "sbyte" }` |
-| `System.Byte` | `byte` | `number & { __brand: "byte" }` |
-| `System.Int16` | `short` | `number & { __brand: "short" }` |
-| `System.UInt16` | `ushort` | `number & { __brand: "ushort" }` |
-| `System.Int32` | `int` | `number & { __brand: "int" }` |
-| `System.UInt32` | `uint` | `number & { __brand: "uint" }` |
-| `System.Int64` | `long` | `bigint & { __brand: "long" }` |
-| `System.UInt64` | `ulong` | `bigint & { __brand: "ulong" }` |
-| `System.Single` | `float` | `number & { __brand: "float" }` |
-| `System.Double` | `double` | `number & { __brand: "double" }` |
-| `System.Decimal` | `decimal` | `number & { __brand: "decimal" }` |
+| `System.SByte` | `sbyte` | `number` |
+| `System.Byte` | `byte` | `number` |
+| `System.Int16` | `short` | `number` |
+| `System.UInt16` | `ushort` | `number` |
+| `System.Int32` | `int` | `number` |
+| `System.UInt32` | `uint` | `number` |
+| `System.Int64` | `long` | `number` |
+| `System.UInt64` | `ulong` | `number` |
+| `System.Single` | `float` | `number` |
+| `System.Double` | `double` | `number` |
+| `System.Decimal` | `decimal` | `number` |
 | `System.Char` | `char` | `string & { __brand: "char" }` |
-| `System.Boolean` | `boolean` | (native) |
+| `System.Boolean` | `bool` | `boolean & { __brand: "bool" }` |
 | `System.String` | `string` | (native) |
-| `System.IntPtr` | `nint` | `number & { __brand: "nint" }` |
-| `System.UIntPtr` | `nuint` | `number & { __brand: "nuint" }` |
+| `System.IntPtr` | `nint` | `number` |
+| `System.UIntPtr` | `nuint` | `number` |
 
-### Why Branded Types?
+### Why Simple Aliases?
 
-Branded types provide type safety without runtime overhead:
+Numeric types are simple `number` aliases because TypeScript's structural typing doesn't enforce numeric bounds at runtime. Tsonic enforces numeric correctness at compile time via a proof system:
 
 ```typescript
-function processAge(age: int): void { ... }
-
-const age: int = 25 as int;
-processAge(age);     // OK
-processAge(25);      // Error: number is not assignable to int
+const age: int = 42 as int;    // Tsonic validates 42 fits in Int32
+const temp: float = 98.6 as float; // Tsonic validates for Single
 ```
+
+The `char` and `bool` types remain branded for semantic distinction.
 
 ## Generic Types
 
