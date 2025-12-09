@@ -57,7 +57,7 @@ fi
 echo "=== Committing tsbindgen changes ==="
 git add package.json
 git commit -m "chore: bump version to $LOCAL_VERSION" || echo "No changes to commit"
-git push
+git push -u origin HEAD
 
 echo "=== Publishing @tsonic/tsbindgen@$LOCAL_VERSION ==="
 npm publish --access public
@@ -77,7 +77,7 @@ node -e "
 echo "=== Committing wrapper changes ==="
 git add package.json
 git commit -m "chore: bump version to $LOCAL_VERSION" || echo "No changes to commit"
-git push
+git push -u origin HEAD
 
 echo "=== Publishing tsbindgen@$LOCAL_VERSION ==="
 npm publish --access public
