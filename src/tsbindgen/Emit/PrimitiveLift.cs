@@ -79,6 +79,22 @@ internal static class PrimitiveLift
         Rules.FirstOrDefault(r => r.ClrFullName == clrFullName).TsName;
 
     /// <summary>
+    /// Check if a CLR type is a primitive that should get special emission treatment.
+    /// Primitives are emitted with their TS carrier as the base type in the intersection.
+    /// </summary>
+    internal static bool IsPrimitive(string clrFullName) =>
+        Rules.Any(r => r.ClrFullName == clrFullName);
+
+    /// <summary>
+    /// Get the TypeScript carrier type for a CLR primitive.
+    /// Returns null if not a primitive.
+    /// Used by ClassPrinter to emit the base type in primitive intersections.
+    /// Example: System.String → "string", System.Int32 → "number"
+    /// </summary>
+    internal static string? GetTsCarrier(string clrFullName) =>
+        Rules.FirstOrDefault(r => r.ClrFullName == clrFullName).TsCarrier;
+
+    /// <summary>
     /// Get the set of unique TypeScript carrier types used by all primitives.
     /// Used by constraint relaxation to build the union type that admits all primitives.
     /// Returns a stable ordered set: { "number", "string", "boolean" }

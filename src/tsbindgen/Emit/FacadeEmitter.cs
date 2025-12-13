@@ -225,6 +225,13 @@ public static class FacadeEmitter
                     MultiArityAliasEmit.Emit(sb, family, resolver, ctx, ns.Name);
                 }
             }
+
+            // Export primitive $instance interfaces for global type augmentation
+            // These are needed by @tsonic/globals to extend global String, Number, Boolean interfaces
+            if (ns.Name == "System")
+            {
+                EmitPrimitiveInstanceExports(sb, exports);
+            }
         }
 
         // Re-export extension method helper from __internal bucket file
@@ -503,5 +510,31 @@ public static class FacadeEmitter
 
         // StaticNamespace uses $instance suffix (abstract class pattern unchanged)
         return ctx.Renamer.GetInstanceTypeName(type);
+    }
+
+    /// <summary>
+    /// Emits type-only re-exports for primitive $instance interfaces.
+    /// These are needed by @tsonic/globals to extend global String, Number, Boolean interfaces
+    /// with BCL methods (e.g., `interface String extends String$instance {}`).
+    ///
+    /// Exports the $instance interface for each primitive type defined in PrimitiveLift.Rules.
+    /// </summary>
+    private static void EmitPrimitiveInstanceExports(StringBuilder sb, List<Plan.ExportStatement> exports)
+    {
+        // Get the CLR simple names of primitives that exist in exports
+        var exportedTypes = new HashSet<string>(exports.Select(e => e.SourceType.ClrName), StringComparer.Ordinal);
+
+        sb.AppendLine();
+        sb.AppendLine("// Primitive $instance interfaces for global type augmentation (@tsonic/globals)");
+
+        foreach (var rule in PrimitiveLift.Rules)
+        {
+            // Only export $instance for primitives that are actually in this namespace's exports
+            if (exportedTypes.Contains(rule.ClrSimpleName))
+            {
+                // export type { String$instance } from './System/internal/index.js';
+                sb.AppendLine($"export type {{ {rule.ClrSimpleName}$instance }} from './System/internal/index.js';");
+            }
+        }
     }
 }

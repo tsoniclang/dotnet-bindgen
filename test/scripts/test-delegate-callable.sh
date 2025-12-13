@@ -107,16 +107,18 @@ else
     echo -e "${GREEN}PASS${NC}"
 fi
 
-# Test 8: Boolean type alias must be simple alias to native boolean
-# (PRIMITIVE ALIAS FIX: All CLR primitives are simple aliases, not wrapper types)
-echo -n "  Test 8: Boolean is simple alias to boolean... "
+# Test 8: Boolean type has methods but accepts raw boolean values
+# (PRIMITIVE TYPE EMISSION: Primitives now emit with their BCL methods while
+# maintaining LINQ assignability via carrier type in intersection)
+echo -n "  Test 8: Boolean has methods and accepts raw boolean... "
 BOOLEAN_TYPE=$(grep "^export type Boolean = " "$INDEX_FILE" 2>/dev/null || true)
-if [ "$BOOLEAN_TYPE" = "export type Boolean = boolean;" ]; then
+# Expected: export type Boolean = boolean | (boolean & Boolean$instance & __Boolean$views);
+if echo "$BOOLEAN_TYPE" | grep -q "Boolean\$instance" && echo "$BOOLEAN_TYPE" | grep -q "boolean |"; then
     echo -e "${GREEN}PASS${NC}"
     echo "    $BOOLEAN_TYPE" | head -1 | sed 's/^/      /'
 else
     echo -e "${RED}FAIL${NC}"
-    echo "    Expected: export type Boolean = boolean;"
+    echo "    Expected: export type Boolean = boolean | (boolean & Boolean\$instance & __Boolean\$views);"
     echo "    Got: $BOOLEAN_TYPE"
     FAILED=1
 fi
