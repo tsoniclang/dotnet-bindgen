@@ -1,44 +1,15 @@
 {
-  "version": "1.1.0",
-  "description": "Expected TypeScript semantic errors (known limitations)",
-  "generatedAt": "2025-12-08",
-  "expectedErrors": [
-    {
-      "code": "TS2344",
-      "namespace": "System.Numerics",
-      "typeName": "BigInteger",
-      "constraintToken": "IBinaryInteger",
-      "note": "TryWriteBigEndian/WriteBigEndian surface mismatch"
-    },
-    {
-      "code": "TS2344",
-      "namespace": "System.Numerics",
-      "typeName": "BigInteger",
-      "constraintToken": "INumber",
-      "note": "TryFormat UTF-8 overload mismatch"
-    },
-    {
-      "code": "TS2344",
-      "namespace": "System.Numerics",
-      "typeName": "BigInteger",
-      "constraintToken": "INumberBase",
-      "note": "TryFormat incompatible"
-    },
-    {
-      "code": "TS2344",
-      "namespace": "System.Runtime.InteropServices",
-      "typeName": "NFloat",
-      "constraintToken": "IFloatingPoint",
-      "note": "GetExponentByteCount/TryWriteExponentBigEndian/WriteExponentBigEndian missing"
-    }
-  ],
-  "totalExpected": 4,
+  "version": "1.3.0",
+  "description": "Expected TypeScript semantic errors (should be zero)",
+  "generatedAt": "2025-12-13",
+  "expectedErrors": [],
+  "totalExpected": 0,
   "notes": [
-    "Known tsbindgen/TypeScript type-system impedance mismatches.",
-    "BigInteger and NFloat DO implement all interface methods in .NET, but:",
-    "  - TypeScript cannot express certain .NET overload patterns (TryFormat UTF-8 overload)",
-    "  - Some interface methods are inherited differently than TypeScript expects",
-    "These are tsbindgen representation limitations, not .NET BCL bugs.",
-    "Zero syntax errors (TS1xxx) is required - these must always be zero."
+    "Zero TypeScript errors expected.",
+    "All structural method bridges now correctly use the naming style from policy.",
+    "Primitives satisfy numeric interface constraints (IBinaryInteger, IFloatingPoint, etc.).",
+    "",
+    "Zero syntax errors (TS1xxx) is required - these must always be zero.",
+    "Zero semantic errors (TS2xxx) is now achieved."
   ]
 }

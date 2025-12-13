@@ -1,5 +1,7 @@
 using System.Collections.Immutable;
 using System.Text;
+using tsbindgen.Core.Naming;
+using tsbindgen.Core.Policy;
 using tsbindgen.Emit.Printers;
 using tsbindgen.Model;
 using tsbindgen.Model.Symbols;
@@ -194,19 +196,6 @@ public static class InternalIndexEmitter
         // Emit types in order (PUBLIC ONLY - internal types should not appear in .d.ts)
         foreach (var typeOrder in nsOrder.OrderedTypes.Where(to => ShouldEmit(to.Type)))
         {
-            // PRIMITIVE ALIAS FIX: CLR primitive types must be simple aliases to branded TS primitives
-            // This enables LINQ assignability: List<int> is assignable to IEnumerable<Int32> when Int32 = int
-            // Example: export type Int32 = int; (not Int32$instance & __Int32$views)
-            var tsPrimitiveName = PrimitiveLift.GetTsPrimitiveName(typeOrder.Type.ClrFullName);
-            if (tsPrimitiveName != null)
-            {
-                var primitiveAlias = $"export type {typeOrder.Type.TsEmitName} = {tsPrimitiveName};";
-                sb.Append(indent);
-                sb.AppendLine(primitiveAlias);
-                sb.AppendLine();
-                continue; // Skip normal emission for primitives
-            }
-
             // Check if type has explicit views (attached by ViewPlanner)
             var views = typeOrder.Type.ExplicitViews;
             var hasViews = views.Length > 0 && (typeOrder.Type.Kind == Model.Symbols.TypeKind.Class || typeOrder.Type.Kind == Model.Symbols.TypeKind.Struct || typeOrder.Type.Kind == Model.Symbols.TypeKind.Delegate);
@@ -770,8 +759,7 @@ public static class InternalIndexEmitter
 
     /// <summary>
     /// Emit structural method bridges to satisfy numeric interface constraints.
-    /// These methods use PascalCase (matching C# interface definitions) while instance
-    /// methods use camelCase. This satisfies TypeScript's structural type checking.
+    /// These methods must match the naming style of the interface members they satisfy.
     /// Only emits methods for the specific interfaces actually implemented.
     /// </summary>
     private static void EmitNumericStructuralMethods(
@@ -800,20 +788,28 @@ public static class InternalIndexEmitter
                 return $"import(\"../../System/internal/index\").{simpleName}";
         }
 
-        // IEquatable<T>.Equals - camelCase to match emitted interface members
+        // Helper to transform method names based on naming style
+        // Must match the interface member naming to satisfy TypeScript structural typing
+        string M(string pascalCaseName) => ctx.Policy.Emission.Naming switch
+        {
+            NamingStyle.Js => NameTransform.ToJsStyle(pascalCaseName),
+            _ => pascalCaseName
+        };
+
+        // IEquatable<T>.Equals
         if (numericInterfaces.Contains("IEquatable"))
         {
-            sb.AppendLine($"    equals(other: {typeName}): boolean;");
+            sb.AppendLine($"    {M("Equals")}(other: {typeName}): boolean;");
         }
 
-        // IComparable.CompareTo - camelCase to match emitted interface members
+        // IComparable.CompareTo
         if (numericInterfaces.Contains("IComparable"))
         {
-            sb.AppendLine("    compareTo(obj: unknown): int;");
+            sb.AppendLine($"    {M("CompareTo")}(obj: unknown): int;");
         }
 
         // INumberBase<TSelf>, INumber<TSelf>, IBinaryInteger<TSelf>, IFloatingPoint<TSelf>, etc.
-        // All require toString and tryFormat - camelCase to match emitted interface members
+        // All require ToString and TryFormat
         if (numericInterfaces.Contains("INumberBase") ||
             numericInterfaces.Contains("INumber") ||
             numericInterfaces.Contains("IBinaryInteger") ||
@@ -821,44 +817,42 @@ public static class InternalIndexEmitter
             numericInterfaces.Contains("IRootFunctions") ||
             numericInterfaces.Contains("ITrigonometricFunctions"))
         {
-            sb.AppendLine($"    toString(format: string, formatProvider: {Qualified("IFormatProvider")}): string;");
+            sb.AppendLine($"    {M("ToString")}(format: string, formatProvider: {Qualified("IFormatProvider")}): string;");
             // ref/out modifiers are ABI semantics tracked in metadata, not TS types - emit plain element type
-            sb.AppendLine($"    tryFormat(destination: {Qualified("Span_1")}<{Qualified("Char")}>, charsWritten: int, format: {Qualified("ReadOnlySpan_1")}<{Qualified("Char")}>, provider: {Qualified("IFormatProvider")}): boolean;");
+            sb.AppendLine($"    {M("TryFormat")}(destination: {Qualified("Span_1")}<{Qualified("Char")}>, charsWritten: int, format: {Qualified("ReadOnlySpan_1")}<{Qualified("Char")}>, provider: {Qualified("IFormatProvider")}): boolean;");
         }
 
-        // IUtf8SpanFormattable - tryFormat UTF-8 overload (byte version)
+        // IUtf8SpanFormattable - TryFormat UTF-8 overload (byte version)
         // This overload is required when the interface hierarchy includes IUtf8SpanFormattable
         if (numericInterfaces.Contains("IUtf8SpanFormattable"))
         {
             // ref/out modifiers are ABI semantics tracked in metadata, not TS types - emit plain element type
-            sb.AppendLine($"    tryFormat(utf8Destination: {Qualified("Span_1")}<{Qualified("Byte")}>, bytesWritten: int, format: {Qualified("ReadOnlySpan_1")}<{Qualified("Char")}>, provider: {Qualified("IFormatProvider")}): boolean;");
+            sb.AppendLine($"    {M("TryFormat")}(utf8Destination: {Qualified("Span_1")}<{Qualified("Byte")}>, bytesWritten: int, format: {Qualified("ReadOnlySpan_1")}<{Qualified("Char")}>, provider: {Qualified("IFormatProvider")}): boolean;");
         }
 
-        // IBinaryInteger<TSelf> - getByteCount, tryWriteBigEndian, writeBigEndian
-        // camelCase to match emitted interface members
+        // IBinaryInteger<TSelf> - GetByteCount, TryWriteBigEndian, WriteBigEndian
         if (numericInterfaces.Contains("IBinaryInteger"))
         {
-            sb.AppendLine("    getByteCount(): int;");
+            sb.AppendLine($"    {M("GetByteCount")}(): int;");
             // ref/out modifiers are ABI semantics tracked in metadata, not TS types - emit plain element type
-            sb.AppendLine($"    tryWriteBigEndian(destination: {Qualified("Span_1")}<{Qualified("Byte")}>, bytesWritten: int): boolean;");
-            // writeBigEndian overloads
-            sb.AppendLine("    writeBigEndian(destination: byte[], startIndex: int): int;");
-            sb.AppendLine("    writeBigEndian(destination: byte[]): int;");
-            sb.AppendLine($"    writeBigEndian(destination: {Qualified("Span_1")}<{Qualified("Byte")}>): int;");
+            sb.AppendLine($"    {M("TryWriteBigEndian")}(destination: {Qualified("Span_1")}<{Qualified("Byte")}>, bytesWritten: int): boolean;");
+            // WriteBigEndian overloads
+            sb.AppendLine($"    {M("WriteBigEndian")}(destination: byte[], startIndex: int): int;");
+            sb.AppendLine($"    {M("WriteBigEndian")}(destination: byte[]): int;");
+            sb.AppendLine($"    {M("WriteBigEndian")}(destination: {Qualified("Span_1")}<{Qualified("Byte")}>): int;");
         }
 
-        // IFloatingPoint<TSelf> - getExponentByteCount, getExponentShortestBitLength, tryWriteExponentBigEndian, writeExponentBigEndian
-        // camelCase to match emitted interface members
+        // IFloatingPoint<TSelf> - GetExponentByteCount, GetExponentShortestBitLength, TryWriteExponentBigEndian, WriteExponentBigEndian
         if (numericInterfaces.Contains("IFloatingPoint"))
         {
-            sb.AppendLine("    getExponentByteCount(): int;");
-            sb.AppendLine("    getExponentShortestBitLength(): int;");
+            sb.AppendLine($"    {M("GetExponentByteCount")}(): int;");
+            sb.AppendLine($"    {M("GetExponentShortestBitLength")}(): int;");
             // ref/out modifiers are ABI semantics tracked in metadata, not TS types - emit plain element type
-            sb.AppendLine($"    tryWriteExponentBigEndian(destination: {Qualified("Span_1")}<{Qualified("Byte")}>, bytesWritten: int): boolean;");
-            // writeExponentBigEndian overloads
-            sb.AppendLine("    writeExponentBigEndian(destination: byte[], startIndex: int): int;");
-            sb.AppendLine("    writeExponentBigEndian(destination: byte[]): int;");
-            sb.AppendLine($"    writeExponentBigEndian(destination: {Qualified("Span_1")}<{Qualified("Byte")}>): int;");
+            sb.AppendLine($"    {M("TryWriteExponentBigEndian")}(destination: {Qualified("Span_1")}<{Qualified("Byte")}>, bytesWritten: int): boolean;");
+            // WriteExponentBigEndian overloads
+            sb.AppendLine($"    {M("WriteExponentBigEndian")}(destination: byte[], startIndex: int): int;");
+            sb.AppendLine($"    {M("WriteExponentBigEndian")}(destination: byte[]): int;");
+            sb.AppendLine($"    {M("WriteExponentBigEndian")}(destination: {Qualified("Span_1")}<{Qualified("Byte")}>): int;");
         }
     }
 
@@ -1007,18 +1001,29 @@ public static class InternalIndexEmitter
             }
         }
 
+        // PRIMITIVE TYPE EMISSION: For primitives (System.String, System.Int32, etc.), use the
+        // TypeScript carrier type (string, number, boolean) as the base in the intersection.
+        // This enables LINQ assignability: List<int> is assignable to IEnumerable<Int32> because
+        // Int32 = int & Int32$instance & ... and `int` is assignable to `int`.
+        // Example: export type String = string & String$instance & __String$views;
+        var primitiveCarrier = PrimitiveLift.GetTsCarrier(type.ClrFullName);
+        var carrierPrefix = primitiveCarrier != null ? $"{primitiveCarrier} & " : "";
+
         // BOOLEAN UNION FIX: System.Boolean must accept native TS boolean for predicate ergonomics
         // Arrow functions like (x => x % 2 === 0) return native boolean, but Func_2<T, Boolean> expects CLR Boolean.
         // Making Boolean a union allows both to work: export type Boolean = boolean | (Boolean$instance & __Boolean$views);
+        // NOTE: For Boolean, we already have carrierPrefix = "boolean & ", so we need to add the union for assignability
         var nativePrimitivePrefix = "";
+        var nativePrimitiveSuffix = "";
         if (type.ClrFullName == "System.Boolean")
         {
+            // Boolean is special: we want `boolean | (boolean & Boolean$instance & ...)` for ergonomics
+            // The first `boolean` allows raw boolean values, the intersection allows BCL methods
             nativePrimitivePrefix = "boolean | (";
+            nativePrimitiveSuffix = ")";
         }
 
-        var nativePrimitiveSuffix = nativePrimitivePrefix.Length > 0 ? ")" : "";
-
-        var rhsExpression = $"{nativePrimitivePrefix}{callSignature}{finalName}$instance{typeArgs} & __{finalName}$views{typeArgs}{nativePrimitiveSuffix}";
+        var rhsExpression = $"{nativePrimitivePrefix}{carrierPrefix}{callSignature}{finalName}$instance{typeArgs} & __{finalName}$views{typeArgs}{nativePrimitiveSuffix}";
 
         // Emit the alias with constraints on LHS
         // Note: We pass the complete RHS (including type args), so we use the manual emission
