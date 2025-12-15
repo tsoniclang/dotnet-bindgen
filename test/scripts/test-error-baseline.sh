@@ -23,6 +23,10 @@ fi
 echo "[1/4] Running TypeScript validation..."
 cd "$BCL_DIR"
 
+# Install @tsonic/core for primitive type imports
+echo '{ "dependencies": { "@tsonic/core": "^0.1.1" } }' > package.json
+npm install --silent 2>/dev/null || npm install
+
 # Create tsconfig with skipLibCheck: false to actually check .d.ts files
 # Override any existing tsconfig
 echo '{ "compilerOptions": { "strict": true, "noEmit": true, "skipLibCheck": false, "moduleResolution": "bundler", "target": "ES2020", "module": "ES2020" }, "include": ["**/*.d.ts"] }' > tsconfig.json
