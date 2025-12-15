@@ -227,7 +227,7 @@ internal static class AliasEmit
     /// <summary>
     /// The primitive carrier union, derived from PrimitiveLift.Rules.
     /// Cached for performance since it's computed once and used repeatedly.
-    /// Per @tsonic/types: "number | string | boolean" (no bigint - all numerics are number-carried)
+    /// Per @tsonic/core/types.js: "number | string | boolean" (no bigint - all numerics are number-carried)
     /// </summary>
     private static readonly string PrimitiveCarrierUnion =
         string.Join(" | ", PrimitiveLift.GetTsCarrierKinds());
@@ -246,7 +246,7 @@ internal static class AliasEmit
     /// - Non-primitives still work correctly (they satisfy IEquatable_1&lt;T&gt; structurally)
     ///
     /// The carrier union is derived from PrimitiveLift.Rules to guarantee it covers
-    /// all primitives as the mapping evolves (per @tsonic/types contract).
+    /// all primitives as the mapping evolves (per @tsonic/core/types.js contract).
     /// </summary>
     /// <param name="printedConstraint">The already-printed constraint string</param>
     /// <param name="typeParamName">The type parameter name (unused, kept for API compatibility)</param>

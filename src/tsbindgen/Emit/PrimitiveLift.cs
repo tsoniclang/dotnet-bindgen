@@ -16,26 +16,26 @@ internal static class PrimitiveLift
 {
     /// <summary>
     /// Allowed TypeScript carrier types for primitives.
-    /// This is the exhaustive set per @tsonic/types - any other carrier is a contract violation.
+    /// This is the exhaustive set per @tsonic/core/types.js - any other carrier is a contract violation.
     ///
-    /// COORDINATION REQUIREMENT: This set is defined by @tsonic/types and must ONLY be updated
-    /// alongside a coordinated @tsonic/types change. If you add a new carrier here (e.g., "bigint"),
-    /// you must also update @tsonic/types to define the corresponding branded primitive types.
+    /// COORDINATION REQUIREMENT: This set is defined by @tsonic/core/types.js and must ONLY be updated
+    /// alongside a coordinated @tsonic/core change. If you add a new carrier here (e.g., "bigint"),
+    /// you must also update @tsonic/core/types.js to define the corresponding primitive type aliases.
     /// </summary>
     private static readonly HashSet<string> AllowedCarriers = new() { "number", "string", "boolean" };
 
     /// <summary>
     /// Primitive lifting rules: TypeScript primitive name → CLR full type name → CLR simple name → TypeScript carrier type.
     ///
-    /// TsCarrier is the underlying TypeScript type that the branded primitive extends.
-    /// Per @tsonic/types contract:
+    /// TsCarrier is the underlying TypeScript type that the primitive alias extends.
+    /// Per @tsonic/core/types.js contract:
     /// - "number" for ALL numeric types (including long, ulong, nint, nuint, int128, uint128, decimal)
     /// - "string" for char
     /// - "boolean" for bool
     /// </summary>
     internal static readonly (string TsName, string ClrFullName, string ClrSimpleName, string TsCarrier)[] Rules =
     {
-        // Signed integers - ALL number-carried per @tsonic/types
+        // Signed integers - ALL number-carried per @tsonic/core/types.js
         ("sbyte",   "System.SByte",   "SByte",   "number"),
         ("short",   "System.Int16",   "Int16",   "number"),
         ("int",     "System.Int32",   "Int32",   "number"),
@@ -43,7 +43,7 @@ internal static class PrimitiveLift
         ("int128",  "System.Int128",  "Int128",  "number"),
         ("nint",    "System.IntPtr",  "IntPtr",  "number"),
 
-        // Unsigned integers - ALL number-carried per @tsonic/types
+        // Unsigned integers - ALL number-carried per @tsonic/core/types.js
         ("byte",    "System.Byte",    "Byte",    "number"),
         ("ushort",  "System.UInt16",  "UInt16",  "number"),
         ("uint",    "System.UInt32",  "UInt32",  "number"),
@@ -51,7 +51,7 @@ internal static class PrimitiveLift
         ("uint128", "System.UInt128", "UInt128", "number"),
         ("nuint",   "System.UIntPtr", "UIntPtr", "number"),
 
-        // Floating point - ALL number-carried per @tsonic/types
+        // Floating point - ALL number-carried per @tsonic/core/types.js
         ("half",    "System.Half",    "Half",    "number"),
         ("float",   "System.Single",  "Single",  "number"),
         ("double",  "System.Double",  "Double",  "number"),
@@ -121,7 +121,7 @@ internal static class PrimitiveLift
                     $"PrimitiveLift contract violation: carrier '{carrier}' is not in the allowed set " +
                     $"{{ {string.Join(", ", AllowedCarriers)} }}. " +
                     $"Offending primitives: {{ {string.Join(", ", offendingPrimitives)} }}. " +
-                    $"Update AllowedCarriers if this is intentional (requires coordinated @tsonic/types change).");
+                    $"Update AllowedCarriers if this is intentional (requires coordinated @tsonic/core change).");
             }
         }
 
