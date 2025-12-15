@@ -94,9 +94,9 @@ public static class ExtensionsEmitter
             sb.AppendLine();
         }
 
-        // Import branded primitive types from @tsonic/types
-        sb.AppendLine("// Import branded primitive types");
-        sb.AppendLine("import type { sbyte, byte, short, ushort, int, uint, long, ulong, int128, uint128, half, float, double, decimal, nint, nuint, char } from '@tsonic/types';");
+        // Import primitive type aliases from @tsonic/core
+        sb.AppendLine("// Import primitive type aliases");
+        sb.AppendLine("import type { sbyte, byte, short, ushort, int, uint, long, ulong, int128, uint128, half, float, double, decimal, nint, nuint, char } from '@tsonic/core/types.js';");
         sb.AppendLine();
 
         // Import CLR primitive type aliases from System namespace
@@ -105,10 +105,10 @@ public static class ExtensionsEmitter
         sb.AppendLine("import * as System_Internal from \"../../System/internal/index.js\";");
         sb.AppendLine();
 
-        // Import ptr from @tsonic/types (needed for pointer types)
+        // Import ptr from @tsonic/core (needed for pointer types)
         // Note: ref/out/in modifiers are ABI semantics tracked in metadata, not TS types
         sb.AppendLine("// Import unsafe type markers");
-        sb.AppendLine("import type { ptr } from '@tsonic/types';");
+        sb.AppendLine("import type { ptr } from '@tsonic/core/types.js';");
         sb.AppendLine();
 
         // Create TypeNameResolver for this file

@@ -186,7 +186,7 @@ public static class TypeRefPrinter
         bool forValuePosition = false)
     {
         // TypeScript has no pointer types
-        // Use ptr<T> from @tsonic/types (branded as unknown)
+        // Use ptr<T> from @tsonic/core/types.js (branded as unknown)
         // This preserves type information while being type-safe (forces explicit handling)
         var pointeeType = Print(ptr.PointeeType, resolver, ctx, allowedTypeParameterNames, forValuePosition);
         return $"ptr<{pointeeType}>";

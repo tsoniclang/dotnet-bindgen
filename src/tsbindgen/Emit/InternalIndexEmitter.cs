@@ -87,7 +87,7 @@ public static class InternalIndexEmitter
         sb.AppendLine($"// Assembly: {string.Join(", ", nsOrder.Namespace.ContributingAssemblies.OrderBy(a => a))}");
         sb.AppendLine();
 
-        // Branded primitive types are sourced from @tsonic/types
+        // Primitive type aliases from @tsonic/core
         EmitBrandedPrimitiveImports(sb);
 
         // Check if namespace uses pointer types and emit support import if needed
@@ -95,8 +95,8 @@ public static class InternalIndexEmitter
         var needsSupportTypes = NamespaceUsesSupportTypes(nsOrder.Namespace);
         if (needsSupportTypes)
         {
-            sb.AppendLine("// Import support types from @tsonic/types");
-            sb.AppendLine("import type { ptr } from \"@tsonic/types\";");
+            sb.AppendLine("// Import support types from @tsonic/core");
+            sb.AppendLine("import type { ptr } from \"@tsonic/core/types.js\";");
             sb.AppendLine();
         }
 
@@ -414,8 +414,8 @@ public static class InternalIndexEmitter
 
     private static void EmitBrandedPrimitiveImports(StringBuilder sb)
     {
-        sb.AppendLine("// Branded primitive types are sourced from @tsonic/types");
-        sb.AppendLine("import type { sbyte, byte, short, ushort, int, uint, long, ulong, int128, uint128, half, float, double, decimal, nint, nuint, char } from '@tsonic/types';");
+        sb.AppendLine("// Primitive type aliases from @tsonic/core");
+        sb.AppendLine("import type { sbyte, byte, short, ushort, int, uint, long, ulong, int128, uint128, half, float, double, decimal, nint, nuint, char } from '@tsonic/core/types.js';");
         sb.AppendLine();
     }
 
