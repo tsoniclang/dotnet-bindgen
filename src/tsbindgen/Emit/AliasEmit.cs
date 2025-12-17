@@ -249,7 +249,7 @@ internal static class AliasEmit
     /// all primitives as the mapping evolves (per @tsonic/core/types.js contract).
     /// </summary>
     /// <param name="printedConstraint">The already-printed constraint string</param>
-    /// <param name="typeParamName">The type parameter name (unused, kept for API compatibility)</param>
+    /// <param name="typeParamName">The type parameter name (reserved for future use)</param>
     /// <returns>The relaxed constraint with primitive alternatives</returns>
     internal static string RelaxConstraintForPrimitives(string printedConstraint, string typeParamName = "T")
     {

@@ -338,24 +338,6 @@ public static class FacadeEmitter
     }
 
     /// <summary>
-    /// DEPRECATED: Old arity-based parameter generator.
-    /// Use GenerateTypeParametersWithConstraints instead to preserve type safety.
-    /// Kept for reference during migration.
-    /// </summary>
-    private static string GenerateTypeParameters(int arity)
-    {
-        if (arity == 0)
-            return string.Empty;
-
-        if (arity == 1)
-            return "<T>";
-
-        // For arity > 1, use T1, T2, T3, ...
-        var typeParams = string.Join(", ", Enumerable.Range(1, arity).Select(i => $"T{i}"));
-        return $"<{typeParams}>";
-    }
-
-    /// <summary>
     /// Get the stem name by stripping generic arity suffix (_1, _2, ...).
     /// </summary>
     private static string GetStem(string name)
