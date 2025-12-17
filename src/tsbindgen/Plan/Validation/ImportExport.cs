@@ -496,11 +496,9 @@ internal static class ImportExport
 
         foreach (var ((sourceNamespace, targetTypeCLRName), qualifiedName) in imports.ValueImportQualifiedNames)
         {
-            // Parse qualified name.
-            // Legacy format: NamespaceAlias.TargetNamespace.TypeName
-            // Flat ESM format: NamespaceAlias.TypeName
+            // Parse qualified name: NamespaceAlias.TypeName
             var parts = qualifiedName.Split('.');
-            if (parts.Length < 2)
+            if (parts.Length != 2)
             {
                 validationCtx.RecordDiagnostic(
                     DiagnosticCodes.QualifiedExportPathInvalid,
@@ -511,31 +509,18 @@ internal static class ImportExport
             }
 
             var namespaceAlias = parts[0];
+            var typeName = parts[1];
+
+            // Resolve target namespace from CLR name or import statement
             string targetNamespace;
-            string typeName;
-
-            if (parts.Length == 2)
+            if (graph.TryGetType(targetTypeCLRName, out var targetType) && targetType != null)
             {
-                // Flat format: NamespaceAlias.TypeName
-                typeName = parts[1];
-
-                // Resolve target namespace from CLR name or import statement
-                if (graph.TryGetType(targetTypeCLRName, out var targetType) && targetType != null)
-                {
-                    targetNamespace = targetType.Namespace;
-                }
-                else
-                {
-                    var lastDot = targetTypeCLRName.LastIndexOf('.');
-                    targetNamespace = lastDot >= 0 ? targetTypeCLRName.Substring(0, lastDot) : string.Empty;
-                }
+                targetNamespace = targetType.Namespace;
             }
             else
             {
-                // Legacy format: NamespaceAlias.TargetNamespace.TypeName
-                var targetNamespaceParts = parts.Skip(1).Take(parts.Length - 2).ToArray();
-                targetNamespace = string.Join(".", targetNamespaceParts);
-                typeName = parts[parts.Length - 1];
+                var lastDot = targetTypeCLRName.LastIndexOf('.');
+                targetNamespace = lastDot >= 0 ? targetTypeCLRName.Substring(0, lastDot) : string.Empty;
             }
 
             // Validate: Namespace import exists

@@ -51,7 +51,6 @@ internal static class Application
     /// </summary>
     private static TypeSymbol ApplyNamesToType(BuildContext ctx, TypeSymbol type, NamespaceScope nsScope)
     {
-        // Base scope (unused here - kept for signature compatibility)
         var typeScope = ScopeFactory.ClassBase(type);
 
         // Get TsEmitName from Renamer

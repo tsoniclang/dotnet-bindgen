@@ -67,7 +67,7 @@ public static class LibraryContractLoader
             ProcessBindingsFile(bindingsFile, allowedBindings);
         }
 
-        // Load families.json if it exists (optional for backwards compatibility)
+        // Load families.json if it exists (optional, enables multi-arity facade support)
         var familiesPath = Path.Combine(packagePath, "families.json");
         var facadeFamilies = File.Exists(familiesPath)
             ? LoadFamilies(familiesPath)

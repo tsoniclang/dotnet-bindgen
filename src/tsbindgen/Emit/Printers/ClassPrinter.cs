@@ -258,7 +258,6 @@ public static class ClassPrinter
         var sb = new StringBuilder();
 
         // STEP 1: Always use instance type name for classes
-        // instanceSuffix parameter kept for compatibility but ignored - we always use $instance now
         var finalName = ctx.Renamer.GetInstanceTypeName(type);
 
         // STATIC-SIDE FIX: Emit interface instead of class to avoid TS2417 static-side inheritance

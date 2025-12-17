@@ -60,7 +60,7 @@ public sealed record LibraryContract
     /// Maps CLR base name (e.g., "System.ValueTuple") to family entry with stem/namespace/arity info.
     /// ImportPlanner uses this to determine if a type belongs to a multi-arity family
     /// WITHOUT recomputing from AllowedClrFullNames (prevents drift).
-    /// Empty if families.json doesn't exist (backwards compatibility).
+    /// Empty if families.json doesn't exist.
     /// </summary>
     public required ImmutableDictionary<string, FacadeFamilyEntry> FacadeFamilies { get; init; }
 

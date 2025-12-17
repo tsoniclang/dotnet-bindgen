@@ -211,18 +211,4 @@ public static class SignatureNormalization
         }
     }
 
-    /// <summary>
-    /// Normalize a type name for signature matching (legacy string-based version).
-    /// Kept for backwards compatibility but prefer NormalizeType(TypeReference).
-    /// </summary>
-    private static string NormalizeTypeName(string typeName)
-    {
-        // Remove whitespace
-        var normalized = typeName.Replace(" ", "");
-
-        // Normalize generic backtick to underscore (List`1 -> List_1)
-        normalized = normalized.Replace('`', '_');
-
-        return normalized;
-    }
 }
