@@ -29,6 +29,38 @@ This file provides guidance to Claude Code (claude.ai/code) when working with th
 
 This applies to ANY question, even if it seems like part of a larger task or discussion.
 
+### ALWAYS SAVE TEST OUTPUT TO LOG FILE
+
+**🚨 CRITICAL RULE: ALWAYS pipe test output to a log file for later analysis. 🚨**
+
+Tests in this project are slow (validation takes 2-3 minutes, full test suite even longer) and cannot be quickly re-run. If you lose the output, you lose valuable debugging information.
+
+**ALWAYS do this:**
+
+```bash
+# Run tests and save output to log file
+bash test/scripts/run-all.sh 2>&1 | tee .tests/test.log
+
+# Run validation and save output
+node test/validate/validate.js 2>&1 | tee .tests/validation.log
+
+# Then analyze the log in a separate step
+grep -E "(FAIL|Error|error TS)" .tests/test.log
+```
+
+**NEVER do this:**
+
+```bash
+# DON'T run tests without saving output
+bash test/scripts/run-all.sh 2>&1 | tail -10  # Output is LOST if interrupted!
+```
+
+**Why this matters:**
+- Tests take 2-3+ minutes to run
+- If the command is interrupted, ALL output is lost
+- You cannot re-run quickly to see what failed
+- The `.tests/` directory is gitignored, safe for logs
+
 ### FUNCTIONAL PROGRAMMING STYLE - MANDATORY
 
 **MANDATORY**: This codebase follows strict functional programming principles:
@@ -310,7 +342,7 @@ grep "types lost" .tests/completeness-*.txt
 - Keep historical validation results for comparison
 - Search across multiple validation runs
 
-**Key Rule:** ALWAYS use `tee` for validation output, NEVER plain redirection (`>` or `2>&1`)
+**Key Rule:** ALWAYS use `tee` for test/validation output, NEVER plain redirection (`>`) or piping to tail/head without saving first. If the command is interrupted, unsaved output is permanently lost.
 
 #### .analysis/ Directory (Research & Documentation)
 
