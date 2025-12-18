@@ -135,7 +135,10 @@ public static class ClassPrinter
             return shouldSuppress;
         }
 
-        // Constructors: new(...): InstanceType
+        // Constructors: new(...): FinalType (not $instance!)
+        // The constructor must return the full intersection type (List_1<T>), not just the instance
+        // interface (List_1$instance<T>), otherwise `const x: List<T> = new List<T>()` fails
+        // because List_1$instance<T> is not assignable to List_1<T> (missing views intersection).
         var members = type.Members;
         foreach (var ctor in members.Constructors.Where(c => !c.IsStatic))
         {
@@ -144,7 +147,7 @@ public static class ClassPrinter
             sb.Append("(");
             sb.Append(string.Join(", ", ctor.Parameters.Select(p => $"{p.Name}: {TypeRefPrinter.Print(p.Type, resolver, ctx)}")));
             sb.Append("): ");
-            sb.Append(instanceName);
+            sb.Append(finalName);
             if (hasGenerics) sb.Append(genericArgs);
             sb.AppendLine(";");
         }
@@ -155,7 +158,7 @@ public static class ClassPrinter
             sb.Append("    new");
             if (hasGenerics) sb.Append(genericParams);
             sb.Append("(): ");
-            sb.Append(instanceName);
+            sb.Append(finalName);
             if (hasGenerics) sb.Append(genericArgs);
             sb.AppendLine(";");
         }

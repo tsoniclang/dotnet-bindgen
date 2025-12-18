@@ -666,7 +666,7 @@ export class List_1<T> extends Object { ... }
 
 // ✅ interface + const - no static-side inheritance checking
 export interface List_1$instance<T> extends Object$instance { ... }
-export const List_1: { new<T>(): List_1$instance<T>; };
+export const List_1: { new<T>(): List_1<T>; };  // Returns full type, not $instance
 ```
 
 **2. Separation of concerns**
