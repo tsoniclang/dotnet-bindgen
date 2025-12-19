@@ -2,6 +2,7 @@ using System.Collections.Immutable;
 using System.Reflection;
 using tsbindgen.Model.Types;
 using tsbindgen.Model.Symbols;
+using NrtState = tsbindgen.Load.NullabilityReader.NrtState;
 
 namespace tsbindgen.Load;
 
@@ -258,4 +259,175 @@ public sealed class TypeReferenceFactory
     /// Clear the cache (for testing).
     /// </summary>
     public void ClearCache() => _cache.Clear();
+
+    /// <summary>
+    /// Create a TypeReference with nullability information from NRT metadata.
+    /// This is the entry point for creating type references with proper nullable handling.
+    /// </summary>
+    /// <param name="type">The CLR type.</param>
+    /// <param name="nullabilityFlags">Nullable attribute byte array (or null if using single-byte or context default).</param>
+    /// <param name="singleNullability">Single nullability value when not using byte array.</param>
+    /// <returns>TypeReference with IsNullableReference set appropriately.</returns>
+    public TypeReference CreateWithNullability(Type type, byte[]? nullabilityFlags, NrtState singleNullability)
+    {
+        var position = 0;
+        return CreateWithNullabilityInternal(type, nullabilityFlags, singleNullability, ref position);
+    }
+
+    /// <summary>
+    /// Internal method that tracks position through pre-order traversal of the type tree.
+    /// </summary>
+    private TypeReference CreateWithNullabilityInternal(Type type, byte[]? nullabilityFlags, NrtState singleNullability, ref int position)
+    {
+        // Handle ByRef types first - delegate to base Create and don't consume position
+        // ByRef types (ref/out/in) are not tracked in NRT metadata
+        if (type.IsByRef)
+        {
+            return new ByRefTypeReference
+            {
+                ReferencedType = CreateWithNullabilityInternal(type.GetElementType()!, nullabilityFlags, singleNullability, ref position)
+            };
+        }
+
+        // Handle pointers - not tracked in NRT metadata
+        if (type.IsPointer)
+        {
+            var depth = 1;
+            var elementType = type.GetElementType()!;
+            while (elementType.IsPointer)
+            {
+                depth++;
+                elementType = elementType.GetElementType()!;
+            }
+
+            return new PointerTypeReference
+            {
+                PointeeType = CreateWithNullabilityInternal(elementType, nullabilityFlags, singleNullability, ref position),
+                Depth = depth
+            };
+        }
+
+        // Value types are not tracked in NRT metadata (except Nullable<T>)
+        if (type.IsValueType)
+        {
+            return Create(type);
+        }
+
+        // Get nullability for this position
+        NrtState nullability;
+        if (nullabilityFlags != null && position < nullabilityFlags.Length)
+        {
+            nullability = (NrtState)nullabilityFlags[position];
+        }
+        else
+        {
+            nullability = singleNullability;
+        }
+
+        // Consume position for this type
+        position++;
+
+        var isNullable = nullability == NrtState.Nullable;
+
+        // Handle arrays specially
+        if (type.IsArray)
+        {
+            var elementType = CreateWithNullabilityInternal(type.GetElementType()!, nullabilityFlags, singleNullability, ref position);
+            return new ArrayTypeReference
+            {
+                ElementType = elementType,
+                Rank = type.GetArrayRank(),
+                IsNullableReference = isNullable
+            };
+        }
+
+        // Handle generic parameters
+        if (type.IsGenericParameter)
+        {
+            var baseRef = CreateGenericParameter(type);
+            if (baseRef is GenericParameterReference gpRef)
+            {
+                return gpRef with { IsNullableReference = isNullable };
+            }
+            return baseRef;
+        }
+
+        // Handle named types (potentially with generic arguments)
+        var namedRef = CreateNamedWithNullability(type, nullabilityFlags, singleNullability, ref position, isNullable);
+        return namedRef;
+    }
+
+    /// <summary>
+    /// Create a NamedTypeReference with nullability, handling generic type arguments.
+    /// </summary>
+    private NamedTypeReference CreateNamedWithNullability(Type type, byte[]? nullabilityFlags, NrtState singleNullability, ref int position, bool isNullable)
+    {
+        // INVARIANT: This method should only be called for named types (class, struct, interface, enum, delegate)
+        // ByRef, Pointer, Array, and GenericParameter types should be handled before reaching here
+        if (type.IsByRef || type.IsPointer || type.IsArray || type.IsGenericParameter)
+        {
+            throw new InvalidOperationException(
+                $"CreateNamedWithNullability called for non-named type: {type.FullName} " +
+                $"(IsByRef={type.IsByRef}, IsPointer={type.IsPointer}, IsArray={type.IsArray}, IsGenericParameter={type.IsGenericParameter})");
+        }
+
+        var assemblyName = type.Assembly.GetName().Name ?? "Unknown";
+        var fullName = type.IsGenericType && type.IsConstructedGenericType
+            ? type.GetGenericTypeDefinition().FullName ?? type.Name
+            : type.FullName ?? type.Name;
+
+        var namespaceName = type.Namespace ?? "";
+        var name = type.Name;
+
+        if (string.IsNullOrWhiteSpace(name))
+        {
+            if (!string.IsNullOrWhiteSpace(fullName))
+            {
+                var lastDot = fullName.LastIndexOf('.');
+                var lastPlus = fullName.LastIndexOf('+');
+                var lastSeparator = Math.Max(lastDot, lastPlus);
+                name = lastSeparator >= 0 ? fullName.Substring(lastSeparator + 1) : fullName;
+            }
+            else
+            {
+                name = "UnknownType";
+            }
+        }
+
+        var arity = 0;
+        var typeArgs = new List<TypeReference>();
+
+        if (type.IsGenericType)
+        {
+            arity = type.GetGenericArguments().Length;
+
+            if (type.IsConstructedGenericType)
+            {
+                foreach (var arg in type.GetGenericArguments())
+                {
+                    // Recursively create type arguments with their nullability
+                    typeArgs.Add(CreateWithNullabilityInternal(arg, nullabilityFlags, singleNullability, ref position));
+                }
+            }
+        }
+
+        string? interfaceStableId = null;
+        if (type.IsInterface)
+        {
+            interfaceStableId = _ctx.Intern($"{assemblyName}:{fullName}");
+        }
+
+        return new NamedTypeReference
+        {
+            AssemblyName = _ctx.Intern(assemblyName),
+            FullName = _ctx.Intern(fullName),
+            Namespace = _ctx.Intern(namespaceName),
+            Name = _ctx.Intern(name),
+            Arity = arity,
+            TypeArguments = typeArgs,
+            IsValueType = type.IsValueType,
+            InterfaceStableId = interfaceStableId,
+            IsNullableReference = isNullable
+        };
+    }
 }

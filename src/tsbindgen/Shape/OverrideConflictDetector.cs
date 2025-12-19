@@ -127,14 +127,32 @@ public static class OverrideConflictDetector
     }
 
     /// <summary>
-    /// Check if two type references are equal (same type).
-    /// Simplified comparison based on string representation.
+    /// Check if two type references are equal (same CLR type, ignoring NRT nullability).
+    /// For override conflict detection, we only care about CLR type identity, not NRT annotations.
     /// </summary>
     private static bool TypeReferencesEqual(TypeReference a, TypeReference b)
     {
-        // Simple comparison: use ToString() representation
-        // This works for most cases; could be enhanced with proper structural equality
-        return a.ToString() == b.ToString();
+        // Compare CLR type identity, ignoring NRT IsNullableReference
+        return GetClrTypeKey(a) == GetClrTypeKey(b);
+    }
+
+    /// <summary>
+    /// Get a canonical key for a type reference that ignores NRT nullability.
+    /// Used for comparing CLR type identity in override conflict detection.
+    /// </summary>
+    private static string GetClrTypeKey(TypeReference typeRef)
+    {
+        return typeRef switch
+        {
+            NamedTypeReference named => $"Named:{named.AssemblyName}:{named.FullName}:{string.Join(",", named.TypeArguments.Select(GetClrTypeKey))}",
+            GenericParameterReference gp => $"GenericParam:{gp.Name}",
+            ArrayTypeReference arr => $"Array:{GetClrTypeKey(arr.ElementType)}:{arr.Rank}",
+            PointerTypeReference ptr => $"Pointer:{GetClrTypeKey(ptr.PointeeType)}",
+            ByRefTypeReference byRef => $"ByRef:{GetClrTypeKey(byRef.ReferencedType)}",
+            NestedTypeReference nested => $"Nested:{GetClrTypeKey(nested.FullReference)}",
+            PlaceholderTypeReference placeholder => $"Placeholder:{placeholder.DebugName}",
+            _ => typeRef.ToString() ?? "unknown"
+        };
     }
 
     /// <summary>

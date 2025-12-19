@@ -6,6 +6,7 @@ using tsbindgen.Model;
 using tsbindgen.Model.Symbols;
 using tsbindgen.Model.Symbols.MemberSymbols;
 using tsbindgen.Model.Types;
+using NrtState = tsbindgen.Load.NullabilityReader.NrtState;
 
 namespace tsbindgen.Load;
 
@@ -317,7 +318,7 @@ public sealed class ReflectionReader
             MetadataToken = method.MetadataToken
         };
 
-        var parameters = method.GetParameters().Select(ReadParameter).ToImmutableArray();
+        var parameters = method.GetParameters().Select(p => ReadParameter(p, declaringType)).ToImmutableArray();
         var genericParams = method.IsGenericMethod
             ? method.GetGenericArguments().Select(_typeFactory.CreateGenericParameterSymbol).ToImmutableArray()
             : ImmutableArray<GenericParameterSymbol>.Empty;
@@ -338,11 +339,14 @@ public sealed class ReflectionReader
             }
         }
 
+        // Read return type with NRT nullability
+        var returnType = CreateTypeWithNullability(method.ReturnType, method.ReturnParameter, declaringType);
+
         return new MethodSymbol
         {
             StableId = stableId,
             ClrName = _ctx.Intern(clrName),
-            ReturnType = _typeFactory.Create(method.ReturnType),
+            ReturnType = returnType,
             Parameters = parameters,
             GenericParameters = genericParams,
             IsStatic = method.IsStatic,
@@ -383,15 +387,18 @@ public sealed class ReflectionReader
             MetadataToken = property.MetadataToken
         };
 
-        var indexParams = property.GetIndexParameters().Select(ReadParameter).ToImmutableArray();
+        var indexParams = property.GetIndexParameters().Select(p => ReadParameter(p, declaringType)).ToImmutableArray();
         var getter = property.GetGetMethod();
         var setter = property.GetSetMethod();
+
+        // Read property type with NRT nullability
+        var propertyType = CreateTypeWithNullabilityFromProperty(property, declaringType);
 
         return new PropertySymbol
         {
             StableId = stableId,
             ClrName = _ctx.Intern(clrName),
-            PropertyType = _typeFactory.Create(property.PropertyType),
+            PropertyType = propertyType,
             IndexParameters = indexParams,
             HasGetter = getter != null,
             HasSetter = setter != null,
@@ -416,11 +423,14 @@ public sealed class ReflectionReader
             MetadataToken = field.MetadataToken
         };
 
+        // Read field type with NRT nullability
+        var fieldType = CreateTypeWithNullabilityFromField(field, declaringType);
+
         return new FieldSymbol
         {
             StableId = stableId,
             ClrName = _ctx.Intern(field.Name),
-            FieldType = _typeFactory.Create(field.FieldType),
+            FieldType = fieldType,
             IsStatic = field.IsStatic,
             IsReadOnly = field.IsInitOnly,
             IsConst = field.IsLiteral,
@@ -486,13 +496,13 @@ public sealed class ReflectionReader
         return new ConstructorSymbol
         {
             StableId = stableId,
-            Parameters = ctor.GetParameters().Select(ReadParameter).ToImmutableArray(),
+            Parameters = ctor.GetParameters().Select(p => ReadParameter(p, declaringType)).ToImmutableArray(),
             IsStatic = ctor.IsStatic,
             Visibility = GetConstructorVisibility(ctor)
         };
     }
 
-    private ParameterSymbol ReadParameter(ParameterInfo param)
+    private ParameterSymbol ReadParameter(ParameterInfo param, Type declaringType)
     {
         // Sanitize parameter name for TypeScript reserved words
         var paramName = param.Name ?? $"arg{param.Position}";
@@ -545,15 +555,26 @@ public sealed class ReflectionReader
         // Note: IsByRef implications are guaranteed by construction above
         // (isOut/isIn/isRef all include IsByRef in their computation)
 
+        // Check if this is a params array parameter
+        var isParams = param.GetCustomAttributesData()
+            .Any(attr => attr.AttributeType.Name == "ParamArrayAttribute");
+
+        // Read parameter type with NRT nullability
+        // For params arrays, use the original Create (no nullability) because:
+        // 1. TypeScript rest parameters (...args) can't be undefined
+        // 2. The array is constructed by the caller, not passed as null
+        var paramType = isParams
+            ? _typeFactory.Create(param.ParameterType)
+            : CreateTypeWithNullability(param.ParameterType, param, declaringType);
+
         return new ParameterSymbol
         {
             Name = _ctx.Intern(sanitizedName),
-            Type = _typeFactory.Create(param.ParameterType),
+            Type = paramType,
             IsRef = isRef,
             IsOut = isOut,
             IsIn = isIn,
-            IsParams = param.GetCustomAttributesData()
-                .Any(attr => attr.AttributeType.Name == "ParamArrayAttribute"),
+            IsParams = isParams,
             HasDefaultValue = param.HasDefaultValue,
             DefaultValue = param.HasDefaultValue ? param.RawDefaultValue : null
         };
@@ -700,5 +721,103 @@ public sealed class ReflectionReader
     private static bool IsCompilerGenerated(string typeName)
     {
         return typeName.Contains('<') || typeName.Contains('>');
+    }
+
+    /// <summary>
+    /// Create a TypeReference with NRT nullability information from a parameter or return value.
+    /// </summary>
+    private TypeReference CreateTypeWithNullability(Type type, ParameterInfo paramOrReturn, Type declaringType)
+    {
+        // Get nullability metadata from the parameter
+        var (nullabilityFlags, singleNullability) = GetNullabilityMetadata(paramOrReturn.CustomAttributes, declaringType);
+        return _typeFactory.CreateWithNullability(type, nullabilityFlags, singleNullability);
+    }
+
+    /// <summary>
+    /// Create a TypeReference with NRT nullability information from a property.
+    /// </summary>
+    private TypeReference CreateTypeWithNullabilityFromProperty(PropertyInfo property, Type declaringType)
+    {
+        var (nullabilityFlags, singleNullability) = GetNullabilityMetadata(property.CustomAttributes, declaringType);
+        return _typeFactory.CreateWithNullability(property.PropertyType, nullabilityFlags, singleNullability);
+    }
+
+    /// <summary>
+    /// Create a TypeReference with NRT nullability information from a field.
+    /// </summary>
+    private TypeReference CreateTypeWithNullabilityFromField(FieldInfo field, Type declaringType)
+    {
+        var (nullabilityFlags, singleNullability) = GetNullabilityMetadata(field.CustomAttributes, declaringType);
+        return _typeFactory.CreateWithNullability(field.FieldType, nullabilityFlags, singleNullability);
+    }
+
+    /// <summary>
+    /// Extract nullability metadata from custom attributes.
+    /// Returns a byte array if NullableAttribute contains an array, otherwise returns single nullability state.
+    /// </summary>
+    private static (byte[]? flags, NrtState singleValue) GetNullabilityMetadata(
+        IEnumerable<CustomAttributeData> attributes,
+        Type declaringType)
+    {
+        // Look for NullableAttribute on the member itself
+        CustomAttributeData? nullableAttr = null;
+        foreach (var attr in attributes)
+        {
+            if (attr.AttributeType.FullName == "System.Runtime.CompilerServices.NullableAttribute")
+            {
+                nullableAttr = attr;
+                break;
+            }
+        }
+
+        if (nullableAttr != null && nullableAttr.ConstructorArguments.Count > 0)
+        {
+            var arg = nullableAttr.ConstructorArguments[0];
+
+            // Single byte: NullableAttribute(byte)
+            if (arg.Value is byte singleByte)
+            {
+                return (null, (NrtState)singleByte);
+            }
+
+            // Byte array: NullableAttribute(byte[])
+            if (arg.Value is IReadOnlyCollection<CustomAttributeTypedArgument> byteArray)
+            {
+                var bytes = byteArray.Select(a => (byte)a.Value!).ToArray();
+                return (bytes, NrtState.Oblivious);
+            }
+        }
+
+        // Fall back to NullableContextAttribute from declaring type
+        var contextDefault = GetContextDefault(declaringType);
+        return (null, contextDefault);
+    }
+
+    /// <summary>
+    /// Get the default nullability from a type's NullableContextAttribute.
+    /// </summary>
+    private static NrtState GetContextDefault(Type? type)
+    {
+        if (type == null) return NrtState.Oblivious;
+
+        // Check this type
+        foreach (var attr in type.CustomAttributes)
+        {
+            if (attr.AttributeType.FullName == "System.Runtime.CompilerServices.NullableContextAttribute")
+            {
+                if (attr.ConstructorArguments.Count > 0 && attr.ConstructorArguments[0].Value is byte contextByte)
+                {
+                    return (NrtState)contextByte;
+                }
+            }
+        }
+
+        // Check enclosing types (for nested types)
+        if (type.DeclaringType != null)
+        {
+            return GetContextDefault(type.DeclaringType);
+        }
+
+        return NrtState.Oblivious;
     }
 }

@@ -68,6 +68,7 @@ public static class TypeRefPrinter
         var primitiveType = TypeNameResolver.TryMapPrimitive(named.FullName);
         if (primitiveType != null)
         {
+            // Primitives are never nullable reference types (they're value types)
             return primitiveType;
         }
 
@@ -94,47 +95,63 @@ public static class TypeRefPrinter
             return "unknown";
         }
 
+        string result;
+
         // Handle generic type arguments
         if (named.TypeArguments.Count == 0)
-            return baseName;
-
-        // Print generic type with arguments: Foo<T, U>
-        // CRITICAL: Emit CLR type names directly for primitives in generic type arguments
-        // This ensures generic constraints are satisfied with direct CLR type names
-        // Example: List<int> → List_1<Int32> (Int32 is the CLR type, int is the TS alias)
-        // Generic parameters (T, U, TKey) pass through unchanged
-        var argParts = named.TypeArguments.Select(arg =>
         {
-            var printed = Print(arg, resolver, ctx, allowedTypeParameterNames);
-            // Lift primitives to their CLR type names: int → Int32, char → Char, etc.
-            // Qualify with System_Internal when outside System namespace
-            var clrName = PrimitiveLift.GetClrSimpleName(printed);
-            if (clrName != null)
+            result = baseName;
+        }
+        else
+        {
+            // Print generic type with arguments: Foo<T, U>
+            // CRITICAL: Emit CLR type names directly for primitives in generic type arguments
+            // This ensures generic constraints are satisfied with direct CLR type names
+            // Example: List<int> → List_1<Int32> (Int32 is the CLR type, int is the TS alias)
+            // Generic parameters (T, U, TKey) pass through unchanged
+            var argParts = named.TypeArguments.Select(arg =>
             {
-                // CLR primitive types are defined in System namespace
-                // Qualify when not in System namespace
-                var currentNs = resolver.CurrentNamespace;
-                if (currentNs != null && currentNs != "System")
+                var printed = Print(arg, resolver, ctx, allowedTypeParameterNames);
+                // Lift primitives to their CLR type names: int → Int32, char → Char, etc.
+                // Qualify with System_Internal when outside System namespace
+                var clrName = PrimitiveLift.GetClrSimpleName(printed);
+                if (clrName != null)
                 {
-                    return $"System_Internal.{clrName}";
+                    // CLR primitive types are defined in System namespace
+                    // Qualify when not in System namespace
+                    var currentNs = resolver.CurrentNamespace;
+                    if (currentNs != null && currentNs != "System")
+                    {
+                        return $"System_Internal.{clrName}";
+                    }
+                    return clrName;
                 }
-                return clrName;
-            }
-            return printed;
-        }).ToList();
-        var nonEmptyArgs = argParts.Where(a => !string.IsNullOrWhiteSpace(a)).ToList();
+                return printed;
+            }).ToList();
+            var nonEmptyArgs = argParts.Where(a => !string.IsNullOrWhiteSpace(a)).ToList();
 
-        if (nonEmptyArgs.Count == 0)
-        {
-            // All type arguments erased - emit without generics
-            ctx.Diagnostics.Warning(
-                Core.Diagnostics.DiagnosticCodes.UnresolvedType,
-                $"All type arguments erased for {named.FullName}. Emitting non-generic form.");
-            return baseName;
+            if (nonEmptyArgs.Count == 0)
+            {
+                // All type arguments erased - emit without generics
+                ctx.Diagnostics.Warning(
+                    Core.Diagnostics.DiagnosticCodes.UnresolvedType,
+                    $"All type arguments erased for {named.FullName}. Emitting non-generic form.");
+                result = baseName;
+            }
+            else
+            {
+                var args = string.Join(", ", nonEmptyArgs);
+                result = $"{baseName}<{args}>";
+            }
         }
 
-        var args = string.Join(", ", nonEmptyArgs);
-        return $"{baseName}<{args}>";
+        // NRT: Append | undefined for nullable reference types
+        if (named.IsNullableReference)
+        {
+            return $"{result} | undefined";
+        }
+
+        return result;
     }
 
     private static string PrintGenericParameter(
@@ -153,7 +170,15 @@ public static class TypeRefPrinter
         }
 
         // Generic parameters use their declared name: T, U, TKey, TValue
-        return gp.Name;
+        var result = gp.Name;
+
+        // NRT: Append | undefined for nullable generic parameter references (T?)
+        if (gp.IsNullableReference)
+        {
+            return $"{result} | undefined";
+        }
+
+        return result;
     }
 
     private static string PrintArray(
@@ -165,15 +190,35 @@ public static class TypeRefPrinter
     {
         var elementType = Print(arr.ElementType, resolver, ctx, allowedTypeParameterNames, forValuePosition);
 
+        // If element type contains ' | ', wrap in parentheses for correct operator precedence
+        // Without this: "T | undefined[]" parses as "T | (undefined[])" - WRONG
+        // With this: "(T | undefined)[]" - CORRECT
+        if (elementType.Contains(" | "))
+        {
+            elementType = $"({elementType})";
+        }
+
+        string result;
+
         // Multi-dimensional arrays: T[][], T[][][]
         if (arr.Rank == 1)
-            return $"{elementType}[]";
+        {
+            result = $"{elementType}[]";
+        }
+        else
+        {
+            // For rank > 1, TypeScript doesn't have native syntax
+            // Use Array<Array<T>> form
+            result = elementType;
+            for (int i = 0; i < arr.Rank; i++)
+                result = $"Array<{result}>";
+        }
 
-        // For rank > 1, TypeScript doesn't have native syntax
-        // Use Array<Array<T>> form
-        var result = elementType;
-        for (int i = 0; i < arr.Rank; i++)
-            result = $"Array<{result}>";
+        // NRT: Append | undefined for nullable array references (T[]?)
+        if (arr.IsNullableReference)
+        {
+            return $"{result} | undefined";
+        }
 
         return result;
     }

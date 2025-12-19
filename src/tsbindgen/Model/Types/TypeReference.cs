@@ -101,6 +101,13 @@ public sealed record NamedTypeReference : TypeReference
     /// Null for non-interface types.
     /// </summary>
     public string? InterfaceStableId { get; init; }
+
+    /// <summary>
+    /// Whether this reference type is nullable (from NRT metadata).
+    /// Only meaningful for reference types; value types use Nullable&lt;T&gt;.
+    /// When true, TypeScript emission appends "| undefined".
+    /// </summary>
+    public bool IsNullableReference { get; init; } = false;
 }
 
 /// <summary>
@@ -129,6 +136,12 @@ public sealed record GenericParameterReference : TypeReference
     /// Constraints on this parameter.
     /// </summary>
     public required IReadOnlyList<TypeReference> Constraints { get; init; }
+
+    /// <summary>
+    /// Whether this generic parameter reference is nullable (T? in NRT context).
+    /// When true, TypeScript emission appends "| undefined".
+    /// </summary>
+    public bool IsNullableReference { get; init; } = false;
 }
 
 /// <summary>
@@ -147,6 +160,12 @@ public sealed record ArrayTypeReference : TypeReference
     /// Array rank (1 for T[], 2 for T[,], etc.).
     /// </summary>
     public required int Rank { get; init; }
+
+    /// <summary>
+    /// Whether this array reference is nullable (T[]? in NRT context).
+    /// When true, TypeScript emission appends "| undefined".
+    /// </summary>
+    public bool IsNullableReference { get; init; } = false;
 }
 
 /// <summary>
