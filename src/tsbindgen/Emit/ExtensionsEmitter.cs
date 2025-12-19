@@ -490,6 +490,10 @@ public static class ExtensionsEmitter
             isFirst = false;
         }
 
+        // Special case: native T[] arrays get IEnumerable_1 extensions (LINQ, etc.)
+        // This allows ExtensionMethods<string[]> to resolve to __Ext_IEnumerable_1<string>
+        sb.AppendLine(": TShape extends (infer T)[] ? __Ext_IEnumerable_1<T>");
+
         // Default case: no extensions available
         sb.AppendLine("  : {};");
         sb.AppendLine();
