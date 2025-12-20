@@ -1,6 +1,30 @@
 namespace tsbindgen.Model.Types;
 
 /// <summary>
+/// Nullable Reference Type state from C# 8+ NRT metadata.
+/// Maps to the byte values in NullableAttribute and NullableContextAttribute.
+/// </summary>
+public enum NrtState : byte
+{
+    /// <summary>
+    /// Unknown nullability (pre-C# 8 code or #nullable disable).
+    /// Does not participate in covariance normalization.
+    /// </summary>
+    Oblivious = 0,
+
+    /// <summary>
+    /// Explicitly non-nullable (T in NRT context).
+    /// </summary>
+    NotNull = 1,
+
+    /// <summary>
+    /// Explicitly nullable (T? in NRT context).
+    /// Emits "| undefined" in TypeScript.
+    /// </summary>
+    Nullable = 2
+}
+
+/// <summary>
 /// Represents a reference to a type in the CLR type system.
 /// Immutable, structural equality.
 /// Converted from System.Type during reflection.
@@ -101,6 +125,13 @@ public sealed record NamedTypeReference : TypeReference
     /// Null for non-interface types.
     /// </summary>
     public string? InterfaceStableId { get; init; }
+
+    /// <summary>
+    /// NRT nullability state from C# 8+ metadata.
+    /// Only meaningful for reference types; value types use Nullable&lt;T&gt;.
+    /// When Nullable, TypeScript emission appends "| undefined".
+    /// </summary>
+    public NrtState Nullability { get; init; } = NrtState.Oblivious;
 }
 
 /// <summary>
@@ -129,6 +160,12 @@ public sealed record GenericParameterReference : TypeReference
     /// Constraints on this parameter.
     /// </summary>
     public required IReadOnlyList<TypeReference> Constraints { get; init; }
+
+    /// <summary>
+    /// NRT nullability state for this generic parameter reference (T? in NRT context).
+    /// When Nullable, TypeScript emission appends "| undefined".
+    /// </summary>
+    public NrtState Nullability { get; init; } = NrtState.Oblivious;
 }
 
 /// <summary>
@@ -147,6 +184,12 @@ public sealed record ArrayTypeReference : TypeReference
     /// Array rank (1 for T[], 2 for T[,], etc.).
     /// </summary>
     public required int Rank { get; init; }
+
+    /// <summary>
+    /// NRT nullability state for this array reference (T[]? in NRT context).
+    /// When Nullable, TypeScript emission appends "| undefined".
+    /// </summary>
+    public NrtState Nullability { get; init; } = NrtState.Oblivious;
 }
 
 /// <summary>

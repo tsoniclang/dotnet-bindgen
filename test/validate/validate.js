@@ -202,16 +202,16 @@ function runTypeScriptCompiler() {
 }
 
 
-function installTsonicTypes() {
-    log('Installing @tsonic/types into validation directory...');
+function installTsonicCore() {
+    log('Installing @tsonic/core into validation directory...');
     try {
-        execSync('npm install --no-save @tsonic/types', {
+        execSync('npm install --no-save @tsonic/core', {
             cwd: VALIDATION_DIR,
             stdio: 'inherit'
         });
-        log('✓ Installed @tsonic/types');
+        log('✓ Installed @tsonic/core');
     } catch (err) {
-        error('Failed to install @tsonic/types (network?)');
+        error('Failed to install @tsonic/core (network?)');
         throw err;
     }
 }
@@ -301,7 +301,7 @@ async function main() {
         }
 
         console.log('');
-        installTsonicTypes();
+        installTsonicCore();
         const result = runTypeScriptCompiler();
 
         // Print results

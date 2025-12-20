@@ -85,7 +85,7 @@ public static class MemberDeduplicator
         {
             Namespaces = updatedNamespaces.ToImmutable(),
             SourceAssemblies = graph.SourceAssemblies
-        };
+        }.WithIndices();
     }
 
     /// <summary>

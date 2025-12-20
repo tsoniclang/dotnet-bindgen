@@ -1,15 +1,29 @@
 {
-  "version": "1.3.0",
-  "description": "Expected TypeScript semantic errors (should be zero)",
-  "generatedAt": "2025-12-13",
+  "version": "1.7.0",
+  "description": "Expected TypeScript semantic errors from BCL generation - ZERO expected since v1.6.0",
+  "generatedAt": "2025-12-20",
   "expectedErrors": [],
   "totalExpected": 0,
   "notes": [
-    "Zero TypeScript errors expected.",
-    "All structural method bridges now correctly use the naming style from policy.",
-    "Primitives satisfy numeric interface constraints (IBinaryInteger, IFloatingPoint, etc.).",
+    "As of v1.7.0, NrtContractNormalizer is compiler-grade with three key fixes:",
     "",
-    "Zero syntax errors (TS1xxx) is required - these must always be zero.",
-    "Zero semantic errors (TS2xxx) is now achieved."
+    "1. CLUSTER CONSTRUCTION: Uses Transitive Common Ancestor (TCA) algorithm.",
+    "   Types are clustered if they share ANY common ancestor, even if that ancestor",
+    "   is not in the type set. This handles cases where interface A and B both",
+    "   implement IFoo, but IFoo itself is not emitting the method.",
+    "",
+    "2. COMPILER-GRADE IDENTITY KEYS: Method keys include:",
+    "   - ClrName, Arity (generic method arity)",
+    "   - Parameter signature with ref/out/in modifiers",
+    "   - Explicit interface implementation via SourceInterface",
+    "   Property keys include IsIndexer flag and indexer parameter signature.",
+    "",
+    "3. CONTRACT DIRECTIONALITY: Bases and interfaces define contracts.",
+    "   - If ANY base/interface is NotNull → contract is NotNull",
+    "   - If ANY base/interface is Nullable → contract is Nullable",
+    "   - If ALL bases are Oblivious and derived has Nullable → lift to Nullable",
+    "   Derived types incorrectly declaring NotNull do NOT force base to NotNull.",
+    "",
+    "Zero syntax errors (TS1xxx) is always required."
   ]
 }
