@@ -167,9 +167,10 @@ public static class NrtContractNormalizer
     /// <summary>
     /// Phase A: Collect all required edits by analyzing inheritance hierarchies.
     ///
-    /// Uses cluster-based algorithm with proper common-ancestor detection:
-    /// - Types are clustered if they share ANY common ancestor
-    /// - Contract direction is respected (base/interface defines contract)
+    /// TWO-PASS ALGORITHM:
+    /// 1. Direct Override Enforcement: Walk inheritance edges and enforce base return contract
+    ///    If base returns NotNull and derived returns Nullable → set derived to NotNull
+    /// 2. Cluster-based Normalization: Handle sibling relationships through common ancestors
     /// </summary>
     private static List<NullabilityEdit> CollectEdits(
         BuildContext ctx,
@@ -178,6 +179,20 @@ public static class NrtContractNormalizer
     {
         var edits = new List<NullabilityEdit>();
 
+        // PASS 1: Direct Override Return Contract Enforcement
+        // This is the deterministic fix for TS2430 - if base is NotNull, derived MUST be NotNull
+        var directOverrideEdits = CollectDirectOverrideEdits(ctx, graph, ancestorIndex);
+        edits.AddRange(directOverrideEdits);
+
+        // Track which (type, member) pairs already have edits to avoid duplicates
+        var existingEdits = new HashSet<(string typeId, string memberKey)>();
+        foreach (var edit in directOverrideEdits)
+        {
+            var key = edit.MethodKey?.ToString() ?? edit.PropertyKey?.ToString() ?? "";
+            existingEdits.Add((edit.TypeStableId, key));
+        }
+
+        // PASS 2: Cluster-based normalization (for sibling relationships)
         // Group methods by compiler-grade identity key
         var methodGroups = new Dictionary<MethodIdentityKey, List<MethodMemberInfo>>();
 
@@ -233,7 +248,16 @@ public static class NrtContractNormalizer
                 var clusterMembers = group.Where(g => clusterTypeNames.Contains(g.Type.ClrFullName)).ToList();
 
                 var methodEdits = ComputeClusterEdits(clusterMembers, key);
-                edits.AddRange(methodEdits);
+                // Filter out edits that are already covered by direct override enforcement
+                foreach (var edit in methodEdits)
+                {
+                    var editKey = edit.MethodKey?.ToString() ?? "";
+                    if (!existingEdits.Contains((edit.TypeStableId, editKey)))
+                    {
+                        edits.Add(edit);
+                        existingEdits.Add((edit.TypeStableId, editKey));
+                    }
+                }
             }
         }
 
@@ -251,11 +275,228 @@ public static class NrtContractNormalizer
                 var clusterMembers = group.Where(g => clusterTypeNames.Contains(g.Type.ClrFullName)).ToList();
 
                 var propEdits = ComputeClusterEditsForProperties(clusterMembers, key);
-                edits.AddRange(propEdits);
+                foreach (var edit in propEdits)
+                {
+                    var editKey = edit.PropertyKey?.ToString() ?? "";
+                    if (!existingEdits.Contains((edit.TypeStableId, editKey)))
+                    {
+                        edits.Add(edit);
+                        existingEdits.Add((edit.TypeStableId, editKey));
+                    }
+                }
             }
         }
 
         return edits;
+    }
+
+    /// <summary>
+    /// PASS 1: Direct Override Return Contract Enforcement
+    ///
+    /// For every derived member that overrides/implements a base member:
+    /// - If base return is NotNull and derived return is Nullable → set derived to NotNull
+    ///
+    /// This is the deterministic fix for TS2430 - it walks actual inheritance edges,
+    /// not group heuristics.
+    /// </summary>
+    private static List<NullabilityEdit> CollectDirectOverrideEdits(
+        BuildContext ctx,
+        SymbolGraph graph,
+        Dictionary<string, HashSet<string>> ancestorIndex)
+    {
+        var edits = new List<NullabilityEdit>();
+
+        foreach (var type in graph.TypeIndex.Values)
+        {
+            // Skip interfaces - they define contracts, don't override
+            if (type.Kind == TypeKind.Interface)
+                continue;
+
+            // Process methods
+            foreach (var method in type.Members.Methods.Where(m => !m.IsStatic && m.EmitScope == EmitScope.ClassSurface))
+            {
+                // Skip if method is not an override
+                if (!method.IsOverride && method.Provenance == MemberProvenance.Original)
+                    continue;
+
+                var derivedNullability = GetNullability(method.ReturnType);
+
+                // Skip if derived is already NotNull - no strengthening needed
+                // But DO NOT skip Oblivious - when base is NotNull, Oblivious must be strengthened
+                // to NotNull to avoid TS2430 (weaker return type in override)
+                if (derivedNullability == NrtState.NotNull)
+                    continue;
+
+                // Find base declaration(s) and check their return nullability
+                var baseNotNull = FindBaseMethodHasNotNullReturn(graph, type, method, ancestorIndex);
+
+                if (baseNotNull)
+                {
+                    var key = CreateMethodKey(method);
+                    edits.Add(new NullabilityEdit(
+                        type.StableId.ToString(),
+                        key,
+                        null,
+                        NrtState.NotNull,
+                        $"Direct override enforcement: {type.ClrFullName}.{method.ClrName} base is NotNull"));
+                }
+            }
+
+            // Process properties
+            foreach (var prop in type.Members.Properties.Where(p => !p.IsStatic && p.EmitScope == EmitScope.ClassSurface))
+            {
+                if (!prop.IsOverride && prop.Provenance == MemberProvenance.Original)
+                    continue;
+
+                var derivedNullability = GetNullability(prop.PropertyType);
+
+                // Skip if derived is already NotNull - no strengthening needed
+                // But DO NOT skip Oblivious - when base is NotNull, Oblivious must be strengthened
+                if (derivedNullability == NrtState.NotNull)
+                    continue;
+
+                var baseNotNull = FindBasePropertyHasNotNullReturn(graph, type, prop, ancestorIndex);
+
+                if (baseNotNull)
+                {
+                    var key = CreatePropertyKey(prop);
+                    edits.Add(new NullabilityEdit(
+                        type.StableId.ToString(),
+                        null,
+                        key,
+                        NrtState.NotNull,
+                        $"Direct override enforcement: {type.ClrFullName}.{prop.ClrName} base is NotNull"));
+                }
+            }
+        }
+
+        return edits;
+    }
+
+    /// <summary>
+    /// Check if any base declaration of this method has NotNull return type.
+    /// Walks: base class chain + implemented interfaces.
+    /// </summary>
+    private static bool FindBaseMethodHasNotNullReturn(
+        SymbolGraph graph,
+        TypeSymbol derivedType,
+        MethodSymbol derivedMethod,
+        Dictionary<string, HashSet<string>> ancestorIndex)
+    {
+        var methodKey = CreateMethodKey(derivedMethod);
+
+        // Get all ancestors of this type
+        if (!ancestorIndex.TryGetValue(derivedType.ClrFullName, out var ancestors))
+            return false;
+
+        foreach (var ancestorName in ancestors)
+        {
+            if (!graph.TypeIndex.TryGetValue(ancestorName, out var ancestorType))
+                continue;
+
+            // Look for matching method in ancestor
+            foreach (var baseMethod in ancestorType.Members.Methods.Where(m => !m.IsStatic && m.EmitScope == EmitScope.ClassSurface))
+            {
+                var baseKey = CreateMethodKey(baseMethod);
+
+                // Match by compiler-grade identity (ignoring explicit interface on derived side)
+                if (MethodKeysMatch(methodKey, baseKey))
+                {
+                    var baseNullability = GetNullability(baseMethod.ReturnType);
+                    if (baseNullability == NrtState.NotNull)
+                    {
+                        return true;
+                    }
+                }
+            }
+        }
+
+        return false;
+    }
+
+    /// <summary>
+    /// Check if any base declaration of this property has NotNull return type.
+    /// </summary>
+    private static bool FindBasePropertyHasNotNullReturn(
+        SymbolGraph graph,
+        TypeSymbol derivedType,
+        PropertySymbol derivedProp,
+        Dictionary<string, HashSet<string>> ancestorIndex)
+    {
+        var propKey = CreatePropertyKey(derivedProp);
+
+        if (!ancestorIndex.TryGetValue(derivedType.ClrFullName, out var ancestors))
+            return false;
+
+        foreach (var ancestorName in ancestors)
+        {
+            if (!graph.TypeIndex.TryGetValue(ancestorName, out var ancestorType))
+                continue;
+
+            foreach (var baseProp in ancestorType.Members.Properties.Where(p => !p.IsStatic && p.EmitScope == EmitScope.ClassSurface))
+            {
+                var baseKey = CreatePropertyKey(baseProp);
+
+                if (PropertyKeysMatch(propKey, baseKey))
+                {
+                    var baseNullability = GetNullability(baseProp.PropertyType);
+                    if (baseNullability == NrtState.NotNull)
+                    {
+                        return true;
+                    }
+                }
+            }
+        }
+
+        return false;
+    }
+
+    /// <summary>
+    /// Check if two method keys match for override purposes.
+    /// Ignores explicit interface name on derived (derived might be implicit impl of interface).
+    /// </summary>
+    private static bool MethodKeysMatch(MethodIdentityKey derived, MethodIdentityKey @base)
+    {
+        // Name must match (or derived implements base interface method implicitly)
+        if (derived.ClrName != @base.ClrName)
+            return false;
+
+        // Arity must match
+        if (derived.Arity != @base.Arity)
+            return false;
+
+        // Parameter signature must match
+        if (derived.ParameterSignature != @base.ParameterSignature)
+            return false;
+
+        // If base is explicit interface impl, derived must match same interface
+        // But if base is NOT explicit, derived can be either explicit or implicit
+        if (@base.ExplicitInterfaceFullName != null &&
+            derived.ExplicitInterfaceFullName != @base.ExplicitInterfaceFullName)
+            return false;
+
+        return true;
+    }
+
+    /// <summary>
+    /// Check if two property keys match for override purposes.
+    /// </summary>
+    private static bool PropertyKeysMatch(PropertyIdentityKey derived, PropertyIdentityKey @base)
+    {
+        if (derived.ClrName != @base.ClrName)
+            return false;
+
+        if (derived.IsIndexer != @base.IsIndexer)
+            return false;
+
+        if (derived.IndexerSignature != @base.IndexerSignature)
+            return false;
+
+        if (@base.ExplicitInterfaceFullName != null &&
+            derived.ExplicitInterfaceFullName != @base.ExplicitInterfaceFullName)
+            return false;
+
+        return true;
     }
 
     /// <summary>
