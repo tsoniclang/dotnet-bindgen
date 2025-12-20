@@ -1,6 +1,30 @@
 namespace tsbindgen.Model.Types;
 
 /// <summary>
+/// Nullable Reference Type state from C# 8+ NRT metadata.
+/// Maps to the byte values in NullableAttribute and NullableContextAttribute.
+/// </summary>
+public enum NrtState : byte
+{
+    /// <summary>
+    /// Unknown nullability (pre-C# 8 code or #nullable disable).
+    /// Does not participate in covariance normalization.
+    /// </summary>
+    Oblivious = 0,
+
+    /// <summary>
+    /// Explicitly non-nullable (T in NRT context).
+    /// </summary>
+    NotNull = 1,
+
+    /// <summary>
+    /// Explicitly nullable (T? in NRT context).
+    /// Emits "| undefined" in TypeScript.
+    /// </summary>
+    Nullable = 2
+}
+
+/// <summary>
 /// Represents a reference to a type in the CLR type system.
 /// Immutable, structural equality.
 /// Converted from System.Type during reflection.
@@ -103,11 +127,11 @@ public sealed record NamedTypeReference : TypeReference
     public string? InterfaceStableId { get; init; }
 
     /// <summary>
-    /// Whether this reference type is nullable (from NRT metadata).
+    /// NRT nullability state from C# 8+ metadata.
     /// Only meaningful for reference types; value types use Nullable&lt;T&gt;.
-    /// When true, TypeScript emission appends "| undefined".
+    /// When Nullable, TypeScript emission appends "| undefined".
     /// </summary>
-    public bool IsNullableReference { get; init; } = false;
+    public NrtState Nullability { get; init; } = NrtState.Oblivious;
 }
 
 /// <summary>
@@ -138,10 +162,10 @@ public sealed record GenericParameterReference : TypeReference
     public required IReadOnlyList<TypeReference> Constraints { get; init; }
 
     /// <summary>
-    /// Whether this generic parameter reference is nullable (T? in NRT context).
-    /// When true, TypeScript emission appends "| undefined".
+    /// NRT nullability state for this generic parameter reference (T? in NRT context).
+    /// When Nullable, TypeScript emission appends "| undefined".
     /// </summary>
-    public bool IsNullableReference { get; init; } = false;
+    public NrtState Nullability { get; init; } = NrtState.Oblivious;
 }
 
 /// <summary>
@@ -162,10 +186,10 @@ public sealed record ArrayTypeReference : TypeReference
     public required int Rank { get; init; }
 
     /// <summary>
-    /// Whether this array reference is nullable (T[]? in NRT context).
-    /// When true, TypeScript emission appends "| undefined".
+    /// NRT nullability state for this array reference (T[]? in NRT context).
+    /// When Nullable, TypeScript emission appends "| undefined".
     /// </summary>
-    public bool IsNullableReference { get; init; } = false;
+    public NrtState Nullability { get; init; } = NrtState.Oblivious;
 }
 
 /// <summary>

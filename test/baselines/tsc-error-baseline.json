@@ -1,82 +1,29 @@
 {
-  "version": "1.4.0",
-  "description": "Expected TypeScript semantic errors from NRT covariance mismatches in BCL",
-  "generatedAt": "2025-12-19",
-  "expectedErrors": [
-    {
-      "file": "System.ComponentModel/internal/index.d.ts",
-      "code": "TS2430",
-      "type": "ArrayConverter$instance",
-      "reason": "BCL has nullable return type (GetProperties returns PropertyDescriptorCollection?) but base CollectionConverter has non-nullable"
-    },
-    {
-      "file": "System.Net/internal/index.d.ts",
-      "code": "TS2430",
-      "type": "WebHeaderCollection$instance",
-      "reason": "BCL method signature mismatch - Get overloads differ between base and derived"
-    },
-    {
-      "file": "System.Reflection.Emit/internal/index.d.ts",
-      "code": "TS2430",
-      "type": "DynamicMethod$instance",
-      "reason": "BCL has nullable return (GetParameters returns ParameterInfo[]?) but base MethodInfo has non-nullable"
-    },
-    {
-      "file": "System.Security.Cryptography/internal/index.d.ts",
-      "code": "TS2430",
-      "type": "RSAOAEPKeyExchangeFormatter$instance",
-      "reason": "BCL nullable parameter mismatch in CreateKeyExchange overloads"
-    },
-    {
-      "file": "System.Xml/internal/index.d.ts",
-      "code": "TS2430",
-      "type": "XmlCharacterData$instance",
-      "reason": "BCL has nullable CreateNavigator() return but base XmlLinkedNode has non-nullable"
-    },
-    {
-      "file": "System.Xml/internal/index.d.ts",
-      "code": "TS2430",
-      "type": "XmlDeclaration$instance",
-      "reason": "BCL has nullable CreateNavigator() return but base XmlLinkedNode has non-nullable"
-    },
-    {
-      "file": "System.Xml/internal/index.d.ts",
-      "code": "TS2430",
-      "type": "XmlDocumentType$instance",
-      "reason": "BCL has nullable CreateNavigator() return but base XmlLinkedNode has non-nullable"
-    },
-    {
-      "file": "System.Xml/internal/index.d.ts",
-      "code": "TS2430",
-      "type": "XmlElement$instance",
-      "reason": "BCL has nullable CreateNavigator() return but base XmlLinkedNode has non-nullable"
-    },
-    {
-      "file": "System.Xml/internal/index.d.ts",
-      "code": "TS2430",
-      "type": "XmlEntityReference$instance",
-      "reason": "BCL has nullable CreateNavigator() return but base XmlLinkedNode has non-nullable"
-    },
-    {
-      "file": "System.Xml/internal/index.d.ts",
-      "code": "TS2430",
-      "type": "XmlProcessingInstruction$instance",
-      "reason": "BCL has nullable CreateNavigator() return but base XmlLinkedNode has non-nullable"
-    }
-  ],
-  "totalExpected": 10,
+  "version": "1.7.0",
+  "description": "Expected TypeScript semantic errors from BCL generation - ZERO expected since v1.6.0",
+  "generatedAt": "2025-12-20",
+  "expectedErrors": [],
+  "totalExpected": 0,
   "notes": [
-    "These 10 TS2430 errors are BCL NRT annotation inconsistencies, not tsbindgen bugs.",
-    "The errors occur when derived types have MORE nullable return types than their base classes.",
-    "In C# this is valid at runtime, but TypeScript's structural typing rejects it.",
+    "As of v1.7.0, NrtContractNormalizer is compiler-grade with three key fixes:",
     "",
-    "Root cause categories:",
-    "  1. CreateNavigator() - XmlLinkedNode returns non-nullable but 6 derived classes return nullable",
-    "  2. GetProperties() - CollectionConverter non-nullable, ArrayConverter nullable",
-    "  3. GetParameters() - MethodInfo non-nullable, DynamicMethod nullable",
-    "  4. CreateKeyExchange() - Parameter nullability mismatch",
-    "  5. Get() - Overload signature differences",
+    "1. CLUSTER CONSTRUCTION: Uses Transitive Common Ancestor (TCA) algorithm.",
+    "   Types are clustered if they share ANY common ancestor, even if that ancestor",
+    "   is not in the type set. This handles cases where interface A and B both",
+    "   implement IFoo, but IFoo itself is not emitting the method.",
     "",
-    "Zero syntax errors (TS1xxx) is required - these must always be zero."
+    "2. COMPILER-GRADE IDENTITY KEYS: Method keys include:",
+    "   - ClrName, Arity (generic method arity)",
+    "   - Parameter signature with ref/out/in modifiers",
+    "   - Explicit interface implementation via SourceInterface",
+    "   Property keys include IsIndexer flag and indexer parameter signature.",
+    "",
+    "3. CONTRACT DIRECTIONALITY: Bases and interfaces define contracts.",
+    "   - If ANY base/interface is NotNull → contract is NotNull",
+    "   - If ANY base/interface is Nullable → contract is Nullable",
+    "   - If ALL bases are Oblivious and derived has Nullable → lift to Nullable",
+    "   Derived types incorrectly declaring NotNull do NOT force base to NotNull.",
+    "",
+    "Zero syntax errors (TS1xxx) is always required."
   ]
 }

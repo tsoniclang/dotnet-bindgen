@@ -68,7 +68,12 @@ public static class TypeRefPrinter
         var primitiveType = TypeNameResolver.TryMapPrimitive(named.FullName);
         if (primitiveType != null)
         {
-            // Primitives are never nullable reference types (they're value types)
+            // FIX 1: Reference type primitives (String, Object) must respect NRT
+            // Only value types can skip nullability check
+            if (named.Nullability == NrtState.Nullable && !named.IsValueType)
+            {
+                return $"{primitiveType} | undefined";
+            }
             return primitiveType;
         }
 
@@ -145,8 +150,10 @@ public static class TypeRefPrinter
             }
         }
 
-        // NRT: Append | undefined for nullable reference types
-        if (named.IsNullableReference)
+        // NRT: Append | undefined for explicitly nullable REFERENCE types only
+        // Value types use Nullable<T> (emitted separately), never "| undefined"
+        // Guard: even if a bug sets Nullability=Nullable on a value type, don't emit union
+        if (named.Nullability == NrtState.Nullable && !named.IsValueType)
         {
             return $"{result} | undefined";
         }
@@ -172,8 +179,8 @@ public static class TypeRefPrinter
         // Generic parameters use their declared name: T, U, TKey, TValue
         var result = gp.Name;
 
-        // NRT: Append | undefined for nullable generic parameter references (T?)
-        if (gp.IsNullableReference)
+        // NRT: Append | undefined for explicitly nullable generic parameter references (T?)
+        if (gp.Nullability == NrtState.Nullable)
         {
             return $"{result} | undefined";
         }
@@ -190,10 +197,11 @@ public static class TypeRefPrinter
     {
         var elementType = Print(arr.ElementType, resolver, ctx, allowedTypeParameterNames, forValuePosition);
 
-        // If element type contains ' | ', wrap in parentheses for correct operator precedence
+        // FIX 7: Model-driven parenthesis decision
+        // Check if element type will render as a union (requires parentheses for correct precedence)
         // Without this: "T | undefined[]" parses as "T | (undefined[])" - WRONG
         // With this: "(T | undefined)[]" - CORRECT
-        if (elementType.Contains(" | "))
+        if (RequiresParenthesesForArrayElement(arr.ElementType))
         {
             elementType = $"({elementType})";
         }
@@ -214,8 +222,8 @@ public static class TypeRefPrinter
                 result = $"Array<{result}>";
         }
 
-        // NRT: Append | undefined for nullable array references (T[]?)
-        if (arr.IsNullableReference)
+        // NRT: Append | undefined for explicitly nullable array references (T[]?)
+        if (arr.Nullability == NrtState.Nullable)
         {
             return $"{result} | undefined";
         }
@@ -386,5 +394,22 @@ public static class TypeRefPrinter
     {
         var typeName = Print(typeRef, resolver, ctx, allowedTypeParameterNames);
         return $"typeof {typeName}";
+    }
+
+    /// <summary>
+    /// FIX 7: Check if an array element type requires parentheses.
+    /// This is a model-driven check rather than string-based detection.
+    /// Returns true if the element type will render as a union (nullable reference type).
+    /// </summary>
+    private static bool RequiresParenthesesForArrayElement(TypeReference elementType)
+    {
+        // Check if element type has nullable NRT annotation (will render as " | undefined")
+        return elementType switch
+        {
+            NamedTypeReference named => named.Nullability == NrtState.Nullable && !named.IsValueType,
+            GenericParameterReference gp => gp.Nullability == NrtState.Nullable,
+            ArrayTypeReference arr => arr.Nullability == NrtState.Nullable,
+            _ => false
+        };
     }
 }

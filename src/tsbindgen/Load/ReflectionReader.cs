@@ -6,7 +6,6 @@ using tsbindgen.Model;
 using tsbindgen.Model.Symbols;
 using tsbindgen.Model.Symbols.MemberSymbols;
 using tsbindgen.Model.Types;
-using NrtState = tsbindgen.Load.NullabilityReader.NrtState;
 
 namespace tsbindgen.Load;
 
@@ -794,30 +793,62 @@ public sealed class ReflectionReader
     }
 
     /// <summary>
-    /// Get the default nullability from a type's NullableContextAttribute.
+    /// Get the default nullability from NullableContextAttribute.
+    /// Searches: type → enclosing types → module → assembly.
     /// </summary>
     private static NrtState GetContextDefault(Type? type)
     {
         if (type == null) return NrtState.Oblivious;
 
-        // Check this type
-        foreach (var attr in type.CustomAttributes)
-        {
-            if (attr.AttributeType.FullName == "System.Runtime.CompilerServices.NullableContextAttribute")
-            {
-                if (attr.ConstructorArguments.Count > 0 && attr.ConstructorArguments[0].Value is byte contextByte)
-                {
-                    return (NrtState)contextByte;
-                }
-            }
-        }
+        // 1. Check this type
+        var typeContext = GetNullableContextFromAttributes(type.CustomAttributes);
+        if (typeContext.HasValue) return typeContext.Value;
 
-        // Check enclosing types (for nested types)
+        // 2. Check enclosing types (for nested types)
         if (type.DeclaringType != null)
         {
-            return GetContextDefault(type.DeclaringType);
+            var declaringContext = GetContextDefault(type.DeclaringType);
+            if (declaringContext != NrtState.Oblivious) return declaringContext;
+        }
+
+        // 3. Check module-level
+        try
+        {
+            var moduleContext = GetNullableContextFromAttributes(type.Module.GetCustomAttributesData());
+            if (moduleContext.HasValue) return moduleContext.Value;
+        }
+        catch
+        {
+            // Module attributes may not be accessible in MetadataLoadContext - ignore
+        }
+
+        // 4. Check assembly-level
+        try
+        {
+            var asmContext = GetNullableContextFromAttributes(type.Assembly.GetCustomAttributesData());
+            if (asmContext.HasValue) return asmContext.Value;
+        }
+        catch
+        {
+            // Assembly attributes may not be accessible in MetadataLoadContext - ignore
         }
 
         return NrtState.Oblivious;
+    }
+
+    /// <summary>
+    /// Extract NullableContextAttribute value from a collection of custom attributes.
+    /// </summary>
+    private static NrtState? GetNullableContextFromAttributes(IEnumerable<CustomAttributeData> attrs)
+    {
+        foreach (var attr in attrs)
+        {
+            if (attr.AttributeType.FullName == "System.Runtime.CompilerServices.NullableContextAttribute")
+            {
+                if (attr.ConstructorArguments.Count > 0 && attr.ConstructorArguments[0].Value is byte b)
+                    return (NrtState)b;
+            }
+        }
+        return null;
     }
 }

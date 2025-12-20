@@ -6,6 +6,10 @@
 
 source "$(dirname "${BASH_SOURCE[0]}")/_common.sh"
 
+# Compute baseline path before changing directories
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+BASELINE_FILE="$SCRIPT_DIR/../baselines/tsc-error-baseline.json"
+
 echo "================================================"
 echo "TypeScript Error Baseline Test"
 echo "================================================"
@@ -65,7 +69,6 @@ echo ""
 
 # Verify semantic error count matches baseline
 echo "[4/4] Verifying error baseline..."
-BASELINE_FILE="$(dirname "${BASH_SOURCE[0]}")/../baselines/tsc-error-baseline.json"
 EXPECTED_ERRORS=$(python3 -c "import json; print(json.load(open('$BASELINE_FILE'))['totalExpected'])")
 
 if [ "$SEMANTIC_ERRORS" -ne "$EXPECTED_ERRORS" ]; then

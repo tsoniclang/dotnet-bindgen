@@ -132,7 +132,7 @@ public static class OverrideConflictDetector
     /// </summary>
     private static bool TypeReferencesEqual(TypeReference a, TypeReference b)
     {
-        // Compare CLR type identity, ignoring NRT IsNullableReference
+        // Compare CLR type identity, ignoring NRT Nullability
         return GetClrTypeKey(a) == GetClrTypeKey(b);
     }
 

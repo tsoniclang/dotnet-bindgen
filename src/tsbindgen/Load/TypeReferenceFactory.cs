@@ -2,7 +2,6 @@ using System.Collections.Immutable;
 using System.Reflection;
 using tsbindgen.Model.Types;
 using tsbindgen.Model.Symbols;
-using NrtState = tsbindgen.Load.NullabilityReader.NrtState;
 
 namespace tsbindgen.Load;
 
@@ -267,11 +266,67 @@ public sealed class TypeReferenceFactory
     /// <param name="type">The CLR type.</param>
     /// <param name="nullabilityFlags">Nullable attribute byte array (or null if using single-byte or context default).</param>
     /// <param name="singleNullability">Single nullability value when not using byte array.</param>
-    /// <returns>TypeReference with IsNullableReference set appropriately.</returns>
+    /// <returns>TypeReference with Nullability set appropriately.</returns>
     public TypeReference CreateWithNullability(Type type, byte[]? nullabilityFlags, NrtState singleNullability)
     {
+        // FIX 2: Validate byte[] length against expected position count
+        // If misaligned, fall back to single value to prevent wrong nullability
+        if (nullabilityFlags != null && nullabilityFlags.Length > 1)
+        {
+            var expectedCount = CountTypePositions(type);
+            if (nullabilityFlags.Length != expectedCount)
+            {
+                // Misalignment detected - Roslyn's encoding doesn't match our traversal
+                // Fall back to single value (first byte or context default)
+                _ctx.Log("NRT", $"Position mismatch for {type.FullName}: " +
+                    $"expected {expectedCount}, got {nullabilityFlags.Length}. Using first byte.");
+                singleNullability = (NrtState)nullabilityFlags[0];
+                nullabilityFlags = null;
+            }
+        }
+
         var position = 0;
         return CreateWithNullabilityInternal(type, nullabilityFlags, singleNullability, ref position);
+    }
+
+    /// <summary>
+    /// Count the number of positions in NRT metadata for a type tree.
+    /// Must use same traversal logic as CreateWithNullabilityInternal.
+    /// </summary>
+    private static int CountTypePositions(Type type)
+    {
+        // ByRef and Pointer don't consume positions
+        if (type.IsByRef || type.IsPointer)
+        {
+            return CountTypePositions(type.GetElementType()!);
+        }
+
+        // Value types don't consume positions
+        if (type.IsValueType)
+        {
+            return 0;
+        }
+
+        // This type consumes 1 position
+        var count = 1;
+
+        // Arrays: also count element type
+        if (type.IsArray)
+        {
+            count += CountTypePositions(type.GetElementType()!);
+            return count;
+        }
+
+        // Generic types: count each type argument
+        if (type.IsGenericType && type.IsConstructedGenericType)
+        {
+            foreach (var arg in type.GetGenericArguments())
+            {
+                count += CountTypePositions(arg);
+            }
+        }
+
+        return count;
     }
 
     /// <summary>
@@ -327,8 +382,6 @@ public sealed class TypeReferenceFactory
         // Consume position for this type
         position++;
 
-        var isNullable = nullability == NrtState.Nullable;
-
         // Handle arrays specially
         if (type.IsArray)
         {
@@ -337,7 +390,7 @@ public sealed class TypeReferenceFactory
             {
                 ElementType = elementType,
                 Rank = type.GetArrayRank(),
-                IsNullableReference = isNullable
+                Nullability = nullability
             };
         }
 
@@ -347,20 +400,20 @@ public sealed class TypeReferenceFactory
             var baseRef = CreateGenericParameter(type);
             if (baseRef is GenericParameterReference gpRef)
             {
-                return gpRef with { IsNullableReference = isNullable };
+                return gpRef with { Nullability = nullability };
             }
             return baseRef;
         }
 
         // Handle named types (potentially with generic arguments)
-        var namedRef = CreateNamedWithNullability(type, nullabilityFlags, singleNullability, ref position, isNullable);
+        var namedRef = CreateNamedWithNullability(type, nullabilityFlags, singleNullability, ref position, nullability);
         return namedRef;
     }
 
     /// <summary>
     /// Create a NamedTypeReference with nullability, handling generic type arguments.
     /// </summary>
-    private NamedTypeReference CreateNamedWithNullability(Type type, byte[]? nullabilityFlags, NrtState singleNullability, ref int position, bool isNullable)
+    private NamedTypeReference CreateNamedWithNullability(Type type, byte[]? nullabilityFlags, NrtState singleNullability, ref int position, NrtState nullability)
     {
         // INVARIANT: This method should only be called for named types (class, struct, interface, enum, delegate)
         // ByRef, Pointer, Array, and GenericParameter types should be handled before reaching here
@@ -427,7 +480,7 @@ public sealed class TypeReferenceFactory
             TypeArguments = typeArgs,
             IsValueType = type.IsValueType,
             InterfaceStableId = interfaceStableId,
-            IsNullableReference = isNullable
+            Nullability = nullability
         };
     }
 }

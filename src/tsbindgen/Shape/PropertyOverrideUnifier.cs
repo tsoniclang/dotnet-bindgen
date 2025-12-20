@@ -5,6 +5,7 @@ using tsbindgen.Emit.Printers;
 using tsbindgen.Model;
 using tsbindgen.Model.Symbols;
 using tsbindgen.Model.Types;
+using tsbindgen.Model.Symbols.MemberSymbols;
 using tsbindgen.Plan;
 
 namespace tsbindgen.Shape;
@@ -60,9 +61,12 @@ public static class PropertyOverrideUnifier
         if (hierarchy.Count <= 1)
             return; // No base classes, nothing to unify
 
-        // Collect all properties from the entire hierarchy
+        // Collect all ClassSurface properties from the entire hierarchy
+        // ViewOnly properties have different nullability contracts and are handled separately
         var allPropertiesInHierarchy = hierarchy
-            .SelectMany(t => t.Members.Properties.Select(p => (Type: t, Property: p)))
+            .SelectMany(t => t.Members.Properties
+                .Where(p => p.EmitScope == EmitScope.ClassSurface)
+                .Select(p => (Type: t, Property: p)))
             .ToList();
 
         // Group by CLR property name (properties with same name across hierarchy)

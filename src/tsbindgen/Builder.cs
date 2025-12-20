@@ -291,11 +291,12 @@ public static class Builder
         // 14. Final member deduplication - removes any duplicates introduced by Shape passes
         graph = Shape.MemberDeduplicator.Deduplicate(ctx, graph);
 
-        // 15. NRT Covariance Fix: Strip nullable from derived method returns when base is non-nullable
+        // 15. NRT Contract Normalization: Ensure TypeScript-compatible NRT contracts across inheritance
+        //     - If base is NotNull: strip Nullable from derived
+        //     - If base is Oblivious and derived is Nullable: lift base to Nullable
         //     Must run AFTER all Shape passes that might add methods, but BEFORE emission planning
-        //     so that EmitOrderPlanner captures the fixed graph
-        ctx.Log("Build", "\n--- Phase 3.15: NRT Covariance Fix ---");
-        graph = Shape.NrtCovarianceFixer.Fix(ctx, graph);
+        ctx.Log("Build", "\n--- Phase 3.15: NRT Contract Normalization ---");
+        graph = Shape.NrtContractNormalizer.Normalize(ctx, graph);
 
         return graph;
     }
