@@ -317,7 +317,7 @@ public sealed class ReflectionReader
             MetadataToken = method.MetadataToken
         };
 
-        var parameters = method.GetParameters().Select(p => ReadParameter(p, declaringType)).ToImmutableArray();
+        var parameters = method.GetParameters().Select(ReadParameter).ToImmutableArray();
         var genericParams = method.IsGenericMethod
             ? method.GetGenericArguments().Select(_typeFactory.CreateGenericParameterSymbol).ToImmutableArray()
             : ImmutableArray<GenericParameterSymbol>.Empty;
@@ -339,7 +339,8 @@ public sealed class ReflectionReader
         }
 
         // Read return type with NRT nullability
-        var returnType = CreateTypeWithNullability(method.ReturnType, method.ReturnParameter, declaringType);
+        // Use the return-specific method which includes method-level NullableAttribute fallback
+        var returnType = CreateTypeWithNullabilityForReturnType(method.ReturnType, method.ReturnParameter, method, declaringType);
 
         return new MethodSymbol
         {
@@ -386,9 +387,11 @@ public sealed class ReflectionReader
             MetadataToken = property.MetadataToken
         };
 
-        var indexParams = property.GetIndexParameters().Select(p => ReadParameter(p, declaringType)).ToImmutableArray();
         var getter = property.GetGetMethod();
         var setter = property.GetSetMethod();
+        // For indexer parameters, get the accessor to check if property is static
+        var accessor = getter ?? setter;
+        var indexParams = property.GetIndexParameters().Select(ReadParameter).ToImmutableArray();
 
         // Read property type with NRT nullability
         var propertyType = CreateTypeWithNullabilityFromProperty(property, declaringType);
@@ -495,13 +498,13 @@ public sealed class ReflectionReader
         return new ConstructorSymbol
         {
             StableId = stableId,
-            Parameters = ctor.GetParameters().Select(p => ReadParameter(p, declaringType)).ToImmutableArray(),
+            Parameters = ctor.GetParameters().Select(ReadParameter).ToImmutableArray(),
             IsStatic = ctor.IsStatic,
             Visibility = GetConstructorVisibility(ctor)
         };
     }
 
-    private ParameterSymbol ReadParameter(ParameterInfo param, Type declaringType)
+    private ParameterSymbol ReadParameter(ParameterInfo param)
     {
         // Sanitize parameter name for TypeScript reserved words
         var paramName = param.Name ?? $"arg{param.Position}";
@@ -558,13 +561,11 @@ public sealed class ReflectionReader
         var isParams = param.GetCustomAttributesData()
             .Any(attr => attr.AttributeType.Name == "ParamArrayAttribute");
 
-        // Read parameter type with NRT nullability
-        // For params arrays, use the original Create (no nullability) because:
-        // 1. TypeScript rest parameters (...args) can't be undefined
-        // 2. The array is constructed by the caller, not passed as null
-        var paramType = isParams
-            ? _typeFactory.Create(param.ParameterType)
-            : CreateTypeWithNullability(param.ParameterType, param, declaringType);
+        // NRT SIMPLIFICATION: Parameters are always non-nullable in TypeScript
+        // Per Alice's analysis: dropping `| undefined` from parameters is sound
+        // (TS rejects more calls than CLR would accept - stricter is safe)
+        // Only OUTPUTS (returns, properties, fields) respect NRT metadata
+        var paramType = _typeFactory.Create(param.ParameterType);
 
         return new ParameterSymbol
         {
@@ -723,53 +724,131 @@ public sealed class ReflectionReader
     }
 
     /// <summary>
-    /// Create a TypeReference with NRT nullability information from a parameter or return value.
+    /// Create a TypeReference with NRT nullability information from a return type.
+    /// Return types get the method's NullableAttribute as fallback because Roslyn can encode
+    /// return nullability on the method metadata itself, not just ReturnParameter.
     /// </summary>
-    private TypeReference CreateTypeWithNullability(Type type, ParameterInfo paramOrReturn, Type declaringType)
+    private TypeReference CreateTypeWithNullabilityForReturnType(Type type, ParameterInfo returnParam, MethodBase declaringMethod, Type declaringType)
     {
-        // Get nullability metadata from the parameter
-        var (nullabilityFlags, singleNullability) = GetNullabilityMetadata(paramOrReturn.CustomAttributes, declaringType);
+        // For return types, pass the method's attributes as fallback for NullableAttribute
+        // This is critical for methods like MalformedLineException.ToString() where the return
+        // nullability is encoded on the method, not the return parameter.
+        var (nullabilityFlags, singleNullability) = GetNullabilityMetadata(
+            returnParam.CustomAttributes,
+            declaringMethod.CustomAttributes,
+            nullableAttributeFallbackAttributes: declaringMethod.CustomAttributes,  // Return types CAN look at method-level NullableAttribute
+            declaringType);
         return _typeFactory.CreateWithNullability(type, nullabilityFlags, singleNullability);
     }
 
     /// <summary>
     /// Create a TypeReference with NRT nullability information from a property.
+    /// For properties, the property's CustomAttributes contain both the NullableAttribute (target)
+    /// and potentially a NullableContextAttribute (member context).
     /// </summary>
     private TypeReference CreateTypeWithNullabilityFromProperty(PropertyInfo property, Type declaringType)
     {
-        var (nullabilityFlags, singleNullability) = GetNullabilityMetadata(property.CustomAttributes, declaringType);
+        // Property's CustomAttributes serve as both target and member context
+        // No fallback needed for properties - NullableAttribute is directly on the property
+        var (nullabilityFlags, singleNullability) = GetNullabilityMetadata(
+            property.CustomAttributes,
+            property.CustomAttributes,  // Property itself provides the context
+            nullableAttributeFallbackAttributes: null,
+            declaringType);
         return _typeFactory.CreateWithNullability(property.PropertyType, nullabilityFlags, singleNullability);
     }
 
     /// <summary>
     /// Create a TypeReference with NRT nullability information from a field.
+    /// For fields, the field's CustomAttributes contain both the NullableAttribute (target)
+    /// and potentially a NullableContextAttribute (member context).
     /// </summary>
     private TypeReference CreateTypeWithNullabilityFromField(FieldInfo field, Type declaringType)
     {
-        var (nullabilityFlags, singleNullability) = GetNullabilityMetadata(field.CustomAttributes, declaringType);
+        // Field's CustomAttributes serve as both target and member context
+        // No fallback needed for fields - NullableAttribute is directly on the field
+        var (nullabilityFlags, singleNullability) = GetNullabilityMetadata(
+            field.CustomAttributes,
+            field.CustomAttributes,  // Field itself provides the context
+            nullableAttributeFallbackAttributes: null,
+            declaringType);
         return _typeFactory.CreateWithNullability(field.FieldType, nullabilityFlags, singleNullability);
     }
 
     /// <summary>
     /// Extract nullability metadata from custom attributes.
     /// Returns a byte array if NullableAttribute contains an array, otherwise returns single nullability state.
+    ///
+    /// The NRT context fallback chain is (per Roslyn spec):
+    /// 1. NullableAttribute on the target (parameter/return/field/property)
+    /// 1b. NullableAttribute on the declaring member (method) - ONLY for return types
+    /// 2. NullableContextAttribute on the declaring member (method/ctor) - for parameters
+    /// 3. NullableContextAttribute on the member (property/field) - for property/field types
+    /// 4. NullableContextAttribute on the type/enclosing types/module/assembly
     /// </summary>
     private static (byte[]? flags, NrtState singleValue) GetNullabilityMetadata(
-        IEnumerable<CustomAttributeData> attributes,
+        IEnumerable<CustomAttributeData> targetAttributes,
+        IEnumerable<CustomAttributeData>? memberContextAttributes,
+        IEnumerable<CustomAttributeData>? nullableAttributeFallbackAttributes,
         Type declaringType)
     {
-        // Look for NullableAttribute on the member itself
-        CustomAttributeData? nullableAttr = null;
+        // 1. Look for NullableAttribute on the target itself (parameter/return/property/field)
+        var nullableAttr = FindNullableAttribute(targetAttributes);
+        if (nullableAttr != null)
+        {
+            return ParseNullableAttribute(nullableAttr);
+        }
+
+        // 1b. NullableAttribute fallback (ONLY for return types)
+        // Roslyn can encode return nullability on the method metadata itself, not just ReturnParameter.
+        // This is critical for methods like MalformedLineException.ToString() where the return
+        // nullability is encoded on the method, not the return parameter.
+        if (nullableAttributeFallbackAttributes != null)
+        {
+            var fallbackNullableAttr = FindNullableAttribute(nullableAttributeFallbackAttributes);
+            if (fallbackNullableAttr != null)
+            {
+                return ParseNullableAttribute(fallbackNullableAttr);
+            }
+        }
+
+        // 2. Check NullableContextAttribute on the declaring member (method/ctor/property/field)
+        // This is the key fix: parameters inherit from METHOD context, not TYPE context
+        if (memberContextAttributes != null)
+        {
+            var memberContext = GetNullableContextFromAttributes(memberContextAttributes);
+            if (memberContext.HasValue)
+            {
+                return (null, memberContext.Value);
+            }
+        }
+
+        // 3. Fall back to NullableContextAttribute from declaring type/module/assembly
+        var contextDefault = GetContextDefault(declaringType);
+        return (null, contextDefault);
+    }
+
+    /// <summary>
+    /// Find NullableAttribute in a collection of custom attributes.
+    /// </summary>
+    private static CustomAttributeData? FindNullableAttribute(IEnumerable<CustomAttributeData> attributes)
+    {
         foreach (var attr in attributes)
         {
             if (attr.AttributeType.FullName == "System.Runtime.CompilerServices.NullableAttribute")
             {
-                nullableAttr = attr;
-                break;
+                return attr;
             }
         }
+        return null;
+    }
 
-        if (nullableAttr != null && nullableAttr.ConstructorArguments.Count > 0)
+    /// <summary>
+    /// Parse a NullableAttribute into flags or single value.
+    /// </summary>
+    private static (byte[]? flags, NrtState singleValue) ParseNullableAttribute(CustomAttributeData nullableAttr)
+    {
+        if (nullableAttr.ConstructorArguments.Count > 0)
         {
             var arg = nullableAttr.ConstructorArguments[0];
 
@@ -786,10 +865,7 @@ public sealed class ReflectionReader
                 return (bytes, NrtState.Oblivious);
             }
         }
-
-        // Fall back to NullableContextAttribute from declaring type
-        var contextDefault = GetContextDefault(declaringType);
-        return (null, contextDefault);
+        return (null, NrtState.Oblivious);
     }
 
     /// <summary>
