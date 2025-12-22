@@ -207,15 +207,10 @@ public static class ClassPrinter
                 continue;
 
             var emitName = ctx.Renamer.GetFinalMemberName(prop.StableId, staticTypeScope);
-            sb.Append("    ");
-            if (!prop.HasSetter)
-                sb.Append("readonly ");
-            sb.Append(emitName);
-            sb.Append(": ");
-
             var propType = SubstituteClassGenericsInTypeRef(prop.PropertyType, type.GenericParameters);
-            sb.Append(TypeRefPrinter.Print(propType, resolver, ctx));
-            sb.AppendLine(";");
+
+            // NRT: Use EmitProperty helper to handle split get/set accessors for nullable properties
+            EmitProperty(sb, prop, emitName, propType, resolver, ctx);
         }
 
         // Static methods
@@ -617,24 +612,13 @@ public static class ClassPrinter
                 // FIX D EXTENSION: Substitute generic parameters for properties from interfaces
                 var propToEmit = SubstituteMemberIfNeeded(type, ownProperty.Property, ctx, graph);
 
-                sb.Append("    ");
-                if (!propToEmit.HasSetter)
-                    sb.Append("readonly ");
-                sb.Append(tsName);  // V2: Use TsName from BindingsProvider
-                sb.Append(": ");
-
                 // E: Check for property override unification
                 var key = (type.StableId.ToString(), ownProperty.Property.StableId.ToString());
-                if (propertyOverrides?.PropertyTypeOverrides.TryGetValue(key, out var overrideType) == true)
-                {
-                    sb.Append(overrideType);  // Use unified union type
-                }
-                else
-                {
-                    sb.Append(TypeRefPrinter.Print(propToEmit.PropertyType, resolver, ctx));
-                }
+                string? overrideType = null;
+                propertyOverrides?.PropertyTypeOverrides.TryGetValue(key, out overrideType);
 
-                sb.AppendLine(";");
+                // NRT: Use EmitProperty helper to handle split get/set accessors for nullable properties
+                EmitProperty(sb, propToEmit, tsName, propToEmit.PropertyType, resolver, ctx, overrideType);
             }
         }
         else
@@ -652,24 +636,13 @@ public static class ClassPrinter
                 // FIX D EXTENSION: Substitute generic parameters for properties from interfaces
                 var propToEmit = SubstituteMemberIfNeeded(type, prop, ctx, graph);
 
-                sb.Append("    ");
-                if (!propToEmit.HasSetter)
-                    sb.Append("readonly ");
-                sb.Append(emitName);
-                sb.Append(": ");
-
                 // E: Check for property override unification
                 var key = (type.StableId.ToString(), prop.StableId.ToString());
-                if (propertyOverrides?.PropertyTypeOverrides.TryGetValue(key, out var overrideType) == true)
-                {
-                    sb.Append(overrideType);  // Use unified union type
-                }
-                else
-                {
-                    sb.Append(TypeRefPrinter.Print(propToEmit.PropertyType, resolver, ctx));
-                }
+                string? overrideType = null;
+                propertyOverrides?.PropertyTypeOverrides.TryGetValue(key, out overrideType);
 
-                sb.AppendLine(";");
+                // NRT: Use EmitProperty helper to handle split get/set accessors for nullable properties
+                EmitProperty(sb, propToEmit, emitName, propToEmit.PropertyType, resolver, ctx, overrideType);
             }
         }
 
@@ -865,24 +838,13 @@ public static class ClassPrinter
                 // FIX D EXTENSION: Substitute generic parameters for properties from interfaces
                 var propToEmit = SubstituteMemberIfNeeded(type, ownProperty.Property, ctx, graph);
 
-                sb.Append("    ");
-                if (!propToEmit.HasSetter)
-                    sb.Append("readonly ");
-                sb.Append(tsName);
-                sb.Append(": ");
-
                 // E: Check for property override unification
                 var key = (type.StableId.ToString(), ownProperty.Property.StableId.ToString());
-                if (propertyOverrides?.PropertyTypeOverrides.TryGetValue(key, out var overrideType) == true)
-                {
-                    sb.Append(overrideType);
-                }
-                else
-                {
-                    sb.Append(TypeRefPrinter.Print(propToEmit.PropertyType, resolver, ctx));
-                }
+                string? overrideType = null;
+                propertyOverrides?.PropertyTypeOverrides.TryGetValue(key, out overrideType);
 
-                sb.AppendLine(";");
+                // NRT: Use EmitProperty helper to handle split get/set accessors for nullable properties
+                EmitProperty(sb, propToEmit, tsName, propToEmit.PropertyType, resolver, ctx, overrideType);
             }
         }
         else
@@ -897,24 +859,13 @@ public static class ClassPrinter
                 var emitName = ctx.Renamer.GetFinalMemberName(prop.StableId, typeScope);
                 var propToEmit = SubstituteMemberIfNeeded(type, prop, ctx, graph);
 
-                sb.Append("    ");
-                if (!propToEmit.HasSetter)
-                    sb.Append("readonly ");
-                sb.Append(emitName);
-                sb.Append(": ");
-
                 // E: Check for property override unification
                 var key = (type.StableId.ToString(), prop.StableId.ToString());
-                if (propertyOverrides?.PropertyTypeOverrides.TryGetValue(key, out var overrideType) == true)
-                {
-                    sb.Append(overrideType);
-                }
-                else
-                {
-                    sb.Append(TypeRefPrinter.Print(propToEmit.PropertyType, resolver, ctx));
-                }
+                string? overrideType = null;
+                propertyOverrides?.PropertyTypeOverrides.TryGetValue(key, out overrideType);
 
-                sb.AppendLine(";");
+                // NRT: Use EmitProperty helper to handle split get/set accessors for nullable properties
+                EmitProperty(sb, propToEmit, emitName, propToEmit.PropertyType, resolver, ctx, overrideType);
             }
         }
 
@@ -1082,16 +1033,10 @@ public static class ClassPrinter
 
             // Get final name from Renamer (applies camelCase transform if configured)
             var emitName = ctx.Renamer.GetFinalMemberName(prop.StableId, staticTypeScope);
-
-            sb.Append("    static ");
-            if (!prop.HasSetter)
-                sb.Append("readonly ");
-            sb.Append(emitName);
-            sb.Append(": ");
-
             var propType = SubstituteClassGenericsInTypeRef(prop.PropertyType, type.GenericParameters);
-            sb.Append(TypeRefPrinter.Print(propType, resolver, ctx));
-            sb.AppendLine(";");
+
+            // NRT: Use EmitProperty helper to handle split get/set accessors for nullable properties
+            EmitProperty(sb, prop, emitName, propType, resolver, ctx, overrideType: null, isStatic: true);
         }
 
         // Static methods - only emit ClassSurface or StaticSurface members
@@ -1146,13 +1091,8 @@ public static class ClassPrinter
             // Get final name from Renamer (applies camelCase transform if configured)
             var emitName = ctx.Renamer.GetFinalMemberName(prop.StableId, instanceScope);
 
-            sb.Append("    ");
-            if (!prop.HasSetter)
-                sb.Append("readonly ");
-            sb.Append(emitName);
-            sb.Append(": ");
-            sb.Append(TypeRefPrinter.Print(prop.PropertyType, resolver, ctx));
-            sb.AppendLine(";");
+            // NRT: Use EmitProperty helper to handle split get/set accessors for nullable properties
+            EmitProperty(sb, prop, emitName, prop.PropertyType, resolver, ctx);
         }
 
         // TS2430 FIX: Collect inherited method signatures that need to be emitted as overloads
@@ -2263,13 +2203,8 @@ public static class ClassPrinter
         };
         var propEmitName = ctx.Renamer.GetFinalMemberName(property.StableId, scope);
 
-        sb.Append("    static ");
-        if (!property.HasSetter)
-            sb.Append("readonly ");
-        sb.Append(propEmitName);
-        sb.Append(": ");
-        sb.Append(TypeRefPrinter.Print(property.PropertyType, resolver, ctx));
-        sb.AppendLine(";");
+        // NRT: Use EmitProperty helper to handle split get/set accessors for nullable properties
+        EmitProperty(sb, property, propEmitName, property.PropertyType, resolver, ctx, overrideType: null, isStatic: true);
     }
 
     /// <summary>
@@ -2318,5 +2253,110 @@ public static class ClassPrinter
             return false;
 
         return unsatisfiableList.Any(u => u.InterfaceClrName == interfaceClrName);
+    }
+
+    /// <summary>
+    /// Emit a property, using split get/set accessors when needed for NRT nullability.
+    /// Per NRT simplification: getter outputs respect NRT (may return nullable),
+    /// but setter inputs are always strict (non-nullable).
+    /// </summary>
+    private static void EmitProperty(
+        StringBuilder sb,
+        PropertySymbol property,
+        string emitName,
+        TypeReference propertyType,
+        TypeNameResolver resolver,
+        BuildContext ctx,
+        string? overrideType = null,
+        bool isStatic = false)
+    {
+        var staticPrefix = isStatic ? "static " : "";
+
+        // Check if we need split accessors due to NRT nullability asymmetry
+        if (NeedsSplitAccessors(property))
+        {
+            // Emit split get/set accessors
+            // Getter: returns nullable type (as declared)
+            sb.Append("    ");
+            sb.Append(staticPrefix);
+            sb.Append("get ");
+            sb.Append(emitName);
+            sb.Append("(): ");
+            if (overrideType != null)
+                sb.Append(overrideType);
+            else
+                sb.Append(TypeRefPrinter.Print(propertyType, resolver, ctx));
+            sb.AppendLine(";");
+
+            // Setter: takes non-nullable type (inputs are strict)
+            var nonNullableType = GetNonNullableType(propertyType);
+            sb.Append("    ");
+            sb.Append(staticPrefix);
+            sb.Append("set ");
+            sb.Append(emitName);
+            sb.Append("(value: ");
+            sb.Append(TypeRefPrinter.Print(nonNullableType, resolver, ctx));
+            sb.AppendLine(");");
+        }
+        else
+        {
+            // Standard property shorthand
+            sb.Append("    ");
+            sb.Append(staticPrefix);
+            if (!property.HasSetter)
+                sb.Append("readonly ");
+            sb.Append(emitName);
+            sb.Append(": ");
+            if (overrideType != null)
+                sb.Append(overrideType);
+            else
+                sb.Append(TypeRefPrinter.Print(propertyType, resolver, ctx));
+            sb.AppendLine(";");
+        }
+    }
+
+    /// <summary>
+    /// Check if a property needs split get/set accessors due to NRT nullability.
+    /// Per NRT simplification: getter outputs respect NRT (may return nullable),
+    /// but setter inputs are always strict (non-nullable).
+    ///
+    /// Returns true when:
+    /// 1. Property has both getter AND setter
+    /// 2. Property type is nullable (NrtState.Nullable) and NOT a value type
+    ///
+    /// This allows us to emit:
+    ///   get propertyName(): Type | undefined;
+    ///   set propertyName(value: Type);
+    /// </summary>
+    private static bool NeedsSplitAccessors(PropertySymbol property)
+    {
+        // Only need split accessors if property has both getter and setter
+        if (!property.HasGetter || !property.HasSetter)
+            return false;
+
+        // Check if property type is nullable (would render as Type | undefined)
+        return property.PropertyType switch
+        {
+            NamedTypeReference named => named.Nullability == NrtState.Nullable && !named.IsValueType,
+            ArrayTypeReference arr => arr.Nullability == NrtState.Nullable,
+            // GenericParameterReference: never nullable per NRT simplification
+            _ => false
+        };
+    }
+
+    /// <summary>
+    /// Get the non-nullable version of a type for setter input.
+    /// Per NRT simplification: inputs are always strict (non-nullable).
+    /// </summary>
+    private static TypeReference GetNonNullableType(TypeReference typeRef)
+    {
+        return typeRef switch
+        {
+            NamedTypeReference named when named.Nullability == NrtState.Nullable =>
+                named with { Nullability = NrtState.NotNull },
+            ArrayTypeReference arr when arr.Nullability == NrtState.Nullable =>
+                arr with { Nullability = NrtState.NotNull },
+            _ => typeRef
+        };
     }
 }

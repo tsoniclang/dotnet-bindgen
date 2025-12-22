@@ -179,7 +179,12 @@ public static class TypeRefPrinter
         // Generic parameters use their declared name: T, U, TKey, TValue
         var result = gp.Name;
 
-        // NRT: Append | undefined for explicitly nullable generic parameter references (T?)
+        // NRT: Emit T | undefined for nullable generic parameters in OUTPUT positions
+        // Since parameters no longer read NRT (always Oblivious), this only triggers for:
+        // - Return types
+        // - Property types (getters)
+        // - Field types
+        // This is correct per Alice's analysis: outputs respect NRT, inputs are strict
         if (gp.Nullability == NrtState.Nullable)
         {
             return $"{result} | undefined";

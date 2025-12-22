@@ -317,7 +317,7 @@ public sealed class ReflectionReader
             MetadataToken = method.MetadataToken
         };
 
-        var parameters = method.GetParameters().Select(p => ReadParameter(p, method, declaringType)).ToImmutableArray();
+        var parameters = method.GetParameters().Select(ReadParameter).ToImmutableArray();
         var genericParams = method.IsGenericMethod
             ? method.GetGenericArguments().Select(_typeFactory.CreateGenericParameterSymbol).ToImmutableArray()
             : ImmutableArray<GenericParameterSymbol>.Empty;
@@ -389,11 +389,9 @@ public sealed class ReflectionReader
 
         var getter = property.GetGetMethod();
         var setter = property.GetSetMethod();
-        // For indexer parameters, use the accessor method as the declaring member for NRT context
+        // For indexer parameters, get the accessor to check if property is static
         var accessor = getter ?? setter;
-        var indexParams = accessor != null
-            ? property.GetIndexParameters().Select(p => ReadParameter(p, accessor, declaringType)).ToImmutableArray()
-            : ImmutableArray<ParameterSymbol>.Empty;
+        var indexParams = property.GetIndexParameters().Select(ReadParameter).ToImmutableArray();
 
         // Read property type with NRT nullability
         var propertyType = CreateTypeWithNullabilityFromProperty(property, declaringType);
@@ -500,13 +498,13 @@ public sealed class ReflectionReader
         return new ConstructorSymbol
         {
             StableId = stableId,
-            Parameters = ctor.GetParameters().Select(p => ReadParameter(p, ctor, declaringType)).ToImmutableArray(),
+            Parameters = ctor.GetParameters().Select(ReadParameter).ToImmutableArray(),
             IsStatic = ctor.IsStatic,
             Visibility = GetConstructorVisibility(ctor)
         };
     }
 
-    private ParameterSymbol ReadParameter(ParameterInfo param, MethodBase declaringMethod, Type declaringType)
+    private ParameterSymbol ReadParameter(ParameterInfo param)
     {
         // Sanitize parameter name for TypeScript reserved words
         var paramName = param.Name ?? $"arg{param.Position}";
@@ -563,13 +561,11 @@ public sealed class ReflectionReader
         var isParams = param.GetCustomAttributesData()
             .Any(attr => attr.AttributeType.Name == "ParamArrayAttribute");
 
-        // Read parameter type with NRT nullability
-        // For params arrays, use the original Create (no nullability) because:
-        // 1. TypeScript rest parameters (...args) can't be undefined
-        // 2. The array is constructed by the caller, not passed as null
-        var paramType = isParams
-            ? _typeFactory.Create(param.ParameterType)
-            : CreateTypeWithNullabilityForParameter(param.ParameterType, param, declaringMethod, declaringType);
+        // NRT SIMPLIFICATION: Parameters are always non-nullable in TypeScript
+        // Per Alice's analysis: dropping `| undefined` from parameters is sound
+        // (TS rejects more calls than CLR would accept - stricter is safe)
+        // Only OUTPUTS (returns, properties, fields) respect NRT metadata
+        var paramType = _typeFactory.Create(param.ParameterType);
 
         return new ParameterSymbol
         {
@@ -725,24 +721,6 @@ public sealed class ReflectionReader
     private static bool IsCompilerGenerated(string typeName)
     {
         return typeName.Contains('<') || typeName.Contains('>');
-    }
-
-    /// <summary>
-    /// Create a TypeReference with NRT nullability information from a parameter.
-    /// Parameters do NOT get the NullableAttribute fallback - only return types do.
-    /// </summary>
-    private TypeReference CreateTypeWithNullabilityForParameter(Type type, ParameterInfo param, MethodBase declaringMethod, Type declaringType)
-    {
-        // Get nullability metadata from the parameter, using method-level context for fallback
-        // This ensures parameters without explicit NullableAttribute inherit from the method's
-        // NullableContextAttribute, not the type's (which was the bug)
-        // Note: nullableAttributeFallbackAttributes is null for parameters
-        var (nullabilityFlags, singleNullability) = GetNullabilityMetadata(
-            param.CustomAttributes,
-            declaringMethod.CustomAttributes,
-            nullableAttributeFallbackAttributes: null,  // Parameters must NOT look at method-level NullableAttribute
-            declaringType);
-        return _typeFactory.CreateWithNullability(type, nullabilityFlags, singleNullability);
     }
 
     /// <summary>
