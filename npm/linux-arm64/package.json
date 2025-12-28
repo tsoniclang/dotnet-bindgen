@@ -1,6 +1,6 @@
 {
   "name": "@tsonic/tsbindgen-linux-arm64",
-  "version": "0.7.4",
+  "version": "0.7.15",
   "description": "tsbindgen native binary for Linux ARM64",
   "os": ["linux"],
   "cpu": ["arm64"],
