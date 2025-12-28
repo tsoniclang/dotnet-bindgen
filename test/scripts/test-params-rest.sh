@@ -19,7 +19,8 @@ fi
 
 echo "[1/3] Checking for rest parameter syntax in console methods..."
 
-INTERNAL_FILE="$NODEJS_DIR/nodejs/internal/index.d.ts"
+# Note: nodejs uses --namespace-map "nodejs=index" so path is index/internal/index.d.ts
+INTERNAL_FILE="$NODEJS_DIR/index/internal/index.d.ts"
 
 # Check console.assert has rest params
 if ! grep -q "static assert.*\\.\\.\\.optionalParams:" "$INTERNAL_FILE"; then

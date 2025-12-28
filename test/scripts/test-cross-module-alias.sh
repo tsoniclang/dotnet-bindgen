@@ -20,7 +20,8 @@ fi
 echo "[1/3] Checking for cross-module aliasing in imports..."
 
 # Check that the internal file has the aliased import
-INTERNAL_FILE="$NODEJS_DIR/nodejs/internal/index.d.ts"
+# Note: nodejs uses --namespace-map "nodejs=index" so path is index/internal/index.d.ts
+INTERNAL_FILE="$NODEJS_DIR/index/internal/index.d.ts"
 if ! grep -q "IEnumerable as IEnumerable__System_Collections" "$INTERNAL_FILE"; then
     echo -e "${RED}❌ FAILED: Missing cross-module alias in $INTERNAL_FILE${NC}"
     echo "Expected: import type { ..., IEnumerable as IEnumerable__System_Collections_Generic, ... }"
@@ -30,7 +31,8 @@ fi
 echo -e "${GREEN}✓ Found cross-module alias: IEnumerable__System_Collections_Generic${NC}"
 
 # Check facade file too
-FACADE_FILE="$NODEJS_DIR/nodejs.d.ts"
+# Note: nodejs uses --namespace-map "nodejs=index" so facade is index.d.ts
+FACADE_FILE="$NODEJS_DIR/index.d.ts"
 if ! grep -q "IEnumerable as IEnumerable__System_Collections" "$FACADE_FILE"; then
     echo -e "${RED}❌ FAILED: Missing cross-module alias in facade${NC}"
     exit 1
