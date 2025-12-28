@@ -85,7 +85,9 @@ public static class ImportPlanner
                     // All types are from library - use package specifier facade
                     // e.g., "@tsonic/dotnet/System.Collections.Generic.js"
                     // NOTE: Library facade paths use CLR namespace name, not mapped output name
-                    importPath = $"{ctx.LibraryContract.PackageName}/{targetNamespace}.js";
+                    // Use GetPackageForNamespace to handle merged libraries correctly
+                    var targetPackage = ctx.LibraryContract.GetPackageForNamespace(targetNamespace);
+                    importPath = $"{targetPackage}/{targetNamespace}.js";
                 }
                 else
                 {
@@ -104,8 +106,11 @@ public static class ImportPlanner
 
             // Check if this is a library import (facade names, not internal names)
             // Defined outside the loop so it's visible to alias resolution loops below
+            // Check if import path starts with any known library package name
             var isLibraryImport = ctx.LibraryContract != null &&
-                importPath.StartsWith(ctx.LibraryContract.PackageName + "/");
+                ctx.LibraryContract.NamespaceToPackage.Values
+                    .Distinct()
+                    .Any(pkg => importPath.StartsWith(pkg + "/"));
 
             foreach (var clrName in referencedTypeClrNames)
             {

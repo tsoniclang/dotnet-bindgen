@@ -123,7 +123,9 @@ public static class InternalIndexEmitter
                 if (ctx.LibraryContract != null && ctx.LibraryContract.AllowedClrFullNames.Contains("System.Int32"))
                 {
                     // Library mode: import from external package facade
-                    systemPath = $"{ctx.LibraryContract.PackageName}/System.js";
+                    // Use GetPackageForNamespace to get the correct package for System types
+                    var systemPackage = ctx.LibraryContract.GetPackageForNamespace("System");
+                    systemPath = $"{systemPackage}/System.js";
                 }
                 else
                 {

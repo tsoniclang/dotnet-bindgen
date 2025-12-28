@@ -60,9 +60,13 @@ public static class GenerateCommand
             getDefaultValue: () => false,
             description: "Enable strict mode validation (zero non-whitelisted warnings)");
 
-        var libOption = new Option<string?>(
-            aliases: new[] { "--lib" },
-            description: "Path to existing tsbindgen package (library mode - emit only what's in the library contract)");
+        var libOption = new Option<string[]>(
+            name: "--lib",
+            description: "Path to existing tsbindgen package (library mode - emit only what's in the library contract, repeatable)")
+        {
+            AllowMultipleArgumentsPerToken = false,
+            Arity = ArgumentArity.ZeroOrMore
+        };
 
         var namespaceMapOption = new Option<string[]>(
             name: "--namespace-map",
@@ -102,7 +106,7 @@ public static class GenerateCommand
             var verbose = context.ParseResult.GetValueForOption(verboseOption);
             var logs = context.ParseResult.GetValueForOption(logsOption) ?? Array.Empty<string>();
             var strict = context.ParseResult.GetValueForOption(strictOption);
-            var lib = context.ParseResult.GetValueForOption(libOption);
+            var libs = context.ParseResult.GetValueForOption(libOption) ?? Array.Empty<string>();
             var namespaceMaps = context.ParseResult.GetValueForOption(namespaceMapOption) ?? Array.Empty<string>();
             var flattenClasses = context.ParseResult.GetValueForOption(flattenClassOption) ?? Array.Empty<string>();
 
@@ -115,7 +119,7 @@ public static class GenerateCommand
                 verbose,
                 logs,
                 strict,
-                lib,
+                libs,
                 namespaceMaps,
                 flattenClasses);
         });
@@ -132,7 +136,7 @@ public static class GenerateCommand
         bool verbose,
         string[] logs,
         bool strict,
-        string? lib,
+        string[] libs,
         string[] namespaceMaps,
         string[] flattenClasses)
     {
@@ -233,7 +237,7 @@ public static class GenerateCommand
                 verbose,
                 logCategories,
                 strict,
-                lib);
+                libs);
 
             // Report results
             Console.WriteLine();

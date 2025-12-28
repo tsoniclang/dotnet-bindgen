@@ -341,7 +341,8 @@ internal static class ImportExport
                 // Library mode: Skip validation for external library imports
                 // Check the actual import path (e.g., "@tsonic/dotnet/System.js") rather than namespace name
                 // This is more robust than checking namespace because it validates based on ImportPlanner's decision
-                if (ctx.LibraryContract != null && importStmt.ImportPath.StartsWith(ctx.LibraryContract.PackageName + "/"))
+                if (ctx.LibraryContract != null &&
+                    ctx.LibraryContract.NamespaceToPackage.Values.Distinct().Any(pkg => importStmt.ImportPath.StartsWith(pkg + "/")))
                 {
                     skippedLibraryImports += importStmt.TypeImports.Count;
                     continue;
@@ -555,7 +556,12 @@ internal static class ImportExport
 
             // Library mode: Skip validation for external library imports
             // Check the actual import path rather than namespace name for robustness
-            if (ctx.LibraryContract != null && importStmt.ImportPath.StartsWith(ctx.LibraryContract.PackageName + "/"))
+            // Support merged libraries by checking all known package names
+            var isLibraryImport = ctx.LibraryContract != null &&
+                ctx.LibraryContract.NamespaceToPackage.Values
+                    .Distinct()
+                    .Any(pkg => importStmt.ImportPath.StartsWith(pkg + "/"));
+            if (isLibraryImport)
             {
                 checkedQualifiedNames++;
                 continue;

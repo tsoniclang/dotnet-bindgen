@@ -100,6 +100,10 @@ public static class LibraryContractLoader
             }
         }
 
+        // Build namespace-to-package mapping (all namespaces map to this package)
+        var namespaceToPackage = namespaceToTypes.Keys
+            .ToImmutableDictionary(ns => ns, ns => packageName);
+
         return new LibraryContract
         {
             PackageName = packageName,
@@ -111,7 +115,8 @@ public static class LibraryContractLoader
                 kvp => kvp.Value.ToImmutableHashSet()),
             AllowedClrFullNames = allowedClrFullNames.ToImmutableHashSet(),
             ClrFullNameToNamespace = clrFullNameToNamespace.ToImmutableDictionary(),
-            FacadeFamilies = facadeFamilies
+            FacadeFamilies = facadeFamilies,
+            NamespaceToPackage = namespaceToPackage
         };
     }
 
