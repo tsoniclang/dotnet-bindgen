@@ -29,7 +29,9 @@ public static class FacadeEmitter
             var content = GenerateFacade(ctx, plan, ns);
 
             // Write to file: output/Namespace.Name.d.ts (flat ESM structure)
-            var outputFile = Path.Combine(outputDirectory, $"{ns.Name}.d.ts");
+            // Use mapped output name if namespace-map is configured
+            var outputName = NamespacePathMapper.GetOutputName(ns, ctx);
+            var outputFile = Path.Combine(outputDirectory, $"{outputName}.d.ts");
             File.WriteAllText(outputFile, content);
 
             ctx.Log("FacadeEmitter", $"    → {outputFile}");
@@ -50,8 +52,10 @@ public static class FacadeEmitter
         sb.AppendLine();
 
         // Import from Namespace/internal/index.d.ts (flat ESM structure)
+        // Use mapped output name if namespace-map is configured
         sb.AppendLine("// Import internal declarations");
-        var internalImportPath = ns.IsRoot ? "./_root/index.js" : $"./{ns.Name}/internal/index.js";
+        var outputName = NamespacePathMapper.GetOutputName(ns, ctx);
+        var internalImportPath = ns.IsRoot ? "./_root/index.js" : $"./{outputName}/internal/index.js";
         sb.AppendLine($"import * as Internal from '{internalImportPath}';");
         sb.AppendLine();
 
@@ -193,7 +197,7 @@ public static class FacadeEmitter
                 else
                 {
                     // Emit primary export (uses unified helper)
-                    EmitFacadeExport(sb, aliasName, export.SourceType, export.ExportName, resolver, ctx, ns.Name);
+                    EmitFacadeExport(sb, aliasName, export.SourceType, export.ExportName, resolver, ctx, outputName);
                 }
 
                 // FRIENDLY GENERIC ALIAS: Provide arity-less name (List instead of List_1)
@@ -209,7 +213,7 @@ public static class FacadeEmitter
                             friendlyAliases.Add(friendlyName))
                         {
                             // Emit friendly alias (uses same unified helper)
-                            EmitFacadeExport(sb, friendlyName, export.SourceType, export.ExportName, resolver, ctx, ns.Name);
+                            EmitFacadeExport(sb, friendlyName, export.SourceType, export.ExportName, resolver, ctx, outputName);
                         }
                     }
                 }
@@ -242,7 +246,65 @@ public static class FacadeEmitter
             sb.AppendLine();
         }
 
+        // Emit flattened exports from static classes (--flatten-class)
+        EmitFlattenedExports(sb, ctx, plan, ns);
+
         return sb.ToString();
+    }
+
+    /// <summary>
+    /// Emits flattened exports from static classes marked with --flatten-class.
+    /// Converts static methods to top-level function declarations.
+    /// Example: Globals.parseInt becomes `export function parseInt(s: string): int;`
+    /// </summary>
+    private static void EmitFlattenedExports(
+        StringBuilder sb,
+        BuildContext ctx,
+        EmissionPlan plan,
+        Model.Symbols.NamespaceSymbol ns)
+    {
+        var flattenedClasses = ctx.Policy.Emission.FlattenedClasses;
+        if (flattenedClasses.Count == 0)
+            return;
+
+        // Find types in this namespace that are marked for flattening
+        var typesToFlatten = ns.Types
+            .Where(t => flattenedClasses.Contains(t.ClrFullName) && t.IsStatic)
+            .ToList();
+
+        if (typesToFlatten.Count == 0)
+            return;
+
+        sb.AppendLine();
+        sb.AppendLine("// Flattened exports from static classes");
+
+        // Create resolver for type references
+        var resolver = new TypeNameResolver(ctx, plan.Graph, importPlan: plan.Imports, currentNamespace: ns.Name, facadeMode: false);
+
+        foreach (var type in typesToFlatten)
+        {
+            sb.AppendLine($"// From {type.ClrFullName}");
+
+            // Get static methods (excluding omitted ones)
+            var staticMethods = type.Members.Methods
+                .Where(m => m.IsStatic && m.EmitScope != Model.Symbols.MemberSymbols.EmitScope.Omitted)
+                .OrderBy(m => m.ClrName)
+                .ThenBy(m => m.Parameters.Length)
+                .ToList();
+
+            foreach (var method in staticMethods)
+            {
+                // Get the TS name for this method
+                var scope = Renaming.ScopeFactory.ClassSurface(type, isStatic: true);
+                var methodName = ctx.Renamer.GetFinalMemberName(method.StableId, scope);
+
+                // Print the method signature (without static/abstract modifiers)
+                var signature = Printers.MethodPrinter.PrintSignatureOnly(method, type, methodName, resolver, ctx);
+
+                // Emit as exported function declaration
+                sb.AppendLine($"export declare function {signature};");
+            }
+        }
     }
 
     /// <summary>
@@ -384,10 +446,10 @@ public static class FacadeEmitter
         string exportName,
         TypeNameResolver resolver,
         BuildContext ctx,
-        string namespaceName)
+        string outputName)
     {
         var kind = sourceType.Kind;
-        var internalPath = string.IsNullOrEmpty(namespaceName) ? "./_root/index.js" : $"./{namespaceName}/internal/index.js";
+        var internalPath = string.IsNullOrEmpty(outputName) ? "./_root/index.js" : $"./{outputName}/internal/index.js";
 
         // Class/Struct: Value re-export only
         // When internal has BOTH `const List_1` AND `type List_1<T>`,

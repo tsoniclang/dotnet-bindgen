@@ -1,3 +1,5 @@
+using tsbindgen.Emit;
+
 namespace tsbindgen.Plan;
 
 /// <summary>
@@ -9,7 +11,31 @@ public static class PathPlanner
 {
     /// <summary>
     /// Gets the module specifier for importing from targetNamespace into sourceNamespace.
+    /// Uses namespace mapping from BuildContext to resolve output names.
     /// Returns a relative path string suitable for TypeScript import statements.
+    /// </summary>
+    /// <param name="ctx">Build context containing namespace mappings</param>
+    /// <param name="sourceNamespace">The CLR namespace doing the importing (empty string for root)</param>
+    /// <param name="targetNamespace">The CLR namespace being imported from (empty string for root)</param>
+    /// <returns>Relative module path including .js extension (e.g., "../../System/internal/index.js")</returns>
+    public static string GetSpecifier(BuildContext ctx, string sourceNamespace, string targetNamespace)
+    {
+        // Map CLR namespace names to output names
+        var sourceOutput = string.IsNullOrEmpty(sourceNamespace)
+            ? sourceNamespace
+            : NamespacePathMapper.GetOutputName(sourceNamespace, ctx);
+        var targetOutput = string.IsNullOrEmpty(targetNamespace)
+            ? targetNamespace
+            : NamespacePathMapper.GetOutputName(targetNamespace, ctx);
+
+        return GetSpecifier(sourceOutput, targetOutput);
+    }
+
+    /// <summary>
+    /// Gets the module specifier for importing from targetNamespace into sourceNamespace.
+    /// Returns a relative path string suitable for TypeScript import statements.
+    /// NOTE: This overload uses raw names without namespace mapping. Prefer the overload
+    /// with BuildContext when namespace mapping is configured.
     /// </summary>
     /// <param name="sourceNamespace">The namespace doing the importing (empty string for root)</param>
     /// <param name="targetNamespace">The namespace being imported from (empty string for root)</param>

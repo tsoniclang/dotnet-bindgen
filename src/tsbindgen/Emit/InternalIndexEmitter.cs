@@ -44,7 +44,9 @@ public static class InternalIndexEmitter
             var content = GenerateNamespaceDeclaration(ctx, plan, nsOrder);
 
             // Write to file: output/Namespace.Name/internal/index.d.ts (or _root for empty namespace)
-            var namespacePath = Path.Combine(outputDirectory, ns.Name);
+            // Use mapped output name if namespace-map is configured
+            var outputName = NamespacePathMapper.GetOutputName(ns, ctx);
+            var namespacePath = Path.Combine(outputDirectory, outputName);
             // Use _root for empty namespace to avoid case-sensitivity collision with "Internal" namespace
             var subdirName = ns.IsRoot ? "_root" : "internal";
             var internalPath = Path.Combine(namespacePath, subdirName);
@@ -121,12 +123,14 @@ public static class InternalIndexEmitter
                 if (ctx.LibraryContract != null && ctx.LibraryContract.AllowedClrFullNames.Contains("System.Int32"))
                 {
                     // Library mode: import from external package facade
-                    systemPath = $"{ctx.LibraryContract.PackageName}/System.js";
+                    // Use GetPackageForNamespace to get the correct package for System types
+                    var systemPackage = ctx.LibraryContract.GetPackageForNamespace("System");
+                    systemPath = $"{systemPackage}/System.js";
                 }
                 else
                 {
-                    // Normal mode: relative path
-                    systemPath = Plan.PathPlanner.GetSpecifier(nsOrder.Namespace.Name, "System");
+                    // Normal mode: relative path with mapped output names
+                    systemPath = Plan.PathPlanner.GetSpecifier(ctx, nsOrder.Namespace.Name, "System");
                 }
                 sb.AppendLine($"import * as System_Internal from \"{systemPath}\";");
             }

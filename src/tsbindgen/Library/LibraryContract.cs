@@ -65,6 +65,22 @@ public sealed record LibraryContract
     public required ImmutableDictionary<string, FacadeFamilyEntry> FacadeFamilies { get; init; }
 
     /// <summary>
+    /// Mapping from namespace to package name.
+    /// Used when multiple libraries are merged to determine which package to import from.
+    /// Example: "System" → "@tsonic/dotnet", "Tsonic.Runtime" → "@tsonic/core"
+    /// </summary>
+    public required ImmutableDictionary<string, string> NamespaceToPackage { get; init; }
+
+    /// <summary>
+    /// Get the package name for a given namespace.
+    /// Returns the specific package if known, otherwise falls back to PackageName.
+    /// </summary>
+    public string GetPackageForNamespace(string namespaceName)
+    {
+        return NamespaceToPackage.TryGetValue(namespaceName, out var pkg) ? pkg : PackageName;
+    }
+
+    /// <summary>
     /// Total number of types in the contract.
     /// </summary>
     public int TypeCount => AllowedTypeStableIds.Count;
@@ -78,4 +94,77 @@ public sealed record LibraryContract
     /// Total number of namespaces in the contract.
     /// </summary>
     public int NamespaceCount => NamespaceToTypes.Count;
+
+    /// <summary>
+    /// Merge multiple library contracts into one.
+    /// Used when multiple --lib arguments are provided.
+    /// </summary>
+    public static LibraryContract Merge(IReadOnlyList<LibraryContract> contracts)
+    {
+        if (contracts.Count == 0)
+            throw new ArgumentException("Cannot merge empty list of contracts");
+
+        if (contracts.Count == 1)
+            return contracts[0];
+
+        // Use first contract's package name (or combine them)
+        var packageNames = contracts.Select(c => c.PackageName).Distinct().ToList();
+        var packageName = packageNames.Count == 1 ? packageNames[0] : string.Join("+", packageNames);
+
+        // Merge all sets
+        var allowedTypeStableIds = contracts
+            .SelectMany(c => c.AllowedTypeStableIds)
+            .ToImmutableHashSet();
+
+        var allowedMemberStableIds = contracts
+            .SelectMany(c => c.AllowedMemberStableIds)
+            .ToImmutableHashSet();
+
+        var allowedBindingStableIds = contracts
+            .SelectMany(c => c.AllowedBindingStableIds)
+            .ToImmutableHashSet();
+
+        var allowedClrFullNames = contracts
+            .SelectMany(c => c.AllowedClrFullNames)
+            .ToImmutableHashSet();
+
+        // Merge namespace-to-types (union of all types per namespace)
+        var namespaceToTypes = contracts
+            .SelectMany(c => c.NamespaceToTypes)
+            .GroupBy(kvp => kvp.Key)
+            .ToImmutableDictionary(
+                g => g.Key,
+                g => g.SelectMany(kvp => kvp.Value).ToImmutableHashSet());
+
+        // Merge CLR name to namespace mappings (last wins for conflicts)
+        var clrFullNameToNamespace = contracts
+            .SelectMany(c => c.ClrFullNameToNamespace)
+            .GroupBy(kvp => kvp.Key)
+            .ToImmutableDictionary(g => g.Key, g => g.First().Value);
+
+        // Merge facade families (last wins for conflicts)
+        var facadeFamilies = contracts
+            .SelectMany(c => c.FacadeFamilies)
+            .GroupBy(kvp => kvp.Key)
+            .ToImmutableDictionary(g => g.Key, g => g.First().Value);
+
+        // Build namespace-to-package mapping from all contracts
+        var namespaceToPackage = contracts
+            .SelectMany(c => c.NamespaceToTypes.Keys.Select(ns => (ns, c.PackageName)))
+            .GroupBy(t => t.ns)
+            .ToImmutableDictionary(g => g.Key, g => g.First().PackageName);
+
+        return new LibraryContract
+        {
+            PackageName = packageName,
+            AllowedTypeStableIds = allowedTypeStableIds,
+            AllowedMemberStableIds = allowedMemberStableIds,
+            AllowedBindingStableIds = allowedBindingStableIds,
+            AllowedClrFullNames = allowedClrFullNames,
+            NamespaceToTypes = namespaceToTypes,
+            ClrFullNameToNamespace = clrFullNameToNamespace,
+            FacadeFamilies = facadeFamilies,
+            NamespaceToPackage = namespaceToPackage
+        };
+    }
 }

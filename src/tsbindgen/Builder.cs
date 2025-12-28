@@ -29,7 +29,7 @@ public static class Builder
     /// <param name="verboseLogging">Enable verbose logging (all categories)</param>
     /// <param name="logCategories">Specific log categories to enable</param>
     /// <param name="strictMode">Enable strict mode (zero non-whitelisted warnings)</param>
-    /// <param name="libraryPackagePath">Path to existing tsbindgen package for library mode (null = normal mode)</param>
+    /// <param name="libraryPackagePaths">Paths to existing tsbindgen packages for library mode (empty = normal mode)</param>
     /// <returns>Build result with statistics and diagnostics</returns>
     public static BuildResult Build(
         IReadOnlyList<string> assemblyPaths,
@@ -39,15 +39,24 @@ public static class Builder
         bool verboseLogging = false,
         HashSet<string>? logCategories = null,
         bool strictMode = false,
-        string? libraryPackagePath = null)
+        string[] libraryPackagePaths = null!)
     {
-        // Load library contract if in library mode
+        libraryPackagePaths ??= Array.Empty<string>();
+
+        // Load library contracts if in library mode (merge multiple libraries)
         LibraryContract? libraryContract = null;
-        if (libraryPackagePath != null)
+        if (libraryPackagePaths.Length > 0)
         {
-            logger?.Invoke($"Loading library contract from: {libraryPackagePath}");
-            libraryContract = LibraryContractLoader.Load(libraryPackagePath);
-            logger?.Invoke($"Library contract loaded: {libraryContract.TypeCount} types, {libraryContract.MemberCount} members");
+            var contracts = new List<LibraryContract>();
+            foreach (var libPath in libraryPackagePaths)
+            {
+                logger?.Invoke($"Loading library contract from: {libPath}");
+                var contract = LibraryContractLoader.Load(libPath);
+                logger?.Invoke($"  Loaded: {contract.TypeCount} types, {contract.MemberCount} members");
+                contracts.Add(contract);
+            }
+            libraryContract = LibraryContract.Merge(contracts);
+            logger?.Invoke($"Merged library contract: {libraryContract.TypeCount} types, {libraryContract.MemberCount} members");
         }
 
         // Create build context with all shared services
