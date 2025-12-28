@@ -157,6 +157,24 @@ public sealed record EmissionPolicy
     /// If true, emit XML doc comments as TSDoc.
     /// </summary>
     public required bool EmitDocComments { get; init; }
+
+    /// <summary>
+    /// Maps CLR namespace to output directory/file name.
+    /// Key: CLR namespace (e.g., "nodejs"), Value: output name (e.g., "index")
+    /// When set, output files use the mapped name instead of CLR namespace.
+    /// bindings.json still contains the CLR namespace for Tsonic resolution.
+    /// </summary>
+    public IReadOnlyDictionary<string, string> NamespaceMappings { get; init; }
+        = new Dictionary<string, string>();
+
+    /// <summary>
+    /// Set of fully-qualified CLR type names whose static members should be flattened.
+    /// Format: "Namespace.ClassName" (e.g., "Tsonic.JSRuntime.Globals")
+    /// Flattened classes have their static methods emitted as top-level function exports.
+    /// Both forms are exported: flattened functions AND the original class.
+    /// </summary>
+    public IReadOnlySet<string> FlattenedClasses { get; init; }
+        = new HashSet<string>();
 }
 
 /// <summary>

@@ -64,6 +64,22 @@ public static class GenerateCommand
             aliases: new[] { "--lib" },
             description: "Path to existing tsbindgen package (library mode - emit only what's in the library contract)");
 
+        var namespaceMapOption = new Option<string[]>(
+            name: "--namespace-map",
+            description: "Map CLR namespace to output name (format: Namespace=outputName, repeatable)")
+        {
+            AllowMultipleArgumentsPerToken = false,
+            Arity = ArgumentArity.ZeroOrMore
+        };
+
+        var flattenClassOption = new Option<string[]>(
+            name: "--flatten-class",
+            description: "Flatten static class to top-level function exports (format: Namespace.ClassName, repeatable)")
+        {
+            AllowMultipleArgumentsPerToken = false,
+            Arity = ArgumentArity.ZeroOrMore
+        };
+
         command.AddOption(assemblyOption);
         command.AddOption(assemblyDirOption);
         command.AddOption(outDirOption);
@@ -73,6 +89,8 @@ public static class GenerateCommand
         command.AddOption(logsOption);
         command.AddOption(strictOption);
         command.AddOption(libOption);
+        command.AddOption(namespaceMapOption);
+        command.AddOption(flattenClassOption);
 
         command.SetHandler(async (context) =>
         {
@@ -85,6 +103,8 @@ public static class GenerateCommand
             var logs = context.ParseResult.GetValueForOption(logsOption) ?? Array.Empty<string>();
             var strict = context.ParseResult.GetValueForOption(strictOption);
             var lib = context.ParseResult.GetValueForOption(libOption);
+            var namespaceMaps = context.ParseResult.GetValueForOption(namespaceMapOption) ?? Array.Empty<string>();
+            var flattenClasses = context.ParseResult.GetValueForOption(flattenClassOption) ?? Array.Empty<string>();
 
             await ExecuteAsync(
                 assemblies,
@@ -95,7 +115,9 @@ public static class GenerateCommand
                 verbose,
                 logs,
                 strict,
-                lib);
+                lib,
+                namespaceMaps,
+                flattenClasses);
         });
 
         return command;
@@ -110,7 +132,9 @@ public static class GenerateCommand
         bool verbose,
         string[] logs,
         bool strict,
-        string? lib)
+        string? lib,
+        string[] namespaceMaps,
+        string[] flattenClasses)
     {
         try
         {
@@ -153,6 +177,43 @@ public static class GenerateCommand
                     Emission = policy.Emission with
                     {
                         Naming = namingStyle
+                    }
+                };
+            }
+
+            // Apply namespace mappings if specified
+            if (namespaceMaps.Length > 0)
+            {
+                var mappings = new Dictionary<string, string>();
+                foreach (var map in namespaceMaps)
+                {
+                    var parts = map.Split('=', 2);
+                    if (parts.Length == 2)
+                    {
+                        mappings[parts[0].Trim()] = parts[1].Trim();
+                    }
+                    else
+                    {
+                        Console.Error.WriteLine($"Warning: Invalid namespace-map format: '{map}'. Expected 'Namespace=outputName'.");
+                    }
+                }
+                policy = policy with
+                {
+                    Emission = policy.Emission with
+                    {
+                        NamespaceMappings = mappings
+                    }
+                };
+            }
+
+            // Apply flatten-class if specified
+            if (flattenClasses.Length > 0)
+            {
+                policy = policy with
+                {
+                    Emission = policy.Emission with
+                    {
+                        FlattenedClasses = new HashSet<string>(flattenClasses)
                     }
                 };
             }

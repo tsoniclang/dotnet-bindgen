@@ -34,7 +34,9 @@ public static class MetadataEmitter
             var metadata = GenerateMetadata(ctx, nsOrder, plan.HonestEmission);
 
             // Write to file: output/Namespace.Name/internal/metadata.json (or _root for empty namespace)
-            var namespacePath = Path.Combine(outputDirectory, ns.Name);
+            // Use mapped output name if namespace-map is configured
+            var outputName = NamespacePathMapper.GetOutputName(ns, ctx);
+            var namespacePath = Path.Combine(outputDirectory, outputName);
             // Use _root for empty namespace to avoid case-sensitivity collision with "Internal" namespace
             var subdirName = ns.IsRoot ? "_root" : "internal";
             var internalPath = Path.Combine(namespacePath, subdirName);

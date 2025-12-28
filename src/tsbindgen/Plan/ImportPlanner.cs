@@ -84,18 +84,19 @@ public static class ImportPlanner
                 {
                     // All types are from library - use package specifier facade
                     // e.g., "@tsonic/dotnet/System.Collections.Generic.js"
+                    // NOTE: Library facade paths use CLR namespace name, not mapped output name
                     importPath = $"{ctx.LibraryContract.PackageName}/{targetNamespace}.js";
                 }
                 else
                 {
-                    // Some or all types are local - use relative path
-                    importPath = PathPlanner.GetSpecifier(ns.Name, targetNamespace);
+                    // Some or all types are local - use relative path with mapped output names
+                    importPath = PathPlanner.GetSpecifier(ctx, ns.Name, targetNamespace);
                 }
             }
             else
             {
-                // Normal mode (no library): relative path to internal index
-                importPath = PathPlanner.GetSpecifier(ns.Name, targetNamespace);
+                // Normal mode (no library): relative path to internal index with mapped output names
+                importPath = PathPlanner.GetSpecifier(ctx, ns.Name, targetNamespace);
             }
 
             // Check for name collisions and create aliases if needed

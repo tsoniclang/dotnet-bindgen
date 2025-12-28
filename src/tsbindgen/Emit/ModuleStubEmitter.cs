@@ -22,11 +22,13 @@ public static class ModuleStubEmitter
             var ns = nsOrder.Namespace;
             ctx.Log("ModuleStubEmitter", $"  Emitting stub for: {ns.Name}");
 
-            // Generate stub content
+            // Generate stub content (still references CLR namespace in error message)
             var content = GenerateStub(ns.Name);
 
             // Write to file: output/Namespace.Name.js (flat ESM structure)
-            var outputFile = Path.Combine(outputDirectory, $"{ns.Name}.js");
+            // Use mapped output name if namespace-map is configured
+            var outputName = NamespacePathMapper.GetOutputName(ns, ctx);
+            var outputFile = Path.Combine(outputDirectory, $"{outputName}.js");
             File.WriteAllText(outputFile, content);
 
             ctx.Log("ModuleStubEmitter", $"    → {outputFile}");

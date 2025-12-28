@@ -34,7 +34,9 @@ public static class BindingEmitter
             var bindings = GenerateBindings(ctx, plan, nsOrder);
 
             // Write to file: output/Namespace.Name/bindings.json
-            var namespacePath = Path.Combine(outputDirectory, ns.Name);
+            // Use mapped output name if namespace-map is configured
+            var outputName = NamespacePathMapper.GetOutputName(ns, ctx);
+            var namespacePath = Path.Combine(outputDirectory, outputName);
             Directory.CreateDirectory(namespacePath);
 
             var outputFile = Path.Combine(namespacePath, "bindings.json");
@@ -64,11 +66,71 @@ public static class BindingEmitter
             typeBindings.Add(GenerateTypeBinding(typeOrder.Type, ctx, plan));
         }
 
+        // Collect flattened exports from static classes marked with --flatten-class
+        var flattenedExports = CollectFlattenedExports(ctx, nsOrder);
+
         return new NamespaceBindings
         {
             Namespace = nsOrder.Namespace.Name,
-            Types = typeBindings
+            Types = typeBindings,
+            FlattenedExports = flattenedExports.Count > 0 ? flattenedExports : null
         };
+    }
+
+    /// <summary>
+    /// Collects flattened exports from static classes marked with --flatten-class.
+    /// </summary>
+    private static List<FlattenedExportBinding> CollectFlattenedExports(BuildContext ctx, NamespaceEmitOrder nsOrder)
+    {
+        var exports = new List<FlattenedExportBinding>();
+        var flattenedClasses = ctx.Policy.Emission.FlattenedClasses;
+
+        if (flattenedClasses.Count == 0)
+            return exports;
+
+        foreach (var typeOrder in nsOrder.OrderedTypes)
+        {
+            var type = typeOrder.Type;
+
+            // Check if this type is marked for flattening (using fully-qualified CLR name)
+            if (!flattenedClasses.Contains(type.ClrFullName))
+                continue;
+
+            // Only static classes should be flattened
+            if (!type.IsStatic)
+            {
+                ctx.Log("BindingEmitter", $"WARNING: --flatten-class specified non-static class: {type.ClrFullName}");
+                continue;
+            }
+
+            ctx.Log("BindingEmitter", $"  Collecting flattened exports from: {type.ClrFullName}");
+
+            // Collect all static methods
+            foreach (var method in type.Members.Methods.Where(m => m.IsStatic && m.EmitScope != EmitScope.Omitted))
+            {
+                var classScope = ScopeFactory.ClassSurface(type, isStatic: true);
+                var tsName = ctx.Renamer.GetFinalMemberName(method.StableId, classScope);
+                var normalizedSignature = SignatureNormalization.NormalizeMethod(method);
+
+                exports.Add(new FlattenedExportBinding
+                {
+                    TsName = tsName,
+                    SourceClass = type.ClrFullName,
+                    ClrMethodName = method.ClrName,
+                    NormalizedSignature = normalizedSignature,
+                    Target = new ExposureTarget
+                    {
+                        DeclaringClrType = method.StableId.DeclaringClrFullName,
+                        DeclaringAssemblyName = method.StableId.AssemblyName,
+                        MetadataToken = method.StableId.MetadataToken ?? 0
+                    }
+                });
+            }
+
+            ctx.Log("BindingEmitter", $"    Found {exports.Count} flattened exports");
+        }
+
+        return exports;
     }
 
     private static TypeBinding GenerateTypeBinding(TypeSymbol type, BuildContext ctx, EmissionPlan plan)
@@ -701,6 +763,44 @@ public sealed record NamespaceBindings
 {
     public required string Namespace { get; init; }
     public required List<TypeBinding> Types { get; init; }
+
+    /// <summary>
+    /// Flattened exports from static classes (--flatten-class).
+    /// Maps top-level function names to their CLR origins.
+    /// Used by Tsonic to resolve calls like parseInt() to Globals.parseInt().
+    /// </summary>
+    public List<FlattenedExportBinding>? FlattenedExports { get; init; }
+}
+
+/// <summary>
+/// A flattened export - a static method exposed as a top-level function.
+/// </summary>
+public sealed record FlattenedExportBinding
+{
+    /// <summary>
+    /// The TypeScript name of the exported function (e.g., "parseInt").
+    /// </summary>
+    public required string TsName { get; init; }
+
+    /// <summary>
+    /// The fully-qualified CLR name of the source static class (e.g., "Tsonic.JSRuntime.Globals").
+    /// </summary>
+    public required string SourceClass { get; init; }
+
+    /// <summary>
+    /// The CLR method name (e.g., "parseInt").
+    /// </summary>
+    public required string ClrMethodName { get; init; }
+
+    /// <summary>
+    /// Normalized signature for overload disambiguation.
+    /// </summary>
+    public required string NormalizedSignature { get; init; }
+
+    /// <summary>
+    /// Target CLR method information for binding.
+    /// </summary>
+    public required ExposureTarget Target { get; init; }
 }
 
 /// <summary>
