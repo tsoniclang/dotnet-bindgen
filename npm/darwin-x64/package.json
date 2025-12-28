@@ -1,6 +1,6 @@
 {
   "name": "@tsonic/tsbindgen-darwin-x64",
-  "version": "0.7.4",
+  "version": "0.7.15",
   "description": "tsbindgen native binary for macOS x64",
   "os": ["darwin"],
   "cpu": ["x64"],
