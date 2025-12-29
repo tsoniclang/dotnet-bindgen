@@ -64,6 +64,25 @@ public static class PathPlanner
     }
 
     /// <summary>
+    /// Gets the module specifier for importing from a facade file into another facade file.
+    /// Facade files are at the root level (e.g., System.d.ts, System.Collections.Generic.d.ts).
+    /// </summary>
+    /// <param name="ctx">Build context containing namespace mappings</param>
+    /// <param name="sourceNamespace">The CLR namespace doing the importing</param>
+    /// <param name="targetNamespace">The CLR namespace being imported from</param>
+    /// <returns>Relative module path to the facade file (e.g., "./System.js")</returns>
+    public static string GetFacadeSpecifier(BuildContext ctx, string sourceNamespace, string targetNamespace)
+    {
+        // Map CLR namespace name to output name
+        var targetOutput = string.IsNullOrEmpty(targetNamespace)
+            ? "_root"
+            : NamespacePathMapper.GetOutputName(targetNamespace, ctx);
+
+        // Facade files are at root level, so it's just ./{targetName}.js
+        return $"./{targetOutput}.js";
+    }
+
+    /// <summary>
     /// Gets the directory name for a namespace (handles root namespace).
     /// </summary>
     public static string GetNamespaceDirectory(string namespaceName)

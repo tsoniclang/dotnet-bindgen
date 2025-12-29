@@ -59,6 +59,9 @@ public static class FacadeEmitter
         sb.AppendLine($"import * as Internal from '{internalImportPath}';");
         sb.AppendLine();
 
+        // Check if this namespace has flattened classes - they need additional imports
+        EmitFlattenedClassImports(sb, ctx, plan, ns);
+
         if (plan.Imports.NamespaceExports.TryGetValue(ns.Name, out var exports) && exports.Count > 0)
         {
             // Precompute stem info
@@ -250,6 +253,160 @@ public static class FacadeEmitter
         EmitFlattenedExports(sb, ctx, plan, ns);
 
         return sb.ToString();
+    }
+
+    /// <summary>
+    /// Emits imports required by flattened static class methods.
+    /// The facade file needs primitive type aliases and namespace imports for types used in flattened exports.
+    /// This is separate from the cross-namespace constraint imports which serve a different purpose.
+    /// </summary>
+    private static void EmitFlattenedClassImports(
+        StringBuilder sb,
+        BuildContext ctx,
+        EmissionPlan plan,
+        Model.Symbols.NamespaceSymbol ns)
+    {
+        var flattenedClasses = ctx.Policy.Emission.FlattenedClasses;
+        if (flattenedClasses.Count == 0)
+            return;
+
+        // Find types in this namespace that are marked for flattening
+        var typesToFlatten = ns.Types
+            .Where(t => flattenedClasses.Contains(t.ClrFullName) && t.IsStatic)
+            .ToList();
+
+        if (typesToFlatten.Count == 0)
+            return;
+
+        // Collect all namespaces and type references used by flattened methods
+        var referencedNamespaces = new HashSet<string>();
+        var usesPrimitives = false;
+
+        foreach (var type in typesToFlatten)
+        {
+            var staticMethods = type.Members.Methods
+                .Where(m => m.IsStatic && m.EmitScope != Model.Symbols.MemberSymbols.EmitScope.Omitted);
+
+            foreach (var method in staticMethods)
+            {
+                // Check return type
+                CollectTypeReferencesForImports(method.ReturnType, ns.Name, referencedNamespaces, ref usesPrimitives, plan.Graph, ctx);
+
+                // Check parameters
+                foreach (var param in method.Parameters)
+                {
+                    CollectTypeReferencesForImports(param.Type, ns.Name, referencedNamespaces, ref usesPrimitives, plan.Graph, ctx);
+                }
+            }
+        }
+
+        // Emit primitive imports if needed
+        if (usesPrimitives)
+        {
+            sb.AppendLine("// Primitive type aliases for flattened exports");
+            sb.AppendLine("import type { sbyte, byte, short, ushort, int, uint, long, ulong, int128, uint128, half, float, double, decimal, nint, nuint, char } from '@tsonic/core/types.js';");
+            sb.AppendLine();
+        }
+
+        // Emit namespace imports for referenced external namespaces
+        if (referencedNamespaces.Count > 0)
+        {
+            sb.AppendLine("// Namespace imports for flattened exports");
+            foreach (var targetNs in referencedNamespaces.OrderBy(n => n))
+            {
+                var namespaceAlias = targetNs.Replace('.', '_') + "_Internal";
+                string importPath;
+                if (ctx.LibraryContract != null && ctx.LibraryContract.ClrFullNameToNamespace.ContainsValue(targetNs))
+                {
+                    var targetPackage = ctx.LibraryContract.GetPackageForNamespace(targetNs);
+                    importPath = $"{targetPackage}/{targetNs}.js";
+                }
+                else
+                {
+                    importPath = Plan.PathPlanner.GetFacadeSpecifier(ctx, ns.Name, targetNs);
+                }
+                sb.AppendLine($"import * as {namespaceAlias} from \"{importPath}\";");
+            }
+            sb.AppendLine();
+        }
+    }
+
+    /// <summary>
+    /// Recursively collects namespace and primitive type references from a type reference.
+    /// Used to determine what imports are needed for flattened exports.
+    /// </summary>
+    private static void CollectTypeReferencesForImports(
+        Model.Types.TypeReference? typeRef,
+        string currentNamespace,
+        HashSet<string> referencedNamespaces,
+        ref bool usesPrimitives,
+        SymbolGraph graph,
+        BuildContext ctx)
+    {
+        if (typeRef == null) return;
+
+        switch (typeRef)
+        {
+            case Model.Types.NamedTypeReference named:
+                // Check if this is a primitive type (uses lowercase alias like double, int)
+                if (IsPrimitiveType(named.FullName))
+                {
+                    usesPrimitives = true;
+                }
+                else if (!string.IsNullOrEmpty(named.Namespace) && named.Namespace != currentNamespace)
+                {
+                    // External namespace - need namespace import for qualified types
+                    referencedNamespaces.Add(named.Namespace);
+                }
+
+                // Recurse into type arguments
+                foreach (var arg in named.TypeArguments)
+                {
+                    CollectTypeReferencesForImports(arg, currentNamespace, referencedNamespaces, ref usesPrimitives, graph, ctx);
+                }
+                break;
+
+            case Model.Types.ArrayTypeReference arr:
+                CollectTypeReferencesForImports(arr.ElementType, currentNamespace, referencedNamespaces, ref usesPrimitives, graph, ctx);
+                break;
+
+            case Model.Types.ByRefTypeReference byref:
+                CollectTypeReferencesForImports(byref.ReferencedType, currentNamespace, referencedNamespaces, ref usesPrimitives, graph, ctx);
+                break;
+
+            case Model.Types.PointerTypeReference ptr:
+                CollectTypeReferencesForImports(ptr.PointeeType, currentNamespace, referencedNamespaces, ref usesPrimitives, graph, ctx);
+                break;
+        }
+    }
+
+    /// <summary>
+    /// Checks if a CLR full name is a primitive numeric type that uses a lowercase TypeScript alias.
+    /// These need to be imported from @tsonic/core/types.js.
+    /// </summary>
+    private static bool IsPrimitiveType(string clrFullName)
+    {
+        return clrFullName switch
+        {
+            "System.SByte" => true,
+            "System.Byte" => true,
+            "System.Int16" => true,
+            "System.UInt16" => true,
+            "System.Int32" => true,
+            "System.UInt32" => true,
+            "System.Int64" => true,
+            "System.UInt64" => true,
+            "System.Int128" => true,
+            "System.UInt128" => true,
+            "System.Half" => true,
+            "System.Single" => true,
+            "System.Double" => true,
+            "System.Decimal" => true,
+            "System.IntPtr" => true,
+            "System.UIntPtr" => true,
+            "System.Char" => true,
+            _ => false
+        };
     }
 
     /// <summary>
