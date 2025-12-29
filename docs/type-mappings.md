@@ -4,7 +4,7 @@ How CLR types map to TypeScript declarations.
 
 ## Primitive Types
 
-CLR primitives map to type aliases from `@tsonic/types`:
+CLR primitives map to type aliases from `@tsonic/core/types.js`:
 
 | CLR Type | TypeScript | Underlying |
 |----------|-----------|------------|
@@ -150,17 +150,70 @@ export abstract class Console {
 | `void` | `void` |
 | `object` | `unknown` |
 | `dynamic` | `unknown` |
-| `ref T` | `{ value: ref<T> }` |
-| `out T` | `{ value: ref<T> }` |
 | `T*` (pointer) | `ptr<T>` |
 
+### ref/out/in Parameters
+
+Parameter modifiers (`ref`, `out`, `in`) are tracked in the metadata sidecar, not the TypeScript declarations:
+
+```typescript
+// TypeScript declaration (no visible difference)
+function tryParse(value: string, result: int): bool;
+```
+
+```json
+// metadata.json tracks the modifier
+{
+  "methods": {
+    "tryParse": {
+      "parameterModifiers": [null, "out"]
+    }
+  }
+}
+```
+
+This approach is used because:
+1. TypeScript has no concept of by-reference parameters
+2. The Tsonic compiler needs this info for correct C# interop
+3. Runtime behavior differs for ref/out/in (ABI concern)
+
+See [Output Files](architecture/output-files.md) for metadata structure.
+
 ## Nullable Types
+
+### Value Types (Nullable<T>)
 
 | CLR | TypeScript |
 |-----|-----------|
 | `int?` | `int \| null` |
-| `string?` | `string \| null` |
+| `bool?` | `bool \| null` |
 | `T?` where T: struct | `T \| null` |
+
+### Nullable Reference Types (NRT)
+
+C# nullable reference types are handled based on position:
+
+**Output positions** (returns, properties, fields) emit `| undefined` for nullable:
+
+```typescript
+// C#: public string? Name { get; }
+readonly name: string | undefined;
+
+// C#: public List<string?>? GetItems()
+getItems(): List_1<string | undefined> | undefined;
+```
+
+**Input positions** (parameters) are always non-nullable in TypeScript:
+
+```typescript
+// C#: public void Process(string? value)
+process(value: string): void;  // No undefined - caller must provide value
+```
+
+This asymmetric approach:
+1. Preserves null-safety guarantees from C# analysis
+2. Avoids unnecessary undefined checks for callers
+3. Matches TypeScript's strict null checks semantics
 
 ## Arrays
 

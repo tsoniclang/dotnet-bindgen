@@ -6,13 +6,16 @@ tsbindgen generates TypeScript declaration files (`.d.ts`) from .NET assemblies 
 
 ## Features
 
-- **Complete BCL coverage** - Generates declarations for all 130 BCL namespaces, 4,296 types, and 50,675+ members
+- **Complete BCL coverage** - Generates declarations for all 130 BCL namespaces, 4,047 types
 - **Zero TypeScript errors** - Output validates cleanly with `tsc --strict`
-- **CLR primitives** - Numeric type aliases (`int`, `long`, `decimal`, etc.) via `@tsonic/types`
+- **Nullable reference types** - NRT support for output positions (returns, properties, fields)
+- **CLR primitives** - Numeric type aliases (`int`, `long`, `decimal`, etc.) via `@tsonic/core`
 - **Dual naming modes** - CLR PascalCase (`GetEnumerator`) or JavaScript camelCase (`getEnumerator`)
 - **Generic type preservation** - Full generic type parameter support with constraints
-- **Metadata sidecars** - CLR-specific information (static, virtual, override) in companion JSON files
-- **Library mode** - Generate only your assembly's types, importing BCL types from a pre-existing package
+- **Metadata sidecars** - CLR-specific information (static, virtual, override, ref/out/in) in companion JSON files
+- **Library mode** - Generate only your assembly's types, importing BCL types from pre-existing packages
+- **Namespace mapping** - Customize output directory names with `--namespace-map`
+- **Class flattening** - Export static class methods as top-level functions with `--flatten-class`
 
 ## Installation
 
@@ -85,7 +88,9 @@ npx tsbindgen generate -a ./MyLibrary.dll -d $DOTNET_RUNTIME -o ./my-lib --lib .
 | `--out-dir` | `-o` | Output directory for generated files | `out` |
 | `--namespaces` | `-n` | Comma-separated namespace filter | (all) |
 | `--naming` | - | Naming convention: `js` (camelCase) or `clr` (PascalCase) | `clr` |
-| `--lib` | - | Path to pre-existing BCL types (library mode) | - |
+| `--lib` | - | Path to pre-existing tsbindgen package (repeatable) | - |
+| `--namespace-map` | - | Map CLR namespace to output name (repeatable) | - |
+| `--flatten-class` | - | Flatten static class to top-level exports (repeatable) | - |
 | `--verbose` | `-v` | Enable detailed progress output | false |
 | `--logs` | - | Enable specific log categories (comma-separated) | - |
 | `--strict` | - | Enable strict mode validation | false |
@@ -134,7 +139,7 @@ output/
 
 ### Primitive Types
 
-CLR primitive types map to type aliases from `@tsonic/types`:
+CLR primitive types map to type aliases from `@tsonic/core`:
 
 | CLR Type | TypeScript Type |
 |----------|----------------|
@@ -254,7 +259,7 @@ dotnet run --project src/tsbindgen/tsbindgen.csproj -- <args>
 
 - **[@tsonic/dotnet](https://www.npmjs.com/package/@tsonic/dotnet)** - Pre-generated BCL types with JavaScript naming
 - **[@tsonic/dotnet-pure](https://www.npmjs.com/package/@tsonic/dotnet-pure)** - Pre-generated BCL types with CLR naming
-- **[@tsonic/types](https://www.npmjs.com/package/@tsonic/types)** - CLR primitive type aliases
+- **[@tsonic/core](https://www.npmjs.com/package/@tsonic/core)** - Tsonic runtime types and primitives
 
 ## License
 

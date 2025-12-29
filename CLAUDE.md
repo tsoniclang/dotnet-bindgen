@@ -424,7 +424,11 @@ Enable TypeScript code in the Tsonic compiler to reference .NET BCL types with f
 ### Key Features
 
 - Generates TypeScript declarations from any .NET assembly
-- Creates metadata sidecars with CLR-specific information
+- Creates metadata sidecars with CLR-specific information (including ref/out/in parameter modifiers)
+- Nullable reference type (NRT) support for output positions
+- Multiple `--lib` support for referencing multiple packages
+- `--namespace-map` for custom output directory naming
+- `--flatten-class` for exporting static class methods as top-level functions
 - Handles .NET 10 BCL assemblies including System.Private.CoreLib
 - Uses MetadataLoadContext for assemblies that can't be loaded normally
 - Validates output with TypeScript compiler (tsc)
@@ -800,12 +804,14 @@ git push
 
 ## Current Status
 
-### Metrics (as of 2025-11-08)
+### Version: 0.7.16
+
+### Metrics (as of 2025-12-29)
 
 - **130 BCL namespaces** generated
 - **4,047 types** emitted
 - **Zero syntax errors** (TS1xxx)
-- **12 semantic errors** (TS2417 - property covariance, expected)
+- **Zero semantic errors** (TS2xxx)
 - **100% type coverage** - All reflected types accounted for
 - **241 indexers** intentionally omitted (tracked in metadata)
 

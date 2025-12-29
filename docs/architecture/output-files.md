@@ -78,6 +78,12 @@ CLR semantics not expressible in TypeScript. Used by Tsonic compiler.
           "isVirtual": false,
           "isStatic": false
         },
+        "TryGetValue": {
+          "kind": "method",
+          "isVirtual": false,
+          "isStatic": false,
+          "parameterModifiers": [null, "out"]
+        },
         "Count": {
           "kind": "property",
           "canRead": true,
@@ -96,7 +102,36 @@ CLR semantics not expressible in TypeScript. Used by Tsonic compiler.
 - `isVirtual`, `isOverride`, `isAbstract` - Dispatch semantics
 - `isStatic` - Static vs instance
 - `canRead`, `canWrite` - Property accessors
+- `parameterModifiers` - Array of ref/out/in modifiers per parameter (null = none)
 - `intentionalOmissions` - Members skipped from .d.ts
+
+### Parameter Modifiers
+
+The `parameterModifiers` array tracks C# `ref`, `out`, and `in` parameter modifiers:
+
+```json
+{
+  "TryParse": {
+    "kind": "method",
+    "parameterModifiers": [null, "out"]
+  },
+  "Exchange": {
+    "kind": "method",
+    "parameterModifiers": ["ref", "ref"]
+  },
+  "ReadSpan": {
+    "kind": "method",
+    "parameterModifiers": ["in"]
+  }
+}
+```
+
+- `null` - Normal by-value parameter
+- `"ref"` - By-reference, must be initialized
+- `"out"` - By-reference, assigned by method
+- `"in"` - By-reference, read-only
+
+This metadata is required by the Tsonic compiler for correct C# interop since TypeScript has no concept of by-reference parameters.
 
 ### bindings.json
 
@@ -198,10 +233,10 @@ export type IQueryable<T> = Internal.IQueryable_1<T>;
 
 ### Support Types
 
-From `@tsonic/types` package:
+From `@tsonic/core` package:
 
 ```typescript
-import type { ptr, ref } from "@tsonic/types";
+import type { ptr, ref } from "@tsonic/core/types.js";
 ```
 
 ## Naming Conventions

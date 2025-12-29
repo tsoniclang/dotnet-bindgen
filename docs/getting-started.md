@@ -33,6 +33,12 @@ node --version  # v18.0.0 or higher
 npm install tsbindgen
 ```
 
+For using generated declarations, also install the core types package:
+
+```bash
+npm install @tsonic/core
+```
+
 Verify:
 
 ```bash
@@ -137,7 +143,7 @@ Expected output:
 ```
 Generated 130 namespaces
 0 syntax errors
-0 semantic errors (v0.7.4+)
+0 semantic errors
 ```
 
 ## Next Steps
