@@ -108,14 +108,65 @@ npx tsbindgen generate -d $DOTNET_RUNTIME -o ./out --naming js
 
 | Option | Description |
 |--------|-------------|
-| `--lib <path>` | Path to pre-existing BCL declarations. |
+| `--lib <path>` | Path to pre-existing tsbindgen package. Can be specified multiple times. |
 
 See [Library Mode](library-mode.md) for details.
 
-**Example:**
+**Examples:**
 
 ```bash
-npx tsbindgen generate -a ./MyLib.dll -d $DOTNET_RUNTIME -o ./out --lib ./bcl-types
+# Single library reference
+npx tsbindgen generate -a ./MyLib.dll -d $DOTNET_RUNTIME -o ./out \
+  --lib node_modules/@tsonic/dotnet
+
+# Multiple library references
+npx tsbindgen generate -a ./MyLib.dll -d $DOTNET_RUNTIME -o ./out \
+  --lib node_modules/@tsonic/dotnet \
+  --lib node_modules/@tsonic/core
+```
+
+### Namespace Mapping
+
+| Option | Description |
+|--------|-------------|
+| `--namespace-map <mapping>` | Maps CLR namespace to different output name. Format: `CLRNamespace=outputName`. Can be specified multiple times. |
+
+Use this to customize output directory names without changing the actual namespace in generated code.
+
+**Examples:**
+
+```bash
+# Map System.Runtime.InteropServices to "interop"
+npx tsbindgen generate -d $DOTNET_RUNTIME -o ./out \
+  --namespace-map "System.Runtime.InteropServices=interop"
+
+# Multiple mappings
+npx tsbindgen generate -d $DOTNET_RUNTIME -o ./out \
+  --namespace-map "System.Collections.Generic=collections" \
+  --namespace-map "System.Threading.Tasks=async"
+```
+
+### Class Flattening
+
+| Option | Description |
+|--------|-------------|
+| `--flatten-class <fullname>` | Flattens a static class to top-level function exports. Format: `Namespace.ClassName`. Can be specified multiple times. |
+
+Static classes like `System.Console` or `System.Math` can be flattened so their methods become top-level exports instead of being accessed through a class.
+
+**Examples:**
+
+```bash
+# Flatten Console class
+npx tsbindgen generate -d $DOTNET_RUNTIME -o ./out \
+  --flatten-class "System.Console"
+
+# Result: export function WriteLine(...) instead of Console.WriteLine(...)
+
+# Flatten multiple classes
+npx tsbindgen generate -d $DOTNET_RUNTIME -o ./out \
+  --flatten-class "System.Console" \
+  --flatten-class "System.Math"
 ```
 
 ### Diagnostics

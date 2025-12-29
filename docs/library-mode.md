@@ -1,12 +1,13 @@
 # Library Mode
 
-Library mode generates declarations for your assembly without duplicating BCL types.
+Library mode generates declarations for your assembly without duplicating types from existing packages.
 
 ## Use Case
 
-When building a NuGet package with TypeScript bindings:
+When building a TypeScript package with .NET bindings:
 - BCL types come from `@tsonic/dotnet` (published package)
-- Your types are generated fresh with references to BCL
+- Runtime types come from `@tsonic/core` (Tsonic runtime primitives)
+- Your types are generated fresh with references to these packages
 
 ## Workflow
 
@@ -35,9 +36,29 @@ npx tsbindgen generate \
 
 ## What --lib Does
 
-1. **Skips BCL types** - Types from assemblies in `--lib` are not regenerated
-2. **Generates imports** - Cross-references become import statements
-3. **Validates references** - Ensures all referenced types exist in `--lib`
+1. **Skips library types** - Types from assemblies in `--lib` packages are not regenerated
+2. **Generates imports** - Cross-references become import statements to the library package
+3. **Validates references** - Ensures all referenced types exist in one of the `--lib` packages
+4. **Merges contracts** - Multiple `--lib` options combine their type registries
+
+## Multiple Library References
+
+You can specify `--lib` multiple times to reference several packages:
+
+```bash
+npx tsbindgen generate \
+  -a ./MyLibrary.dll \
+  -d $DOTNET_RUNTIME \
+  -o ./my-lib-types \
+  --lib ./node_modules/@tsonic/dotnet \
+  --lib ./node_modules/@tsonic/core
+```
+
+When a type is referenced, tsbindgen checks each library in order and imports from the first one that provides it. This allows layered package structures:
+
+- `@tsonic/core` - Tsonic runtime types (primitives, Array, etc.)
+- `@tsonic/dotnet` - .NET BCL types (references `@tsonic/core` for primitives)
+- Your package - Your types (references both)
 
 ## Output Structure
 

@@ -35,14 +35,11 @@ public static void Emit(BuildContext ctx, EmissionPlan plan, string outputDirect
 // Namespace: System.Collections.Generic
 
 // Branded primitive imports
-import type { int, long } from '@tsonic/types';
+import type { int, long } from '@tsonic/core/types.js';
 
 // Cross-namespace imports
 import * as System_Internal from '../../System/internal/index.js';
 import type { IEnumerable_1 } from '../../System.Collections/index.js';
-
-// CLROf utility
-export type CLROf<T> = T extends int ? Int32 : T extends string ? String : T;
 
 // Type declarations
 export interface List_1$instance<T> {
@@ -282,3 +279,73 @@ public string Resolve(TypeReference typeRef)
     // Imported type: use import alias
 }
 ```
+
+## Nullable Reference Type (NRT) Emission
+
+NRT emission follows an asymmetric position-based strategy:
+
+### Output Positions
+
+Returns, properties, and fields emit `| undefined` for nullable references:
+
+```typescript
+// C#: public string? Name { get; }
+readonly name: string | undefined;
+
+// C#: public T? GetItem<T>() where T : class
+getItem<T>(): T | undefined;
+```
+
+### Input Positions
+
+Parameters are always non-nullable (no `| undefined`):
+
+```typescript
+// C#: public void Process(string? value)
+process(value: string): void;
+```
+
+### Generic Type Arguments in Outputs
+
+When a nullable generic type arg appears in an output position, the nullability propagates:
+
+```typescript
+// C#: public List<string?>? Items { get; }
+readonly items: List_1<string | undefined> | undefined;
+```
+
+### Implementation
+
+NRT information is extracted from C# nullable attributes (`NullableAttribute`, `NullableContextAttribute`) in the reflection phase and tracked in the model. The emit phase checks `TypeReference.IsNullableReference` and adds `| undefined` only for output positions.
+
+## Class Flattening Emission
+
+When `--flatten-class` is specified, static classes emit top-level functions instead of an abstract class:
+
+```csharp
+// C#
+public static class Console {
+    public static void WriteLine(string value);
+    public static string ReadLine();
+}
+```
+
+With `--flatten-class "System.Console"`:
+
+```typescript
+// TypeScript (flattened)
+export function writeLine(value: string): void;
+export function readLine(): string;
+```
+
+Without flattening:
+
+```typescript
+// TypeScript (default)
+export abstract class Console {
+    static writeLine(value: string): void;
+    static readLine(): string;
+}
+```
+
+Flattened exports are placed in the facade file for the namespace.
