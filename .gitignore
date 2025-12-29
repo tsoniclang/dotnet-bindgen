@@ -65,7 +65,5 @@ package-lock.json
 .analysis/
 .codespin/
 
-# NPM packaging artifacts (native binaries, not package.json)
-npm/*/tsbindgen
 # npm package lib (built artifact)
 lib/
