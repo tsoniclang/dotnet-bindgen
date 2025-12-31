@@ -16,12 +16,14 @@ const PLATFORMS = {
   "linux-x64": "tsbindgen-linux-x64",
 };
 
-const getPlatformKey = () => `${process.platform}-${process.arch}`;
+function getPlatformKey() {
+  return `${process.platform}-${process.arch}`;
+}
 
 /**
  * Get the path to the tsbindgen binary
  */
-export const getBinaryPath = () => {
+export function getBinaryPath() {
   const key = getPlatformKey();
   const packageName = PLATFORMS[key];
 
@@ -49,14 +51,14 @@ export const getBinaryPath = () => {
     `Could not find tsbindgen binary for ${key}. ` +
       `Package @tsonic/${packageName} may not be installed.`
   );
-};
+}
 
 /**
  * Run tsbindgen with the given arguments
  * @param {string[]} args
  * @returns {Promise<{ code: number; stdout: string; stderr: string }>}
  */
-export const run = (args) => {
+export function run(args) {
   return new Promise((resolve, reject) => {
     const binaryPath = getBinaryPath();
     const proc = spawn(binaryPath, args);
@@ -78,16 +80,16 @@ export const run = (args) => {
       resolve({ code: code ?? 0, stdout, stderr });
     });
   });
-};
+}
 
 /**
  * Check if tsbindgen is available
  */
-export const isAvailable = () => {
+export function isAvailable() {
   try {
     getBinaryPath();
     return true;
   } catch {
     return false;
   }
-};
+}
