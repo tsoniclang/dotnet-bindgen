@@ -12,7 +12,7 @@ Each namespace generates two TypeScript files:
 
 ### Why Facades?
 
-1. **Clean imports**: Users import from `@tsonic/dotnet/System` not `@tsonic/dotnet/System/internal/index.js`
+1. **Clean imports**: Users import from `@tsonic/dotnet/System.js` not `@tsonic/dotnet/System/internal/index.js`
 2. **Friendly aliases**: `List<T>` instead of `List_1<T>`
 3. **Encapsulation**: Internal structure can change without breaking imports
 
@@ -129,7 +129,7 @@ Facades simplify import paths for consumers:
 import { List_1 } from '@tsonic/dotnet/System.Collections.Generic/internal/index.js';
 
 // With facade (clean path)
-import { List } from '@tsonic/dotnet/System.Collections.Generic';
+import { List } from '@tsonic/dotnet/System.Collections.Generic.js';
 ```
 
 ## Dual-Scope Naming

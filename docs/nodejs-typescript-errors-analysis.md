@@ -418,7 +418,7 @@ type KeyPair = ValueTuple_2<string, number>;
 
 ## Appendix: BCL Errors (Known Limitation)
 
-The 18 TS2430 errors in `@tsonic/dotnet/System.Numerics` are a known .NET/TypeScript impedance mismatch:
+The 18 TS2430 errors in `@tsonic/dotnet/System.Numerics.js` are a known .NET/TypeScript impedance mismatch:
 
 ```
 error TS2430: Interface 'IBinaryFloatingPointIeee754_1$instance<TSelf>' incorrectly extends

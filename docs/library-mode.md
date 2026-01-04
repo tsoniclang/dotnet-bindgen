@@ -132,8 +132,8 @@ npx tsbindgen generate \
 
 ```typescript
 // my-lib-types/MyCompany.Utils/internal/index.d.ts
-import type { List_1 } from '@tsonic/dotnet/System.Collections.Generic';
-import type { Exception } from '@tsonic/dotnet/System';
+import type { List_1 } from '@tsonic/dotnet/System.Collections.Generic.js';
+import type { Exception } from '@tsonic/dotnet/System.js';
 
 export interface DataProcessor$instance {
     process(items: string[]): List_1<string>;
