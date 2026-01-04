@@ -71,49 +71,48 @@ public static class ImportPlanner
             if (referencedTypeClrNames.Count == 0)
                 continue;
 
-            // Determine import path based on per-type membership in library contract
-            // Check each referenced type individually - don't assume all types in a namespace are in library
-            string importPath;
+            // Determine import paths based on per-type membership in library contract.
+            // A CLR namespace can be split across multiple assemblies, so in library mode we may need both:
+            // - an external library facade import, and
+            // - a local internal-index import,
+            // for the same target namespace.
+            var importGroups = new List<(string ImportPath, bool IsLibraryImport, List<string> ClrNames)>();
+
             if (ctx.LibraryContract != null)
             {
-                // Check if ALL referenced types are in the library contract
-                var allTypesInLibrary = referencedTypeClrNames.All(clrName =>
-                    ctx.LibraryContract.AllowedClrFullNames.Contains(clrName));
+                var libraryClrNames = referencedTypeClrNames
+                    .Where(clrName => ctx.LibraryContract.AllowedClrFullNames.Contains(clrName))
+                    .ToList();
 
-                if (allTypesInLibrary && referencedTypeClrNames.Count > 0)
+                var localClrNames = referencedTypeClrNames
+                    .Where(clrName => !ctx.LibraryContract.AllowedClrFullNames.Contains(clrName))
+                    .ToList();
+
+                if (libraryClrNames.Count > 0)
                 {
-                    // All types are from library - use package specifier facade
-                    // e.g., "@tsonic/dotnet/System.Collections.Generic.js"
-                    // NOTE: Library facade paths use CLR namespace name, not mapped output name
-                    // Use GetPackageForNamespace to handle merged libraries correctly
                     var targetPackage = ctx.LibraryContract.GetPackageForNamespace(targetNamespace);
-                    importPath = $"{targetPackage}/{targetNamespace}.js";
+                    importGroups.Add(($"{targetPackage}/{targetNamespace}.js", true, libraryClrNames));
                 }
-                else
+
+                if (localClrNames.Count > 0)
                 {
-                    // Some or all types are local - use relative path with mapped output names
-                    importPath = PathPlanner.GetSpecifier(ctx, ns.Name, targetNamespace);
+                    importGroups.Add((PathPlanner.GetSpecifier(ctx, ns.Name, targetNamespace), false, localClrNames));
                 }
             }
             else
             {
-                // Normal mode (no library): relative path to internal index with mapped output names
-                importPath = PathPlanner.GetSpecifier(ctx, ns.Name, targetNamespace);
+                importGroups.Add((PathPlanner.GetSpecifier(ctx, ns.Name, targetNamespace), false, referencedTypeClrNames));
             }
 
-            // Check for name collisions and create aliases if needed
-            var typeImports = new List<TypeImport>();
+            var needsDistinctImportAliases = importGroups.Count > 1;
 
-            // Check if this is a library import (facade names, not internal names)
-            // Defined outside the loop so it's visible to alias resolution loops below
-            // Check if import path starts with any known library package name
-            var isLibraryImport = ctx.LibraryContract != null &&
-                ctx.LibraryContract.NamespaceToPackage.Values
-                    .Distinct()
-                    .Any(pkg => importPath.StartsWith(pkg + "/"));
-
-            foreach (var clrName in referencedTypeClrNames)
+            foreach (var (importPath, isLibraryImport, groupClrNames) in importGroups)
             {
+                // Check for name collisions and create aliases if needed
+                var typeImports = new List<TypeImport>();
+
+                foreach (var clrName in groupClrNames)
+                {
                 // PRE-EMIT GUARD: Catch assembly-qualified garbage in CLR names
                 // This prevents the import garbage bug from ever reaching import planning
                 if (clrName.Contains('[') || clrName.Contains("Culture=") || clrName.Contains("PublicKeyToken="))
@@ -209,14 +208,16 @@ public static class ImportPlanner
                 {
                     aliases[tsName] = alias;
                 }
-            }
+                }
 
             if (typeImports.Count == 0)
                 continue;
 
             // Generate namespace alias for this import module
             // Format: "System" → "System_Internal", "System.Collections.Generic" → "System_Collections_Generic_Internal"
-            var namespaceAlias = GenerateNamespaceAlias(targetNamespace);
+            var namespaceAlias = needsDistinctImportAliases
+                ? GenerateNamespaceAlias(targetNamespace, isLibraryImport)
+                : GenerateNamespaceAlias(targetNamespace);
 
             var importStatement = new ImportStatement(
                 ImportPath: importPath,
@@ -230,19 +231,21 @@ public static class ImportPlanner
             // This allows printers to qualify type names with namespace alias
             foreach (var ti in typeImports.Where(t => t.IsValueImport))
             {
-                // Get the CLR name for this type (need to map back from TS name)
-                var clrName = referencedTypeClrNames.FirstOrDefault(c =>
-                {
-                    var tsNameForClr = graph.TryGetType(c, out var ts) && ts != null
-                        ? ctx.Renamer.GetFinalTypeName(ts)
-                        : GetTypeScriptNameForExternalType(c);
-                    // LIBRARY FACADE FIX: Apply facade transform for matching if this is a library import
-                    if (isLibraryImport)
-                        tsNameForClr = GetFacadeExportName(tsNameForClr, c, ctx.LibraryContract!);
-                    return tsNameForClr == ti.TypeName;
-                });
+                // Get CLR names for this imported type (need to map back from TS name).
+                // Note: in library mode, multiple arity CLR types can map to a single facade export name.
+                var matchingClrNames = groupClrNames.Where(c =>
+                    {
+                        var tsNameForClr = graph.TryGetType(c, out var ts) && ts != null
+                            ? ctx.Renamer.GetFinalTypeName(ts)
+                            : GetTypeScriptNameForExternalType(c);
+                        // LIBRARY FACADE FIX: Apply facade transform for matching if this is a library import
+                        if (isLibraryImport)
+                            tsNameForClr = GetFacadeExportName(tsNameForClr, c, ctx.LibraryContract!);
+                        return tsNameForClr == ti.TypeName;
+                    })
+                    .ToList();
 
-                if (!string.IsNullOrEmpty(clrName))
+                foreach (var clrName in matchingClrNames)
                 {
                     // STEP 1 RE-EXPORT FIX: Use instance type name for all class-like types
                     // All classes/interfaces/structs emit as T$instance (not just those with views)
@@ -270,7 +273,7 @@ public static class ImportPlanner
             // Example: ClaimsIdentity used in BOTH "extends ClaimsIdentity$instance" AND "clone(): ClaimsIdentity"
             // LIBRARY FACADE FIX: Iterate over ALL CLR names (not just typeImports) to handle deduplicated facades
             // When Action_1, Action_2, Action_3 all map to facade name "Action", we need to record aliases for ALL of them
-            foreach (var clrName in referencedTypeClrNames)
+            foreach (var clrName in groupClrNames)
             {
                 // Skip garbage CLR names (already filtered above, but be safe)
                 if (clrName.Contains('[') || clrName.Contains("Culture="))
@@ -302,7 +305,8 @@ public static class ImportPlanner
                 plan.TypeImportAliasNames[(ns.Name, clrName)] = importedName;
             }
 
-            ctx.Log("ImportPlanner", $"{ns.Name} imports {typeImports.Count} types from {targetNamespace}");
+            ctx.Log("ImportPlanner", $"{ns.Name} imports {typeImports.Count} types from {targetNamespace} ({importPath})");
+            }
         }
 
         if (imports.Count > 0)
@@ -432,6 +436,12 @@ public static class ImportPlanner
 
         // Append _Internal suffix to avoid collisions with type names
         return $"{safeName}_Internal";
+    }
+
+    private static string GenerateNamespaceAlias(string namespaceName, bool isLibraryImport)
+    {
+        var safeName = namespaceName.Replace('.', '_');
+        return isLibraryImport ? $"{safeName}_Lib" : $"{safeName}_Internal";
     }
 
     private static ExportKind DetermineExportKind(Model.Symbols.TypeSymbol type)
