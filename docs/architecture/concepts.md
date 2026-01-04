@@ -7,8 +7,8 @@ This document explains the core concepts and patterns used in tsbindgen.
 ### What is a Facade?
 
 Each namespace generates two TypeScript files:
-- `internal/index.d.ts` - Full declarations with all details
-- `index.d.ts` - Facade that re-exports with friendly aliases
+- `<Namespace>/internal/index.d.ts` - Full declarations with all details
+- `<Namespace>.d.ts` - Facade that re-exports with friendly aliases (flat ESM)
 
 ### Why Facades?
 
@@ -21,9 +21,12 @@ Each namespace generates two TypeScript files:
 ```
 output/
   System.Collections.Generic/
-    index.d.ts              # Facade (public API)
     internal/
       index.d.ts            # Full declarations
+      metadata.json         # CLR semantics
+    bindings.json           # CLR↔TS name mappings
+  System.Collections.Generic.d.ts  # Facade (public API)
+  System.Collections.Generic.js   # Runtime stub (throws)
 ```
 
 ### Internal File (Full Declarations)
@@ -34,7 +37,7 @@ The internal file contains complete type definitions:
 // System.Collections.Generic/internal/index.d.ts
 
 // Imports from other namespaces
-import type { int } from "@tsonic/types";
+import type { int } from "@tsonic/core/types.js";
 import * as System_Internal from "../../System/internal/index.js";
 import type { IEnumerable_1 } from "../../System.Collections.Generic/internal/index.js";
 
@@ -74,21 +77,21 @@ export type List_1<T> = List_1$instance<T> & __List_1$views<T>;
 The facade provides curated exports with friendly aliases. **No `export *`** is used to prevent leaking internal `$instance` and `$views` types to consumers.
 
 ```typescript
-// System.Collections.Generic/index.d.ts
+// System.Collections.Generic.d.ts
 
 // Import internal for type alias references
-import * as Internal from './internal/index.js';
+import * as Internal from './System.Collections.Generic/internal/index.js';
 
 // Cross-namespace type imports for constraints
-import type { IComparable_1 } from '../System/index.js';
+import type { IComparable_1 } from './System/internal/index.js';
 
 // Public API exports (curated - no export *)
 // Value re-exports for classes (TypeScript re-exports both value AND type binding)
-export { List_1 as List } from './internal/index.js';
-export { Dictionary_2 as Dictionary } from './internal/index.js';
-export { HashSet_1 as HashSet } from './internal/index.js';
-export { Queue_1 as Queue } from './internal/index.js';
-export { Stack_1 as Stack } from './internal/index.js';
+export { List_1 as List } from './System.Collections.Generic/internal/index.js';
+export { Dictionary_2 as Dictionary } from './System.Collections.Generic/internal/index.js';
+export { HashSet_1 as HashSet } from './System.Collections.Generic/internal/index.js';
+export { Queue_1 as Queue } from './System.Collections.Generic/internal/index.js';
+export { Stack_1 as Stack } from './System.Collections.Generic/internal/index.js';
 
 // Type aliases for interfaces (with Internal.-prefixed constraints)
 export type IEnumerable<T> = Internal.IEnumerable_1<T>;
@@ -111,7 +114,7 @@ The facade uses different export strategies based on type kind:
 
 ```typescript
 // Value re-export (for classes, structs, enums)
-export { List_1 } from './internal/index.js';
+export { List_1 } from './System.Collections.Generic/internal/index.js';
 
 // Type alias (for interfaces, delegates)
 export type IEnumerable<T> = Internal.IEnumerable_1<T>;
@@ -1317,11 +1320,11 @@ The emission is "honest" because it only claims what TypeScript can verify:
 Circular namespace dependencies cause TypeScript import errors:
 
 ```typescript
-// System.Collections.Generic/index.d.ts
-import { Func_2 } from "../System/index.js";  // Func used in List
+// System.Collections.Generic/internal/index.d.ts
+import type { Func_2 } from "../../System/internal/index.js";  // Func used in List
 
-// System/index.d.ts
-import { IEnumerable_1 } from "../System.Collections.Generic/index.js";  // IEnumerable used in Func
+// System/internal/index.d.ts
+import type { IEnumerable_1 } from "../../System.Collections.Generic/internal/index.js";  // IEnumerable used in Func
 
 // ❌ Circular import! TypeScript may fail to resolve types
 ```
@@ -1374,25 +1377,13 @@ Bucket 2 (singleton SCC):
   - System.Text.Json
 ```
 
-### How SCCs Enable Clean Imports
+### How SCCs Help
 
-**Within an SCC** (multi-namespace bucket):
-- Types reference each other directly (no cross-module imports)
-- Combined internal module for the bucket
+tsbindgen computes SCCs (Tarjan) over the namespace dependency graph and records them in the emission plan.
 
-**Across SCCs**:
-- Lower buckets import from higher buckets only
-- Topological ordering eliminates cycles
-
-```typescript
-// scc_0/internal/index.d.ts (combined bucket)
-// All types from System, System.Collections.Generic, System.Linq
-export interface List_1$instance<T> { ... }
-export interface IEnumerable_1$instance<T> { ... }
-export type Func_2<T, TResult> = ...;
-
-// No circular imports needed - all in same file!
-```
+PhaseGate uses the SCC plan to:
+- Detect and warn on **inter-SCC** cycles (`TBG201`)
+- Suppress warnings for **intra-SCC** cycles (expected in the BCL)
 
 ### Diagnostic Code
 
@@ -1416,7 +1407,7 @@ The type system has three distinct layers:
 | Layer | Responsibility | Example |
 |-------|----------------|---------|
 | **tsbindgen** | Emits CLR-true surface names | `Span_1<Char>`, `IEquatable_1<Int32>` |
-| **@tsonic/types** | Defines what CLR names mean in TS | `type Int32 = number`, `type Char = string` |
+| **@tsonic/core** | Primitive aliases + unsafe markers | `type int = number`, `type char = string & { __brand: "char" }`, `type ptr<T> = ...` |
 | **Tsonic compiler** | Enforces numeric correctness | `42 as int` validates bounds |
 
 ### How It Works
@@ -1463,7 +1454,7 @@ internal static class PrimitiveLift
 ### Real Example: IEquatable<int>
 
 ```typescript
-// @tsonic/types defines the aliases
+// @tsonic/core defines the aliases
 type int = number;
 type Int32 = number;
 
@@ -1496,7 +1487,7 @@ The direct approach has several advantages over alternatives:
 
 1. **No conditional type overhead**: No `CLROf<T>` wrapper to resolve at type-check time
 2. **Clear semantics**: What you see is what the CLR type system expects
-3. **Clean separation**: tsbindgen emits structure, @tsonic/types provides TS semantics
+3. **Clean separation**: tsbindgen emits structure, @tsonic/core provides primitive aliases/markers
 4. **Simpler output**: Generated declarations are more readable
 
 ## Nested Type Flattening
@@ -1670,7 +1661,7 @@ export type Action<T1 = __, T2 = __, T3 = __> =
 ### Real Example: Func
 
 ```typescript
-// System/index.d.ts (facade)
+// System.d.ts (facade)
 export type Func<T1 = __, T2 = __, TResult = __> =
   [T1] extends [__] ? never :                           // Func needs at least TResult
   [T2] extends [__] ? Internal.Func_1<T1> :             // Func<TResult>
@@ -1746,4 +1737,3 @@ Three invariants are enforced by `test-facade-constraint-invariants.sh`:
 1. **No `Internal.Internal.*`**: Double-qualification is never valid
 2. **No `Internal.unknown/any/never`**: TypeScript built-ins shouldn't be qualified
 3. **No `bigint` carrier**: Long/ULong use `number` aliases, not raw bigint
-

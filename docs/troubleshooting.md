@@ -28,17 +28,15 @@ npx tsbindgen generate -a ./MyLibrary.dll -d $DOTNET_RUNTIME -o ./out
 ### Missing Runtime Directory
 
 ```
-Error: Runtime directory not specified
+Error: No assemblies specified. Use --assembly or --assembly-dir
 ```
 
 **Solution:**
 
 ```bash
-# Find your runtime
-dotnet --list-runtimes
-
-# Use the path
+# Pass either a runtime directory (-d) or one or more assemblies (-a)
 npx tsbindgen generate -d ~/.dotnet/shared/Microsoft.NETCore.App/10.0.0 -o ./out
+npx tsbindgen generate -a ./MyLibrary.dll -d ~/.dotnet/shared/Microsoft.NETCore.App/10.0.0 -o ./out
 ```
 
 ### Namespace Not Generated
@@ -70,16 +68,12 @@ node test/validate/validate.js 2>&1 | tee error-report.txt
 error TS2304: Cannot find name 'int'.
 ```
 
-**Cause:** Missing `@tsonic/types` import.
+**Cause:** You referenced a Tsonic primitive alias (`int`, `long`, `decimal`, etc.) without importing it.
 
-**Solution:** Ensure your tsconfig.json includes the types package:
+**Solution:** Install `@tsonic/core` and import the primitive types you use:
 
-```json
-{
-  "compilerOptions": {
-    "types": ["@tsonic/types"]
-  }
-}
+```ts
+import type { int } from "@tsonic/core/types.js";
 ```
 
 ### TS2417 - Property Type Incompatible
@@ -161,8 +155,9 @@ npx tsbindgen generate -a ./MyLib.dll -d $DOTNET_RUNTIME -o ./out --lib ./bcl --
 Full BCL generation takes 30-60 seconds. For faster iteration:
 
 ```bash
-# Generate specific namespaces only
-npx tsbindgen generate -d $DOTNET_RUNTIME -o ./out -n System,System.Collections.Generic
+# Generate BCL once, then use library mode for your assemblies
+npx tsbindgen generate -d $DOTNET_RUNTIME -o .tests/bcl
+npx tsbindgen generate -a ./MyLib.dll -d $DOTNET_RUNTIME -o ./out --lib .tests/bcl
 ```
 
 ### Out of Memory
@@ -180,27 +175,11 @@ DOTNET_GCHeapHardLimit=2g npx tsbindgen generate -d $DOTNET_RUNTIME -o ./out
 
 Full validation runs TypeScript on 130 namespaces (2-3 minutes).
 
-**Workaround:** Validate specific namespaces:
+**Workarounds:**
 
 ```bash
-# Generate subset
-npx tsbindgen generate -d $DOTNET_RUNTIME -o .tests/subset -n System
-
-# Validate just that
-npx tsc --noEmit .tests/subset/System/index.d.ts
-```
-
-### Completeness Verification Fails
-
-```
-VERIFICATION FAILED - 5 types lost
-```
-
-**Action:** This indicates a bug. The lost types should be investigated:
-
-```bash
-# Run with verbose output
-node test/validate/verify-completeness.js 2>&1 | grep "MISSING"
+# Generate only (skip TypeScript compilation)
+node test/validate/validate.js --skip-tsc
 ```
 
 ## Debugging Tips
@@ -214,7 +193,7 @@ npx tsbindgen generate -d $DOTNET_RUNTIME -o ./out -v
 ### Enable Specific Logs
 
 ```bash
-npx tsbindgen generate -d $DOTNET_RUNTIME -o ./out --logs ImportPlanner,FacadeEmitter
+npx tsbindgen generate -d $DOTNET_RUNTIME -o ./out --logs ImportPlanner FacadeEmitter
 ```
 
 Available log categories:
@@ -229,13 +208,13 @@ Available log categories:
 
 ```bash
 # View TypeScript output
-cat output/System/index.d.ts
+cat output/System.d.ts
 
 # View metadata
-cat output/System/metadata.json | jq .
+cat output/System/internal/metadata.json | jq .
 
-# View type list (what was emitted)
-cat output/System/typelist.json | jq .
+# View bindings
+cat output/System/bindings.json | jq .
 ```
 
 ## Getting Help
@@ -249,4 +228,3 @@ If you encounter issues not covered here:
    - Command used
    - Full error output
    - Minimal reproduction steps
-

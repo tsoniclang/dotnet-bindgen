@@ -194,19 +194,19 @@ interface Derived$instance extends Base$instance {
 
 ### ExtensionMethodAnalyzer
 
-Buckets extension methods for TypeScript-like syntax.
+Buckets extension methods for C#-style "using" semantics.
 
 **Input:** LINQ extension methods scattered across `Enumerable`, `Queryable`, etc.
 
-**Output:** Grouped by first parameter type for declaration merging:
+**Output:** Emitted into `__internal/extensions/index.d.ts` as helper types:
 ```typescript
-// System.Linq.extensions/IEnumerable_1.d.ts
-declare module "../System.Collections.Generic/internal/index.js" {
-    interface IEnumerable_1<T> {
-        where(predicate: Func_2<T, boolean>): IEnumerable_1<T>;
-        select<TResult>(selector: Func_2<T, TResult>): IEnumerable_1<TResult>;
-    }
+// __internal/extensions/index.d.ts (excerpt)
+export interface __Ext_System_Linq_IEnumerable_1<T> {
+    where(predicate: System.Func_2<T, boolean>): ExtensionMethods_System_Linq<System_Collections_Generic.IEnumerable_1<T>>;
 }
+
+export type ExtensionMethods_System_Linq<TShape> =
+    TShape & (TShape extends System_Collections_Generic.IEnumerable_1<infer T0> ? __Ext_System_Linq_IEnumerable_1<T0> : {});
 ```
 
 ### SafeToExtendAnalyzer
@@ -248,4 +248,3 @@ Raw SymbolGraph (from Load)
     ▼
 Shaped SymbolGraph (ready for naming)
 ```
-

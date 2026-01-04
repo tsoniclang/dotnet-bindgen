@@ -20,7 +20,7 @@ npm install --save-dev @tsonic/dotnet-globals > /dev/null 2>&1
 
 # Create test file that simulates the real LINQ scenario
 cat > "$TEMP_DIR/test.ts" << 'TESTEOF'
-// Branded primitive types (from @tsonic/types)
+// Branded primitive types (from @tsonic/core)
 type int = number & { __brand: "int" };
 type long = number & { __brand: "long" };
 

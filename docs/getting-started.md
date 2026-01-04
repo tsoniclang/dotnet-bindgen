@@ -30,7 +30,11 @@ node --version  # v18.0.0 or higher
 ### Via npm (recommended)
 
 ```bash
+# Wrapper package (recommended)
 npm install tsbindgen
+
+# Or install the scoped package directly
+npm install @tsonic/tsbindgen
 ```
 
 For using generated declarations, also install the core types package:
@@ -87,37 +91,44 @@ After generation:
 
 ```
 output/
++-- System.d.ts                 # Facade (public API)
++-- System.js                   # Runtime stub (throws)
 +-- System/
-|   +-- index.d.ts              # Public facade
+|   +-- bindings.json
 |   +-- internal/
 |       +-- index.d.ts          # Full declarations
+|       +-- metadata.json       # CLR semantics
++-- System.Collections.Generic.d.ts
++-- System.Collections.Generic.js
 +-- System.Collections.Generic/
-|   +-- index.d.ts
+|   +-- bindings.json
 |   +-- internal/
 |       +-- index.d.ts
+|       +-- metadata.json
 +-- ... (130 namespaces)
 ```
 
-### Facade (index.d.ts)
+### Facade (`<Namespace>.d.ts`)
 
 The public-facing module consumers import from. Uses curated exports (no `export *`) to prevent leaking internal `$instance`/`$views` types:
 
 ```typescript
-// Import internal for type alias references
-import * as Internal from './internal/index.js';
+// output/System.Collections.Generic.d.ts
+import * as Internal from './System.Collections.Generic/internal/index.js';
 
 // Value re-exports for classes (friendly names)
-export { List_1 as List } from './internal/index.js';
+export { List_1 as List } from './System.Collections.Generic/internal/index.js';
 
 // Type aliases for interfaces
 export type IEnumerable<T> = Internal.IEnumerable_1<T>;
 ```
 
-### Internal (internal/index.d.ts)
+### Internal (`<Namespace>/internal/index.d.ts`)
 
 Full type declarations:
 
 ```typescript
+// output/System.Collections.Generic/internal/index.d.ts
 export interface List_1$instance<T> {
     readonly count: int;
     add(item: T): void;
@@ -136,14 +147,14 @@ export type List_1<T> = List_1$instance<T> & __List_1$views<T>;
 Run TypeScript validation:
 
 ```bash
-node test/validate/validate.js
+node test/validate/validate.js --strict
 ```
 
 Expected output:
 ```
-Generated 130 namespaces
-0 syntax errors
-0 semantic errors
+VALIDATION RESULTS
+Total errors: 0
+✓ STRICT VALIDATION PASSED - Zero TypeScript errors!
 ```
 
 ## Next Steps

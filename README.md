@@ -86,13 +86,13 @@ npx tsbindgen generate -a ./MyLibrary.dll -d $DOTNET_RUNTIME -o ./my-lib --lib .
 | `--assembly` | `-a` | Path to assembly file(s) to process | - |
 | `--assembly-dir` | `-d` | Directory containing .NET runtime assemblies | - |
 | `--out-dir` | `-o` | Output directory for generated files | `out` |
-| `--namespaces` | `-n` | Comma-separated namespace filter | (all) |
+| `--namespaces` | `-n` | Namespace filter (reserved; currently ignored) | (all) |
 | `--naming` | - | Naming convention: `js` (camelCase) or `clr` (PascalCase) | `clr` |
 | `--lib` | - | Path to pre-existing tsbindgen package (repeatable) | - |
 | `--namespace-map` | - | Map CLR namespace to output name (repeatable) | - |
 | `--flatten-class` | - | Flatten static class to top-level exports (repeatable) | - |
 | `--verbose` | `-v` | Enable detailed progress output | false |
-| `--logs` | - | Enable specific log categories (comma-separated) | - |
+| `--logs` | - | Enable specific log categories (repeatable; space-separated values) | - |
 | `--strict` | - | Enable strict mode validation | false |
 
 ### Examples
@@ -101,11 +101,8 @@ npx tsbindgen generate -a ./MyLibrary.dll -d $DOTNET_RUNTIME -o ./my-lib --lib .
 # Generate BCL with JavaScript naming
 npx tsbindgen generate -d $DOTNET_RUNTIME -o ./out --naming js
 
-# Generate specific namespaces only
-npx tsbindgen generate -d $DOTNET_RUNTIME -o ./out -n System,System.Collections.Generic
-
 # Verbose output with specific log categories
-npx tsbindgen generate -d $DOTNET_RUNTIME -o ./out -v --logs ImportPlanner,FacadeEmitter
+npx tsbindgen generate -d $DOTNET_RUNTIME -o ./out -v --logs ImportPlanner FacadeEmitter
 
 # Strict mode (additional validation)
 npx tsbindgen generate -d $DOTNET_RUNTIME -o ./out --strict
@@ -113,27 +110,37 @@ npx tsbindgen generate -d $DOTNET_RUNTIME -o ./out --strict
 
 ## Output Structure
 
-For each namespace, tsbindgen generates:
+tsbindgen emits a flat ESM facade per namespace plus a per-namespace directory for internals:
 
 ```
 output/
+├── families.json                      # Multi-arity family index
+├── __internal/extensions/index.d.ts   # Extension method buckets
+├── System.d.ts                        # Facade (public API)
+├── System.js                          # Runtime stub (throws)
 ├── System/
-│   ├── index.d.ts              # Public facade (imports + re-exports)
+│   ├── bindings.json
 │   └── internal/
-│       └── index.d.ts          # Type declarations
-├── System.Collections.Generic/
-│   ├── index.d.ts
-│   └── internal/
-│       └── index.d.ts
-└── ... (130 namespaces)
+│       ├── index.d.ts                 # Full declarations
+│       └── metadata.json              # CLR semantics
+├── System.Collections.Generic.d.ts
+├── System.Collections.Generic.js
+└── System.Collections.Generic/
+    ├── bindings.json
+    └── internal/
+        ├── index.d.ts
+        └── metadata.json
 ```
 
 ### Output Files
 
 | File | Description |
 |------|-------------|
-| `index.d.ts` | Public facade with imports and friendly re-exports |
-| `internal/index.d.ts` | Full type declarations with $instance pattern |
+| `<Namespace>.d.ts` | Public facade with curated exports and friendly aliases |
+| `<Namespace>.js` | Module stub that throws if executed in Node |
+| `<Namespace>/internal/index.d.ts` | Full type declarations (`$instance` + `__views`) |
+| `<Namespace>/internal/metadata.json` | CLR semantics (virtual/override, ref/out/in, etc.) |
+| `<Namespace>/bindings.json` | CLR↔TS name mappings for the Tsonic compiler |
 
 ## Type Mapping
 
@@ -166,8 +173,8 @@ Generic types use underscore suffix for arity:
 Friendly aliases are also exported:
 ```typescript
 // Both work:
-import { List_1 } from "@tsonic/dotnet/System.Collections.Generic";
-import { List } from "@tsonic/dotnet/System.Collections.Generic";  // Friendly alias
+import { List_1 } from "@tsonic/dotnet/System.Collections.Generic.js";
+import { List } from "@tsonic/dotnet/System.Collections.Generic.js";  // Friendly alias
 ```
 
 ### Type Kind Mapping
@@ -203,9 +210,6 @@ bash test/scripts/run-all.sh
 
 # Run validation (TypeScript compilation check)
 node test/validate/validate.js
-
-# Run completeness verification
-node test/validate/verify-completeness.js
 
 # Individual tests
 bash test/scripts/test-strict-mode.sh
@@ -252,8 +256,8 @@ dotnet run --project src/tsbindgen/tsbindgen.csproj -- <args>
 
 ## Documentation
 
-- [User Guide](docs/user-guide.md) - Detailed usage instructions
-- [Architecture](docs/architecture/) - Internal architecture documentation
+- [Docs Index](docs/README.md) - Getting started, CLI, troubleshooting
+- [Architecture](docs/architecture/README.md) - Internal architecture documentation
 
 ## Related Projects
 

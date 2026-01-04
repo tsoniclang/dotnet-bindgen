@@ -6,9 +6,13 @@ The Emit phase generates TypeScript declaration files from the emission plan.
 
 | Emitter | Output | Purpose |
 |---------|--------|---------|
-| InternalIndexEmitter | `internal/index.d.ts` | Full type declarations |
-| FacadeEmitter | `index.d.ts` | Public facade with re-exports |
-| ExtensionMethodEmitter | `__internal/extensions/` | Extension method buckets |
+| ExtensionsEmitter | `__internal/extensions/index.d.ts` | Extension method buckets |
+| InternalIndexEmitter | `<Namespace>/internal/index.d.ts` | Full type declarations |
+| FacadeEmitter | `<Namespace>.d.ts` | Public facade with re-exports |
+| FamilyIndexEmitter | `families.json` | Multi-arity family index |
+| MetadataEmitter | `<Namespace>/internal/metadata.json` | CLR semantics |
+| BindingEmitter | `<Namespace>/bindings.json` | CLR↔TS name mappings |
+| ModuleStubEmitter | `<Namespace>.js` | Runtime stubs (throw if executed) |
 
 ## InternalIndexEmitter
 
@@ -22,7 +26,8 @@ public static void Emit(BuildContext ctx, EmissionPlan plan, string outputDirect
     foreach (var nsOrder in plan.EmissionOrder.Namespaces)
     {
         var content = GenerateNamespaceDeclaration(ctx, plan, nsOrder);
-        var outputFile = Path.Combine(outputDirectory, ns.Name, "internal", "index.d.ts");
+        var outputName = NamespacePathMapper.GetOutputName(nsOrder.Namespace, ctx);
+        var outputFile = Path.Combine(outputDirectory, outputName, "internal", "index.d.ts");
         File.WriteAllText(outputFile, content);
     }
 }
@@ -39,7 +44,7 @@ import type { int, long } from '@tsonic/core/types.js';
 
 // Cross-namespace imports
 import * as System_Internal from '../../System/internal/index.js';
-import type { IEnumerable_1 } from '../../System.Collections/index.js';
+import type { IEnumerable_1 } from '../../System.Collections/internal/index.js';
 
 // Type declarations
 export interface List_1$instance<T> {
@@ -149,8 +154,10 @@ public static void Emit(BuildContext ctx, EmissionPlan plan, string outputDirect
 {
     foreach (var nsOrder in plan.EmissionOrder.Namespaces)
     {
+        var ns = nsOrder.Namespace;
         var content = GenerateFacade(ctx, plan, ns);
-        var outputFile = Path.Combine(outputDirectory, ns.Name, "index.d.ts");
+        var outputName = NamespacePathMapper.GetOutputName(nsOrder.Namespace, ctx);
+        var outputFile = Path.Combine(outputDirectory, $"{outputName}.d.ts");
         File.WriteAllText(outputFile, content);
     }
 }
@@ -163,15 +170,15 @@ public static void Emit(BuildContext ctx, EmissionPlan plan, string outputDirect
 // Namespace: System.Collections.Generic
 // Facade - Public API Surface (curated exports, no export *)
 
-import * as Internal from './internal/index.js';
+import * as Internal from './System.Collections.Generic/internal/index.js';
 
 // Cross-namespace type imports for constraints
-import type { IEquatable_1 } from '../System/index.js';
+import type { IEquatable_1 } from './System/internal/index.js';
 
 // Public API exports (curated - no export * to prevent $instance/$views leakage)
 // Value re-exports for classes (TypeScript re-exports both value AND type)
-export { List_1 as List } from './internal/index.js';
-export { Dictionary_2 as Dictionary } from './internal/index.js';
+export { List_1 as List } from './System.Collections.Generic/internal/index.js';
+export { Dictionary_2 as Dictionary } from './System.Collections.Generic/internal/index.js';
 
 // Type aliases for interfaces
 export type IEnumerable<T> = Internal.IEnumerable_1<T>;
