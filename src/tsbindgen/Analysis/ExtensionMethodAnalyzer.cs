@@ -28,7 +28,7 @@ public static class ExtensionMethodAnalyzer
         ctx.Log("ExtensionMethodAnalyzer", "Starting extension method analysis...");
 
         // Step 1: Collect all extension methods from all types
-        var allExtensionMethods = new List<MethodSymbol>();
+        var allExtensionMethods = new List<(MethodSymbol Method, string DeclaringNamespace)>();
         foreach (var ns in graph.Namespaces)
         {
             foreach (var type in ns.Types)
@@ -41,7 +41,7 @@ public static class ExtensionMethodAnalyzer
                 {
                     if (method.IsExtensionMethod)
                     {
-                        allExtensionMethods.Add(method);
+                        allExtensionMethods.Add((method, type.Namespace));
                     }
                 }
             }
@@ -49,11 +49,11 @@ public static class ExtensionMethodAnalyzer
 
         ctx.Log("ExtensionMethodAnalyzer", $"Found {allExtensionMethods.Count} extension methods");
 
-        // Step 2: Group by target type (generic definition)
-        var buckets = new Dictionary<ExtensionTargetKey, List<MethodSymbol>>();
+        // Step 2: Group by declaring namespace (C# using scope) + target type (generic definition)
+        var buckets = new Dictionary<(string DeclaringNamespace, ExtensionTargetKey TargetKey), List<MethodSymbol>>();
         var targetTypeMap = new Dictionary<ExtensionTargetKey, TypeSymbol>();
 
-        foreach (var method in allExtensionMethods)
+        foreach (var (method, declaringNamespace) in allExtensionMethods)
         {
             if (method.ExtensionTarget == null)
             {
@@ -97,32 +97,47 @@ public static class ExtensionMethodAnalyzer
             }
 
             // Add to bucket
-            if (!buckets.ContainsKey(key))
+            var bucketKey = (DeclaringNamespace: declaringNamespace, TargetKey: key);
+
+            if (!buckets.ContainsKey(bucketKey))
             {
-                buckets[key] = new List<MethodSymbol>();
-                targetTypeMap[key] = targetTypeSymbol;
+                buckets[bucketKey] = new List<MethodSymbol>();
+
+                // Target type symbol is shared across declaring namespaces; only store once.
+                if (!targetTypeMap.ContainsKey(key))
+                {
+                    targetTypeMap[key] = targetTypeSymbol;
+                }
             }
 
-            buckets[key].Add(method);
+            buckets[bucketKey].Add(method);
         }
 
-        ctx.Log("ExtensionMethodAnalyzer", $"Grouped into {buckets.Count} target type buckets");
+        ctx.Log("ExtensionMethodAnalyzer", $"Grouped into {buckets.Count} (declaring namespace × target type) buckets");
 
         // Step 3: Build bucket plans
         var bucketPlans = new List<ExtensionBucketPlan>();
-        foreach (var (key, methods) in buckets)
+        foreach (var entry in buckets
+                     .OrderBy(e => e.Key.DeclaringNamespace, StringComparer.Ordinal)
+                     .ThenBy(e => e.Key.TargetKey.FullName, StringComparer.Ordinal)
+                     .ThenBy(e => e.Key.TargetKey.Arity))
         {
+            var declaringNamespace = entry.Key.DeclaringNamespace;
+            var key = entry.Key.TargetKey;
+            var methods = entry.Value;
+
             var targetType = targetTypeMap[key];
             var plan = new ExtensionBucketPlan
             {
                 Key = key,
+                DeclaringNamespace = declaringNamespace,
                 TargetType = targetType,
                 Methods = methods.ToImmutableArray()
             };
             bucketPlans.Add(plan);
 
             ctx.Log("ExtensionMethodAnalyzer",
-                $"  Bucket: {plan.BucketInterfaceName} ({methods.Count} methods for {key.FullName})");
+                $"  Bucket: {plan.BucketInterfaceName} ({methods.Count} methods for {key.FullName} in {declaringNamespace})");
         }
 
         // Step 4: Return final plan

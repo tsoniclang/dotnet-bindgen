@@ -241,11 +241,12 @@ public static class FacadeEmitter
             }
         }
 
-        // Re-export extension method helper from __internal bucket file
-        if (ns.IsRoot && plan.ExtensionMethods.Buckets.Length > 0)
+        // Re-export extension method helper for this namespace (C# using semantics)
+        if (plan.ExtensionMethods.Buckets.Any(b => b.DeclaringNamespace == ns.Name))
         {
-            sb.AppendLine("// Re-export extension method helper from __internal bucket file");
-            sb.AppendLine("export type { ExtensionMethods } from './__internal/extensions/index.js';");
+            var nsAlias = string.IsNullOrEmpty(ns.Name) ? "_root" : ns.Name.Replace('.', '_');
+            sb.AppendLine("// Extension methods (C# using semantics)");
+            sb.AppendLine($"export type {{ ExtensionMethods_{nsAlias} as ExtensionMethods }} from './__internal/extensions/index.js';");
             sb.AppendLine();
         }
 
