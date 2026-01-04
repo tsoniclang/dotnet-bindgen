@@ -43,7 +43,8 @@ public sealed record ExtensionTargetKey
 
 /// <summary>
 /// Plan for emitting a single bucket interface containing all extension methods for a specific target type.
-/// Example: __Ext_IEnumerable_1&lt;T&gt; containing Select, Where, etc.
+/// Buckets are scoped by the declaring namespace of the extension methods (C#-like using semantics).
+/// Example: __Ext_System_Linq_IEnumerable_1&lt;T&gt; containing Where, Select, etc.
 /// </summary>
 public sealed record ExtensionBucketPlan
 {
@@ -51,6 +52,12 @@ public sealed record ExtensionBucketPlan
     /// The key identifying this target type (FullName + Arity).
     /// </summary>
     public required ExtensionTargetKey Key { get; init; }
+
+    /// <summary>
+    /// Namespace that declares these extension methods (namespace of the static class).
+    /// This is the scoping boundary for extension method availability.
+    /// </summary>
+    public required string DeclaringNamespace { get; init; }
 
     /// <summary>
     /// The target type symbol (generic definition).
@@ -66,10 +73,11 @@ public sealed record ExtensionBucketPlan
 
     /// <summary>
     /// TypeScript name for the bucket interface.
-    /// Example: "__Ext_IEnumerable_1" for IEnumerable&lt;T&gt;
-    /// Generated from TargetType.TsEmitName with "__Ext_" prefix.
+    /// Example: "__Ext_System_Linq_IEnumerable_1" for IEnumerable&lt;T&gt; extensions declared in System.Linq
+    /// Generated from DeclaringNamespace + TargetType.TsEmitName.
     /// </summary>
-    public string BucketInterfaceName => $"__Ext_{TargetType.TsEmitName}";
+    public string BucketInterfaceName =>
+        $"__Ext_{(string.IsNullOrEmpty(DeclaringNamespace) ? "_root" : DeclaringNamespace.Replace('.', '_'))}_{TargetType.TsEmitName}";
 }
 
 /// <summary>
