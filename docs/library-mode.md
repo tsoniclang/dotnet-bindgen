@@ -65,27 +65,36 @@ When a type is referenced, tsbindgen checks each library in order and imports fr
 Without `--lib`:
 ```
 output/
++-- System.d.ts
++-- System.js
 +-- System/
++-- System.Collections.Generic.d.ts
++-- System.Collections.Generic.js
 +-- System.Collections.Generic/
++-- MyNamespace.d.ts
++-- MyNamespace.js
 +-- MyNamespace/
-+-- ... (all namespaces)
++-- ... (all emitted namespaces)
 ```
 
 With `--lib ./bcl-types`:
 ```
 output/
++-- MyNamespace.d.ts
++-- MyNamespace.js
 +-- MyNamespace/
-    +-- index.d.ts
+    +-- bindings.json
     +-- internal/
         +-- index.d.ts
+        +-- metadata.json
 ```
 
 BCL references become imports:
 
 ```typescript
 // In MyNamespace/internal/index.d.ts
-import type { List_1 } from '@tsonic/dotnet/System.Collections.Generic';
-import type { Exception } from '@tsonic/dotnet/System';
+import type { List_1 } from '@tsonic/dotnet/System.Collections.Generic.js';
+import type { Exception } from '@tsonic/dotnet/System.js';
 
 export interface MyClass$instance {
     getItems(): List_1<string>;

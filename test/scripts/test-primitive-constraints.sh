@@ -21,14 +21,14 @@ npm install --save-dev @tsonic/dotnet-globals > /dev/null 2>&1
 
 # Create test file that exercises the exact failing API family
 cat > "$TEMP_DIR/test.ts" << 'TESTEOF'
-// Branded primitive types (from @tsonic/types)
-// Per @tsonic/types contract: ALL numerics are number-carried (including long, nint, nuint)
+// Branded primitive types (from @tsonic/core)
+// Per @tsonic/core contract: ALL numerics are number-carried (including long, nint, nuint)
 type byte = number & { __brand: "byte" };
 type char = string & { __brand: "char" };
 type int = number & { __brand: "int" };
-type long = number & { __brand: "long" };    // number-carried per @tsonic/types
-type nint = number & { __brand: "nint" };    // number-carried per @tsonic/types
-type nuint = number & { __brand: "nuint" };  // number-carried per @tsonic/types
+type long = number & { __brand: "long" };    // number-carried per @tsonic/core
+type nint = number & { __brand: "nint" };    // number-carried per @tsonic/core
+type nuint = number & { __brand: "nuint" };  // number-carried per @tsonic/core
 
 // CLR primitive aliases in a namespace to avoid conflicts with global types
 namespace CLR {
@@ -108,7 +108,7 @@ declare const HashSet_1: {
 };
 
 // This MUST compile - instantiate HashSet with primitive types
-// All numeric primitives are number-carried per @tsonic/types
+// All numeric primitives are number-carried per @tsonic/core
 const byteSet: HashSet_1<byte> = new HashSet_1<byte>();
 const intSet: HashSet_1<int> = new HashSet_1<int>();
 const longSet: HashSet_1<long> = new HashSet_1<long>();    // number-carried (64-bit)

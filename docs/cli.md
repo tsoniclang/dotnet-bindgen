@@ -5,11 +5,14 @@ Complete reference for the tsbindgen command-line interface.
 ## Installation
 
 ```bash
-# Via npm (recommended)
+# Via npm (wrapper, recommended)
 npm install tsbindgen
 
 # Or install globally
 npm install -g tsbindgen
+
+# Or install the scoped package directly
+npm install @tsonic/tsbindgen
 ```
 
 Requires .NET 10 runtime installed.
@@ -68,14 +71,12 @@ npx tsbindgen generate -d $DOTNET_RUNTIME -o ./declarations
 
 | Option | Short | Description |
 |--------|-------|-------------|
-| `--namespaces <list>` | `-n` | Comma-separated namespace filter. |
+| `--namespaces <list>` | `-n` | Reserved (currently ignored). |
 
 **Example:**
 
 ```bash
-# Only generate System and System.Collections.Generic
-npx tsbindgen generate -d $DOTNET_RUNTIME -o ./out \
-  -n System,System.Collections.Generic
+npx tsbindgen generate -d $DOTNET_RUNTIME -o ./out
 ```
 
 ### Naming
@@ -193,7 +194,7 @@ npx tsbindgen generate -d $DOTNET_RUNTIME -o ./out \
 npx tsbindgen generate -d $DOTNET_RUNTIME -o ./out -v
 
 # Specific log categories
-npx tsbindgen generate -d $DOTNET_RUNTIME -o ./out --logs ImportPlanner,FacadeEmitter
+npx tsbindgen generate -d $DOTNET_RUNTIME -o ./out --logs ImportPlanner FacadeEmitter
 
 # Strict mode
 npx tsbindgen generate -d $DOTNET_RUNTIME -o ./out --strict

@@ -55,7 +55,7 @@ public sealed record ImportPlan
 }
 
 public sealed record ImportStatement(
-    string ImportPath,           // "../System/internal/index.js"
+    string ImportPath,           // "../../System/internal/index.js"
     string TargetNamespace,      // "System"
     List<TypeImport> TypeImports,
     string NamespaceAlias);      // "System_Internal"
@@ -80,10 +80,10 @@ public sealed record TypeImport(
 
 ```typescript
 // Value import - needed for extends
-import * as System_Internal from '../System/internal/index.js';
+import * as System_Internal from '../../System/internal/index.js';
 
 // Type-only import - just for type annotations
-import type { IEnumerable_1 } from '../System.Collections/index.js';
+import type { IEnumerable_1 } from '../../System.Collections/internal/index.js';
 ```
 
 ## EmissionPlanner

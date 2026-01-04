@@ -7,20 +7,23 @@ Each namespace generates multiple companion files.
 ```
 output/
   families.json           # Multi-arity family index (root)
+  __internal/
+    extensions/
+      index.d.ts          # Extension method buckets
+  System.d.ts             # Facade (re-exports)
+  System.js               # Runtime stub (throws if executed)
   System/
+    bindings.json         # Name mappings
     internal/
       index.d.ts          # Full declarations
-    index.d.ts            # Facade (re-exports)
-    metadata.json         # CLR semantics
-    bindings.json         # Name mappings
-    typelist.json         # Emitted types (verification)
+      metadata.json       # CLR semantics
+  System.Collections.Generic.d.ts
+  System.Collections.Generic.js
   System.Collections.Generic/
+    bindings.json
     internal/
       index.d.ts
-    index.d.ts
-    metadata.json
-    bindings.json
-    typelist.json
+      metadata.json
 ```
 
 ## File Purposes
@@ -44,16 +47,17 @@ export declare const List_1: {
 export type List_1<T> = List_1$instance<T> & __List_1$views<T>;
 ```
 
-### index.d.ts (Facade)
+### <Namespace>.d.ts (Facade)
 
 Provides curated exports with friendly aliases. **No `export *`** is used to prevent leaking internal `$instance` and `$views` types.
 
 ```typescript
-import * as Internal from './internal/index.js';
+// System.Collections.Generic.d.ts
+import * as Internal from './System.Collections.Generic/internal/index.js';
 
 // Public API exports (curated - no export *)
 // Value re-exports for classes
-export { List_1 as List } from './internal/index.js';
+export { List_1 as List } from './System.Collections.Generic/internal/index.js';
 
 // Type aliases for interfaces
 export type IEnumerable<T> = Internal.IEnumerable_1<T>;
@@ -66,44 +70,31 @@ CLR semantics not expressible in TypeScript. Used by Tsonic compiler.
 ```json
 {
   "namespace": "System.Collections.Generic",
-  "types": {
-    "List_1": {
-      "clrName": "List`1",
+  "contributingAssemblies": ["System.Private.CoreLib"],
+  "types": [
+    {
+      "stableId": "System.Private.CoreLib:System.Collections.Generic.List\u00601",
+      "clrName": "System.Collections.Generic.List\u00601",
       "tsEmitName": "List_1",
-      "kind": "class",
-      "isSealed": false,
-      "members": {
-        "Add": {
-          "kind": "method",
-          "isVirtual": false,
-          "isStatic": false
-        },
-        "TryGetValue": {
-          "kind": "method",
-          "isVirtual": false,
-          "isStatic": false,
+      "kind": "Class",
+      "methods": [
+        {
+          "clrName": "TryGetValue",
+          "tsEmitName": "tryGetValue",
           "parameterModifiers": [null, "out"]
-        },
-        "Count": {
-          "kind": "property",
-          "canRead": true,
-          "canWrite": false
         }
-      },
-      "intentionalOmissions": {
-        "indexers": [{"signature": "Item[int]"}]
-      }
+      ]
     }
-  }
+  ]
 }
 ```
 
 **Key fields:**
+- `emitScope` - Where the member is emitted (`ClassSurface`, `ViewOnly`, etc.)
 - `isVirtual`, `isOverride`, `isAbstract` - Dispatch semantics
 - `isStatic` - Static vs instance
-- `canRead`, `canWrite` - Property accessors
+- `hasGetter`, `hasSetter` - Property accessors
 - `parameterModifiers` - Array of ref/out/in modifiers per parameter (null = none)
-- `intentionalOmissions` - Members skipped from .d.ts
 
 ### Parameter Modifiers
 
@@ -111,18 +102,9 @@ The `parameterModifiers` array tracks C# `ref`, `out`, and `in` parameter modifi
 
 ```json
 {
-  "TryParse": {
-    "kind": "method",
-    "parameterModifiers": [null, "out"]
-  },
-  "Exchange": {
-    "kind": "method",
-    "parameterModifiers": ["ref", "ref"]
-  },
-  "ReadSpan": {
-    "kind": "method",
-    "parameterModifiers": ["in"]
-  }
+  "clrName": "TryParse",
+  "tsEmitName": "tryParse",
+  "parameterModifiers": [null, "out"]
 }
 ```
 
@@ -190,25 +172,6 @@ Canonical index of multi-arity families for cross-package imports.
 
 Used by `ImportPlanner` for drift-proof multi-arity family resolution across packages.
 
-### typelist.json
-
-Flat list of emitted types/members. Used for completeness verification.
-
-```json
-{
-  "types": {
-    "List_1": {
-      "clrName": "List`1",
-      "tsEmitName": "List_1",
-      "members": {
-        "Add": {"tsEmitName": "Add", "emitScope": "ClassSurface"},
-        "Count": {"tsEmitName": "Count", "emitScope": "ClassSurface"}
-      }
-    }
-  }
-}
-```
-
 ## Import Conventions
 
 ### Internal to Internal
@@ -222,12 +185,12 @@ import type { IEnumerable_1 } from "../../System.Collections.Generic/internal/in
 
 ### Facade to Internal
 
-Facades import from `./internal/index.js` but use curated exports (no `export *`):
+Facades import from `./<Namespace>/internal/index.js` but use curated exports (no `export *`):
 
 ```typescript
-// From System.Linq/index.d.ts
-import * as Internal from './internal/index.js';
-export { Enumerable } from './internal/index.js';
+// From System.Linq.d.ts
+import * as Internal from './System.Linq/internal/index.js';
+export { Enumerable } from './System.Linq/internal/index.js';
 export type IQueryable<T> = Internal.IQueryable_1<T>;
 ```
 
@@ -236,7 +199,7 @@ export type IQueryable<T> = Internal.IQueryable_1<T>;
 From `@tsonic/core` package:
 
 ```typescript
-import type { ptr, ref } from "@tsonic/core/types.js";
+import type { ptr } from "@tsonic/core/types.js";
 ```
 
 ## Naming Conventions
@@ -246,4 +209,3 @@ import type { ptr, ref } from "@tsonic/core/types.js";
 | Generic arity: `List`1` | Underscore: `List_1` |
 | Nested type: `Outer+Inner` | Dollar: `Outer$Inner` |
 | Namespace | Directory name (with dots) |
-

@@ -252,7 +252,7 @@ public sealed record PointerTypeReference(
 ) : TypeReference;
 ```
 
-Maps to `ptr<T>` in TypeScript (from @tsonic/types).
+Maps to `ptr<T>` in TypeScript (from `@tsonic/core/types.js`).
 
 ### ByRefTypeReference
 
@@ -265,7 +265,7 @@ public sealed record ByRefTypeReference(
 ) : TypeReference;
 ```
 
-Maps to `ref<T>` in TypeScript.
+Tracked in `metadata.json` via `parameterModifiers` (ref/out/in). The emitted `.d.ts` uses the element type directly.
 
 ### NullableTypeReference
 
@@ -346,4 +346,3 @@ public sealed record GenericParameterConstraints
     public ImmutableArray<TypeReference> TypeConstraints { get; }  // where T : IFoo
 }
 ```
-

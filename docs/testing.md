@@ -8,55 +8,29 @@ tsbindgen includes validation and regression testing to ensure correct TypeScrip
 
 ```bash
 # Full BCL validation (2-3 minutes)
-node test/validate/validate.js
+node test/validate/validate.js --strict
 
 # Capture output for analysis
-node test/validate/validate.js | tee .tests/validation-$(date +%s).txt
+node test/validate/validate.js --strict 2>&1 | tee .tests/validation-$(date +%s).txt
 ```
 
 ### What Validation Does
 
-1. Cleans `.tests/validation/` directory
-2. Generates all 130 BCL namespaces
-3. Creates `index.d.ts` with triple-slash references
-4. Creates `tsconfig.json`
-5. Runs TypeScript compiler (`tsc`)
-6. Reports error breakdown
+1. Cleans `.tests/validate/`
+2. Creates `tsconfig.json` in `.tests/validate/`
+3. Runs `tsbindgen generate` against the local .NET runtime
+4. Verifies each namespace has `internal/index.d.ts` and `internal/metadata.json`
+5. Installs `@tsonic/core` into `.tests/validate/` (requires npm network access)
+6. Runs `npx tsc` and writes output to `.tests/tsc-validation.txt`
 
 ### Success Criteria
 
 | Criteria | Status |
 |----------|--------|
-| Zero syntax errors (TS1xxx) | Required |
-| Zero semantic errors (TS2xxx) | Required (v0.7.4+) |
+| Zero TypeScript errors | Required when using `--strict` |
+| Zero syntax errors (TS1xxx) | Required (always) |
 | All assemblies generate | Required |
 | All metadata files present | Required |
-
-## Completeness Verification
-
-Ensures no types are lost through the pipeline.
-
-```bash
-node test/validate/verify-completeness.js
-```
-
-### How It Works
-
-1. Loads `snapshot.json` from each namespace (what was reflected)
-2. Loads `typelist.json` from each namespace (what was emitted)
-3. Compares types and members using `tsEmitName` as key
-4. Filters intentional omissions (indexers, etc.)
-5. Reports any data loss
-
-### Expected Output
-
-```
-VERIFICATION PASSED - ALL REFLECTED DATA ACCOUNTED FOR
-- Types in snapshots: 4,047
-- Types in typelists: 4,047
-- Members verified: 37,863
-- Intentional omissions: 241 indexers
-```
 
 ## Regression Tests
 
@@ -76,14 +50,19 @@ Individual test scripts verify specific behaviors.
 | `test-naming-js.sh` | JavaScript naming convention |
 | `test-strict-mode.sh` | Strict mode validation |
 | `test-delegate-callable.sh` | Delegate callable signatures |
+| `test-delegate-typescript.sh` | Delegate typing in TS |
 | `test-primitive-identity.sh` | Primitive type mappings |
 | `test-primitive-lifting.sh` | Primitive type lifting in generic args |
+| `test-primitive-constraints.sh` | Primitive constraint invariants |
 | `test-camelcase-regression.sh` | CamelCase conversion |
 | `test-multiarity-import.sh` | Multi-arity types import correctly |
 | `test-multiarity-no-wrong-export.sh` | Facades don't export wrong arity |
 | `test-facade-constraint-invariants.sh` | Constraint invariants validation |
+| `test-facade-clean-exports.sh` | Facades don't leak internal types |
+| `test-facade-value-exports.sh` | Facade value exports correctness |
 | `test-params-rest.sh` | C# params → TS rest parameters |
 | `test-cross-module-alias.sh` | Cross-module type aliases |
+| `test-surface-manifest.sh` | Surface regression guard |
 
 ### Running a Single Test
 
@@ -150,7 +129,7 @@ Expected for primitive type aliases that may be declared in multiple namespaces.
 | Directory | Purpose |
 |-----------|---------|
 | `.tests/` | Captured validation output (gitignored) |
-| `.tests/validation/` | Generated test declarations |
+| `.tests/validate/` | Generated declarations for `validate.js` |
 | `test/baselines/` | Surface manifest baselines |
 
 ## Surface Manifest Testing
@@ -158,10 +137,9 @@ Expected for primitive type aliases that may be declared in multiple namespaces.
 Tracks the public API surface for regression detection.
 
 ```bash
-# Capture current surface
-./test/scripts/capture-surface-manifest.sh
+# Capture baseline (writes `test/baselines/bcl-surface-manifest.json`)
+bash test/scripts/capture-baseline.sh
 
-# Compare against baseline
-diff test/baselines/surface-manifest.txt .tests/surface-manifest.txt
+# Verify current output matches baseline
+bash test/scripts/test-surface-manifest.sh
 ```
-
