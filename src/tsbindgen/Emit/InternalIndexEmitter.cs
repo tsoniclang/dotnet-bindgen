@@ -331,11 +331,22 @@ public static class InternalIndexEmitter
                 var needsAlias = isClassLike && finalName != instanceName && !isStaticClass;
                 if (needsAlias)
                 {
+                    // C# LAMBDA CONVERSION: Expression<TDelegate> should accept lambdas (TDelegate)
+                    // at the TypeScript surface so queryable APIs can be called ergonomically.
+                    // Model this as a union: Expression_1<T> = T | Expression_1$instance<T>.
+                    var rhsExpression = instanceName;
+                    if (typeOrder.Type.Namespace == "System.Linq.Expressions" &&
+                        finalName == "Expression_1" &&
+                        typeOrder.Type.GenericParameters.Length == 1)
+                    {
+                        rhsExpression = $"{typeOrder.Type.GenericParameters[0].Name} | {instanceName}";
+                    }
+
                     AliasEmit.EmitGenericAlias(
                         sb,
                         aliasName: finalName,
                         sourceType: typeOrder.Type,
-                        rhsExpression: instanceName,
+                        rhsExpression: rhsExpression,
                         resolver,
                         ctx,
                         withConstraints: true);
