@@ -222,6 +222,31 @@ public static class FacadeEmitter
                 }
             }
 
+            // Multi-arity families: emit VALUE exports for arity-0 members (constructors/static namespaces).
+            // The sentinel-ladder aliases below provide the TYPE surface for the family; this provides
+            // the VALUE surface without leaking internal exports or conflicting with the type alias.
+            if (multiArityFamilies.Length > 0)
+            {
+                sb.AppendLine();
+                sb.AppendLine("// Multi-arity family value exports (arity-0 constructors/static namespaces)");
+
+                foreach (var family in multiArityFamilies.OrderBy(f => f.PublicStem))
+                {
+                    var arity0Export = exports.FirstOrDefault(e =>
+                        e.Arity == 0 &&
+                        string.Equals(GetStem(e.ExportName), family.PublicStem, StringComparison.Ordinal));
+
+                    if (arity0Export is null)
+                        continue;
+
+                    if (!NeedsValueExport(arity0Export.SourceType.Kind))
+                        continue;
+
+                    var internalValueName = GetInternalValueName(arity0Export.SourceType, ctx);
+                    sb.AppendLine($"export const {family.PublicStem}: typeof Internal.{internalValueName};");
+                }
+            }
+
             // Emit sentinel-ladder aliases for all detected multi-arity families
             if (multiArityFamilies.Length > 0)
             {
