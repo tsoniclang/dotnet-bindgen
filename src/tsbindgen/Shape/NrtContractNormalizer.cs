@@ -798,12 +798,14 @@ public static class NrtContractNormalizer
                 // Build lookup for method edits
                 var methodEditsByKey = typeEdits
                     .Where(e => e.MethodKey.HasValue)
-                    .ToDictionary(e => e.MethodKey!.Value, e => e);
+                    .GroupBy(e => e.MethodKey!.Value)
+                    .ToDictionary(g => g.Key, g => MergeDuplicateEdits(ctx, typeStableId, g));
 
                 // Build lookup for property edits
                 var propertyEditsByKey = typeEdits
                     .Where(e => e.PropertyKey.HasValue)
-                    .ToDictionary(e => e.PropertyKey!.Value, e => e);
+                    .GroupBy(e => e.PropertyKey!.Value)
+                    .ToDictionary(g => g.Key, g => MergeDuplicateEdits(ctx, typeStableId, g));
 
                 var updatedMethods = type.Members.Methods.Select(m =>
                 {
@@ -843,6 +845,54 @@ public static class NrtContractNormalizer
         }
 
         return updatedGraph;
+    }
+
+    private static NullabilityEdit MergeDuplicateEdits(
+        BuildContext ctx,
+        string typeStableId,
+        IEnumerable<NullabilityEdit> edits)
+    {
+        var merged = edits.First();
+        var mergedState = merged.NewNullability;
+        var mergedReason = merged.Reason;
+        var conflict = false;
+
+        foreach (var edit in edits.Skip(1))
+        {
+            if (edit.NewNullability != mergedState)
+            {
+                conflict = true;
+                mergedState = MergeNullability(mergedState, edit.NewNullability);
+            }
+
+            // Preserve all provenance for debugging; this does not affect output determinism.
+            mergedReason = $"{mergedReason}; {edit.Reason}";
+        }
+
+        if (conflict)
+        {
+            ctx.Log(
+                "NrtContractNormalizer",
+                $"Merged conflicting NRT edits for {typeStableId}: {merged.NewNullability} → {mergedState} ({mergedReason})");
+        }
+
+        if (mergedState == merged.NewNullability && mergedReason == merged.Reason)
+            return merged;
+
+        return merged with { NewNullability = mergedState, Reason = mergedReason };
+    }
+
+    private static NrtState MergeNullability(NrtState a, NrtState b)
+    {
+        // Contract-source rule: NotNull is the strictest and is always safe for TS structural compatibility
+        // when multiple base/interface declarations disagree (string is assignable to string|undefined).
+        if (a == NrtState.NotNull || b == NrtState.NotNull)
+            return NrtState.NotNull;
+
+        if (a == NrtState.Nullable || b == NrtState.Nullable)
+            return NrtState.Nullable;
+
+        return NrtState.Oblivious;
     }
 
     // ========== Helper Methods ==========
