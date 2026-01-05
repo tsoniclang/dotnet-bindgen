@@ -104,6 +104,51 @@ public static class ImportGraph
         }
     }
 
+    private static void RecordTypeReference(
+        BuildContext ctx,
+        ImportGraphData graphData,
+        NamespaceSymbol sourceNamespace,
+        string sourceTypeClrFullName,
+        string targetTypeClrFullName,
+        string? targetNamespace,
+        ReferenceKind referenceKind,
+        HashSet<string> dependencies)
+    {
+        if (targetNamespace == null)
+            return;
+
+        if (targetNamespace != sourceNamespace.Name)
+        {
+            dependencies.Add(targetNamespace);
+            graphData.CrossNamespaceReferences.Add(new CrossNamespaceReference(
+                SourceNamespace: sourceNamespace.Name,
+                SourceType: sourceTypeClrFullName,
+                TargetNamespace: targetNamespace,
+                TargetType: targetTypeClrFullName,
+                ReferenceKind: referenceKind));
+            return;
+        }
+
+        // Library mode: A namespace can be split across packages. If this reference targets a type that was filtered out
+        // into a --lib package, we must still record it so ImportPlanner can import it from the library facade.
+        if (ctx.LibraryContract == null || !ctx.LibraryContract.AllowedClrFullNames.Contains(targetTypeClrFullName))
+            return;
+
+        if (graphData.NamespaceTypeIndex.TryGetValue(sourceNamespace.Name, out var localTypeNames) &&
+            localTypeNames.Contains(targetTypeClrFullName))
+        {
+            return;
+        }
+
+        dependencies.Add(sourceNamespace.Name);
+        graphData.CrossNamespaceReferences.Add(new CrossNamespaceReference(
+            SourceNamespace: sourceNamespace.Name,
+            SourceType: sourceTypeClrFullName,
+            TargetNamespace: sourceNamespace.Name,
+            TargetType: targetTypeClrFullName,
+            ReferenceKind: referenceKind));
+    }
+
     /// <summary>
     /// TS2304 FIX: Recursively analyze a type and all its nested types.
     /// Ensures nested type members are scanned for cross-namespace dependencies.
@@ -124,16 +169,15 @@ public static class ImportGraph
 
             foreach (var (fullName, targetNs) in baseTypeRefs)
             {
-                if (targetNs != null && targetNs != ns.Name)
-                {
-                    dependencies.Add(targetNs);
-                    graphData.CrossNamespaceReferences.Add(new CrossNamespaceReference(
-                        SourceNamespace: ns.Name,
-                        SourceType: type.ClrFullName,
-                        TargetNamespace: targetNs,
-                        TargetType: fullName,
-                        ReferenceKind: ReferenceKind.BaseClass));
-                }
+                RecordTypeReference(
+                    ctx,
+                    graphData,
+                    ns,
+                    type.ClrFullName,
+                    fullName,
+                    targetNs,
+                    ReferenceKind.BaseClass,
+                    dependencies);
             }
         }
 
@@ -145,16 +189,15 @@ public static class ImportGraph
 
             foreach (var (fullName, targetNs) in ifaceTypeRefs)
             {
-                if (targetNs != null && targetNs != ns.Name)
-                {
-                    dependencies.Add(targetNs);
-                    graphData.CrossNamespaceReferences.Add(new CrossNamespaceReference(
-                        SourceNamespace: ns.Name,
-                        SourceType: type.ClrFullName,
-                        TargetNamespace: targetNs,
-                        TargetType: fullName,
-                        ReferenceKind: ReferenceKind.Interface));
-                }
+                RecordTypeReference(
+                    ctx,
+                    graphData,
+                    ns,
+                    type.ClrFullName,
+                    fullName,
+                    targetNs,
+                    ReferenceKind.Interface,
+                    dependencies);
             }
         }
 
@@ -168,16 +211,15 @@ public static class ImportGraph
 
                 foreach (var (fullName, targetNs) in constraintTypeRefs)
                 {
-                    if (targetNs != null && targetNs != ns.Name)
-                    {
-                        dependencies.Add(targetNs);
-                        graphData.CrossNamespaceReferences.Add(new CrossNamespaceReference(
-                            SourceNamespace: ns.Name,
-                            SourceType: type.ClrFullName,
-                            TargetNamespace: targetNs,
-                            TargetType: fullName,
-                            ReferenceKind: ReferenceKind.GenericConstraint));
-                    }
+                    RecordTypeReference(
+                        ctx,
+                        graphData,
+                        ns,
+                        type.ClrFullName,
+                        fullName,
+                        targetNs,
+                        ReferenceKind.GenericConstraint,
+                        dependencies);
                 }
             }
         }
@@ -214,16 +256,15 @@ public static class ImportGraph
 
             foreach (var (fullName, targetNs) in returnTypeRefs)
             {
-                if (targetNs != null && targetNs != ns.Name)
-                {
-                    dependencies.Add(targetNs);
-                    graphData.CrossNamespaceReferences.Add(new CrossNamespaceReference(
-                        SourceNamespace: ns.Name,
-                        SourceType: type.ClrFullName,
-                        TargetNamespace: targetNs,
-                        TargetType: fullName,
-                        ReferenceKind: ReferenceKind.MethodReturn));
-                }
+                RecordTypeReference(
+                    ctx,
+                    graphData,
+                    ns,
+                    type.ClrFullName,
+                    fullName,
+                    targetNs,
+                    ReferenceKind.MethodReturn,
+                    dependencies);
             }
 
             // Parameters - collect ALL referenced types recursively
@@ -234,16 +275,15 @@ public static class ImportGraph
 
                 foreach (var (fullName, targetNs) in paramTypeRefs)
                 {
-                    if (targetNs != null && targetNs != ns.Name)
-                    {
-                        dependencies.Add(targetNs);
-                        graphData.CrossNamespaceReferences.Add(new CrossNamespaceReference(
-                            SourceNamespace: ns.Name,
-                            SourceType: type.ClrFullName,
-                            TargetNamespace: targetNs,
-                            TargetType: fullName,
-                            ReferenceKind: ReferenceKind.MethodParameter));
-                    }
+                    RecordTypeReference(
+                        ctx,
+                        graphData,
+                        ns,
+                        type.ClrFullName,
+                        fullName,
+                        targetNs,
+                        ReferenceKind.MethodParameter,
+                        dependencies);
                 }
             }
 
@@ -257,16 +297,15 @@ public static class ImportGraph
 
                     foreach (var (fullName, targetNs) in constraintTypeRefs)
                     {
-                        if (targetNs != null && targetNs != ns.Name)
-                        {
-                            dependencies.Add(targetNs);
-                            graphData.CrossNamespaceReferences.Add(new CrossNamespaceReference(
-                                SourceNamespace: ns.Name,
-                                SourceType: type.ClrFullName,
-                                TargetNamespace: targetNs,
-                                TargetType: fullName,
-                                ReferenceKind: ReferenceKind.GenericConstraint));
-                        }
+                        RecordTypeReference(
+                            ctx,
+                            graphData,
+                            ns,
+                            type.ClrFullName,
+                            fullName,
+                            targetNs,
+                            ReferenceKind.GenericConstraint,
+                            dependencies);
                     }
                 }
             }
@@ -283,16 +322,15 @@ public static class ImportGraph
 
                 foreach (var (fullName, targetNs) in paramTypeRefs)
                 {
-                    if (targetNs != null && targetNs != ns.Name)
-                    {
-                        dependencies.Add(targetNs);
-                        graphData.CrossNamespaceReferences.Add(new CrossNamespaceReference(
-                            SourceNamespace: ns.Name,
-                            SourceType: type.ClrFullName,
-                            TargetNamespace: targetNs,
-                            TargetType: fullName,
-                            ReferenceKind: ReferenceKind.ConstructorParameter));
-                    }
+                    RecordTypeReference(
+                        ctx,
+                        graphData,
+                        ns,
+                        type.ClrFullName,
+                        fullName,
+                        targetNs,
+                        ReferenceKind.ConstructorParameter,
+                        dependencies);
                 }
             }
         }
@@ -305,16 +343,15 @@ public static class ImportGraph
 
             foreach (var (fullName, targetNs) in propTypeRefs)
             {
-                if (targetNs != null && targetNs != ns.Name)
-                {
-                    dependencies.Add(targetNs);
-                    graphData.CrossNamespaceReferences.Add(new CrossNamespaceReference(
-                        SourceNamespace: ns.Name,
-                        SourceType: type.ClrFullName,
-                        TargetNamespace: targetNs,
-                        TargetType: fullName,
-                        ReferenceKind: ReferenceKind.PropertyType));
-                }
+                RecordTypeReference(
+                    ctx,
+                    graphData,
+                    ns,
+                    type.ClrFullName,
+                    fullName,
+                    targetNs,
+                    ReferenceKind.PropertyType,
+                    dependencies);
             }
 
             // Index parameters - collect recursively
@@ -341,16 +378,15 @@ public static class ImportGraph
 
             foreach (var (fullName, targetNs) in fieldTypeRefs)
             {
-                if (targetNs != null && targetNs != ns.Name)
-                {
-                    dependencies.Add(targetNs);
-                    graphData.CrossNamespaceReferences.Add(new CrossNamespaceReference(
-                        SourceNamespace: ns.Name,
-                        SourceType: type.ClrFullName,
-                        TargetNamespace: targetNs,
-                        TargetType: fullName,
-                        ReferenceKind: ReferenceKind.FieldType));
-                }
+                RecordTypeReference(
+                    ctx,
+                    graphData,
+                    ns,
+                    type.ClrFullName,
+                    fullName,
+                    targetNs,
+                    ReferenceKind.FieldType,
+                    dependencies);
             }
         }
 
@@ -362,16 +398,15 @@ public static class ImportGraph
 
             foreach (var (fullName, targetNs) in eventTypeRefs)
             {
-                if (targetNs != null && targetNs != ns.Name)
-                {
-                    dependencies.Add(targetNs);
-                    graphData.CrossNamespaceReferences.Add(new CrossNamespaceReference(
-                        SourceNamespace: ns.Name,
-                        SourceType: type.ClrFullName,
-                        TargetNamespace: targetNs,
-                        TargetType: fullName,
-                        ReferenceKind: ReferenceKind.EventType));
-                }
+                RecordTypeReference(
+                    ctx,
+                    graphData,
+                    ns,
+                    type.ClrFullName,
+                    fullName,
+                    targetNs,
+                    ReferenceKind.EventType,
+                    dependencies);
             }
         }
     }
@@ -453,16 +488,15 @@ public static class ImportGraph
 
             foreach (var (fullName, targetNs) in returnTypeRefs)
             {
-                if (targetNs != null && targetNs != ns.Name)
-                {
-                    dependencies.Add(targetNs);
-                    graphData.CrossNamespaceReferences.Add(new CrossNamespaceReference(
-                        SourceNamespace: ns.Name,
-                        SourceType: derivedType.ClrFullName,
-                        TargetNamespace: targetNs,
-                        TargetType: fullName,
-                        ReferenceKind: ReferenceKind.MethodReturn));
-                }
+                RecordTypeReference(
+                    ctx,
+                    graphData,
+                    ns,
+                    derivedType.ClrFullName,
+                    fullName,
+                    targetNs,
+                    ReferenceKind.MethodReturn,
+                    dependencies);
             }
 
             // Analyze parameters
@@ -473,16 +507,15 @@ public static class ImportGraph
 
                 foreach (var (fullName, targetNs) in paramTypeRefs)
                 {
-                    if (targetNs != null && targetNs != ns.Name)
-                    {
-                        dependencies.Add(targetNs);
-                        graphData.CrossNamespaceReferences.Add(new CrossNamespaceReference(
-                            SourceNamespace: ns.Name,
-                            SourceType: derivedType.ClrFullName,
-                            TargetNamespace: targetNs,
-                            TargetType: fullName,
-                            ReferenceKind: ReferenceKind.MethodParameter));
-                    }
+                    RecordTypeReference(
+                        ctx,
+                        graphData,
+                        ns,
+                        derivedType.ClrFullName,
+                        fullName,
+                        targetNs,
+                        ReferenceKind.MethodParameter,
+                        dependencies);
                 }
             }
         }
@@ -506,16 +539,15 @@ public static class ImportGraph
 
             foreach (var (fullName, targetNs) in propTypeRefs)
             {
-                if (targetNs != null && targetNs != ns.Name)
-                {
-                    dependencies.Add(targetNs);
-                    graphData.CrossNamespaceReferences.Add(new CrossNamespaceReference(
-                        SourceNamespace: ns.Name,
-                        SourceType: derivedType.ClrFullName,
-                        TargetNamespace: targetNs,
-                        TargetType: fullName,
-                        ReferenceKind: ReferenceKind.PropertyType));
-                }
+                RecordTypeReference(
+                    ctx,
+                    graphData,
+                    ns,
+                    derivedType.ClrFullName,
+                    fullName,
+                    targetNs,
+                    ReferenceKind.PropertyType,
+                    dependencies);
             }
         }
     }

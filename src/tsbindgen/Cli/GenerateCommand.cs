@@ -60,6 +60,11 @@ public static class GenerateCommand
             getDefaultValue: () => false,
             description: "Enable strict mode validation (zero non-whitelisted warnings)");
 
+        var allowConstructorConstraintLossOption = new Option<bool>(
+            name: "--allow-constructor-constraint-loss",
+            getDefaultValue: () => false,
+            description: "Allow generic new() constraint loss (downgrade to warning)");
+
         var libOption = new Option<string[]>(
             name: "--lib",
             description: "Path to existing tsbindgen package (library mode - emit only what's in the library contract, repeatable)")
@@ -92,6 +97,7 @@ public static class GenerateCommand
         command.AddOption(verboseOption);
         command.AddOption(logsOption);
         command.AddOption(strictOption);
+        command.AddOption(allowConstructorConstraintLossOption);
         command.AddOption(libOption);
         command.AddOption(namespaceMapOption);
         command.AddOption(flattenClassOption);
@@ -106,6 +112,7 @@ public static class GenerateCommand
             var verbose = context.ParseResult.GetValueForOption(verboseOption);
             var logs = context.ParseResult.GetValueForOption(logsOption) ?? Array.Empty<string>();
             var strict = context.ParseResult.GetValueForOption(strictOption);
+            var allowConstructorConstraintLoss = context.ParseResult.GetValueForOption(allowConstructorConstraintLossOption);
             var libs = context.ParseResult.GetValueForOption(libOption) ?? Array.Empty<string>();
             var namespaceMaps = context.ParseResult.GetValueForOption(namespaceMapOption) ?? Array.Empty<string>();
             var flattenClasses = context.ParseResult.GetValueForOption(flattenClassOption) ?? Array.Empty<string>();
@@ -119,6 +126,7 @@ public static class GenerateCommand
                 verbose,
                 logs,
                 strict,
+                allowConstructorConstraintLoss,
                 libs,
                 namespaceMaps,
                 flattenClasses);
@@ -136,6 +144,7 @@ public static class GenerateCommand
         bool verbose,
         string[] logs,
         bool strict,
+        bool allowConstructorConstraintLoss,
         string[] libs,
         string[] namespaceMaps,
         string[] flattenClasses)
@@ -181,6 +190,17 @@ public static class GenerateCommand
                     Emission = policy.Emission with
                     {
                         Naming = namingStyle
+                    }
+                };
+            }
+
+            if (allowConstructorConstraintLoss)
+            {
+                policy = policy with
+                {
+                    Constraints = policy.Constraints with
+                    {
+                        AllowConstructorConstraintLoss = true
                     }
                 };
             }
