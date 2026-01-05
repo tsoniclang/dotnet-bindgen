@@ -473,6 +473,35 @@ public static class ExtensionsEmitter
             var extensionMethodsTypeName = GetExtensionMethodsTypeName(declaringNamespace);
 
             sb.AppendLine($"// Generic helper type for extension methods in namespace: {declaringNamespace}");
+
+            var buckets = group
+                .OrderBy(b => b.TargetType.Namespace, StringComparer.Ordinal)
+                .ThenBy(b => b.TargetType.TsEmitName, StringComparer.Ordinal)
+                .ThenBy(b => b.Key.Arity)
+                .ToList();
+
+            // System.Linq has overlapping extension methods for IEnumerable<T> and IQueryable<T>.
+            // In C#, Queryable.* should win for IQueryable<T> receivers (more specific match).
+            // Model this by including Enumerable extensions but letting Queryable members override
+            // on overlapping method names (where/select/etc).
+            ExtensionBucketPlan? ienumerable1Bucket = null;
+            ExtensionBucketPlan? iqueryable1Bucket = null;
+            if (declaringNamespace == "System.Linq")
+            {
+                ienumerable1Bucket = buckets.FirstOrDefault(b =>
+                    b.TargetType.Namespace == "System.Collections.Generic" &&
+                    b.TargetType.TsEmitName == "IEnumerable_1");
+                iqueryable1Bucket = buckets.FirstOrDefault(b =>
+                    b.TargetType.Namespace == "System.Linq" &&
+                    b.TargetType.TsEmitName == "IQueryable_1");
+            }
+            var preferQueryableOverEnumerable = ienumerable1Bucket != null && iqueryable1Bucket != null;
+
+            if (preferQueryableOverEnumerable)
+            {
+                sb.AppendLine("type __TsonicPreferExt<A, B> = Omit<A, keyof B> & B;");
+            }
+
             sb.AppendLine($"export type {extensionMethodsTypeName}<TShape> =");
             sb.AppendLine("  TShape extends null | undefined ? TShape");
             sb.AppendLine("  : TShape extends void ? void");
@@ -480,10 +509,7 @@ public static class ExtensionsEmitter
 
             var conditionals = new List<string>();
 
-            foreach (var bucket in group
-                         .OrderBy(b => b.TargetType.Namespace, StringComparer.Ordinal)
-                         .ThenBy(b => b.TargetType.TsEmitName, StringComparer.Ordinal)
-                         .ThenBy(b => b.Key.Arity))
+            foreach (var bucket in buckets)
             {
                 var targetType = bucket.TargetType;
                 var targetNamespaceAlias = GetNamespaceAlias(targetType.Namespace);
@@ -510,6 +536,22 @@ public static class ExtensionsEmitter
                     }
                     var inferClause = string.Join(", ", inferParams);
                     var bucketArgs = string.Join(", ", Enumerable.Range(0, targetType.GenericParameters.Length).Select(i => $"T{i}"));
+
+                    if (preferQueryableOverEnumerable && bucket == ienumerable1Bucket)
+                    {
+                        var systemLinqAlias = GetNamespaceAlias("System.Linq");
+                        conditionals.Add(
+                            $"(TShape extends {targetNamespaceAlias}.{targetType.TsEmitName}<{inferClause}> ? (TShape extends {systemLinqAlias}.IQueryable ? {{}} : {bucket.BucketInterfaceName}<{bucketArgs}>) : {{}})");
+                        continue;
+                    }
+
+                    if (preferQueryableOverEnumerable && bucket == iqueryable1Bucket)
+                    {
+                        conditionals.Add(
+                            $"(TShape extends {targetNamespaceAlias}.{targetType.TsEmitName}<{inferClause}> ? __TsonicPreferExt<{ienumerable1Bucket!.BucketInterfaceName}<{bucketArgs}>, {bucket.BucketInterfaceName}<{bucketArgs}>> : {{}})");
+                        continue;
+                    }
+
                     conditionals.Add(
                         $"(TShape extends {targetNamespaceAlias}.{targetType.TsEmitName}<{inferClause}> ? {bucket.BucketInterfaceName}<{bucketArgs}> : {{}})");
                 }
@@ -522,7 +564,7 @@ public static class ExtensionsEmitter
 
             // Special case: native T[] arrays get IEnumerable_1 extensions when present in this namespace.
             // This allows ExtensionMethods_System_Linq<string[]> to include LINQ extensions.
-            var ienumerableBucket = group.FirstOrDefault(b =>
+            var ienumerableBucket = buckets.FirstOrDefault(b =>
                 b.TargetType.Namespace == "System.Collections.Generic" &&
                 b.TargetType.TsEmitName == "IEnumerable_1");
 
