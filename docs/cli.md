@@ -96,7 +96,7 @@ npx tsbindgen generate -d $DOTNET_RUNTIME -o ./out
 - `js`: camelCase (JavaScript convention)
   ```typescript
   list.getEnumerator();
-  console.writeLine("hello");
+  Console.writeLine("hello");
   ```
 
 **Example:**

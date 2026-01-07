@@ -142,6 +142,32 @@ output/
 | `<Namespace>/internal/metadata.json` | CLR semantics (virtual/override, ref/out/in, etc.) |
 | `<Namespace>/bindings.json` | CLR↔TS name mappings for the Tsonic compiler |
 
+## Extension Methods (C# `using` Semantics)
+
+tsbindgen collects C# extension methods into bucket helper types under `__internal/extensions/index.d.ts` and re-exports a per-namespace helper from each facade:
+
+```ts
+// System.Linq.d.ts
+export type { ExtensionMethods_System_Linq as ExtensionMethods } from "./__internal/extensions/index.js";
+```
+
+Use the helper as a type-level “using” wrapper:
+
+```ts
+import type { ExtensionMethods as Linq } from "@tsonic/dotnet/System.Linq.js";
+import type { IEnumerable } from "@tsonic/dotnet/System.Collections.Generic.js";
+
+type LinqSeq<T> = Linq<IEnumerable<T>>;
+
+declare const xs: LinqSeq<number>;
+xs.where((x) => x > 0).select((x) => x * 2);
+```
+
+Naming mode applies to extension method member names too:
+
+- `--naming clr`: `.Where(...)`, `.Select(...)`
+- `--naming js`: `.where(...)`, `.select(...)`
+
 ## Type Mapping
 
 ### Primitive Types
@@ -193,13 +219,13 @@ import { List } from "@tsonic/dotnet/System.Collections.Generic.js";  // Friendl
 ### Default (CLR) Naming
 ```typescript
 list.GetEnumerator();  // PascalCase
-console.WriteLine();   // PascalCase
+Console.WriteLine();   // PascalCase
 ```
 
 ### JavaScript Naming (`--naming js`)
 ```typescript
 list.getEnumerator();  // camelCase
-console.writeLine();   // camelCase
+Console.writeLine();   // camelCase
 ```
 
 ## Testing

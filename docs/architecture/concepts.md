@@ -125,10 +125,10 @@ export type IEnumerable<T> = Internal.IEnumerable_1<T>;
 Facades simplify import paths for consumers:
 
 ```typescript
-// Without facade (internal path)
+// ❌ Internal path (tsbindgen implementation detail)
 import { List_1 } from '@tsonic/dotnet/System.Collections.Generic/internal/index.js';
 
-// With facade (clean path)
+// ✅ Facade (stable public surface)
 import { List } from '@tsonic/dotnet/System.Collections.Generic.js';
 ```
 
@@ -1052,23 +1052,52 @@ TypeScript doesn't have extension methods. We need a pattern that:
 2. Groups methods by target type
 3. Handles generic type parameters
 
-### TypeScript Solution: Bucket Interfaces
+### TypeScript Solution: Bucket Types + ExtensionMethods Wrapper
 
-Extension methods are grouped into "bucket interfaces" by their target type:
+Extension methods are emitted into `__internal/extensions/index.d.ts` in two layers:
+
+1) **Bucket interfaces** keyed by target type (per declaring namespace)  
+2) A **wrapper type** (`ExtensionMethods_<Namespace>`) that intersects a receiver shape with the applicable buckets (C# “using” semantics).
 
 ```typescript
-// __internal/extensions/index.d.ts
+// __internal/extensions/index.d.ts (excerpt)
 
-// All extension methods for IEnumerable<T>
-export interface __Ext_IEnumerable_1<T> {
-    where(predicate: Func_2<T, boolean>): IEnumerable_1<T>;
-    select<TResult>(selector: Func_2<T, TResult>): IEnumerable_1<TResult>;
-    first(): T;
-    first(predicate: Func_2<T, boolean>): T;
-    toList(): List_1<T>;
-    toArray(): Array_1<T>;
-    // ... all LINQ methods
+// Bucket for IEnumerable<T> extension methods in System.Linq
+export interface __Ext_System_Linq_IEnumerable_1<T> {
+  where(
+    predicate: System.Func_2<T, boolean>
+  ): ExtensionMethods_System_Linq<System_Collections_Generic.IEnumerable_1<T>>;
+  select<TResult>(
+    selector: System.Func_2<T, TResult>
+  ): ExtensionMethods_System_Linq<System_Collections_Generic.IEnumerable_1<TResult>>;
+  // ...
 }
+
+// Generic helper type for extension methods in namespace: System.Linq
+export type ExtensionMethods_System_Linq<TShape> =
+  TShape & (
+    (TShape extends System_Collections_Generic.IEnumerable_1<infer T0> ? __Ext_System_Linq_IEnumerable_1<T0> : {}) &
+    // ... other targets (IQueryable<T>, arrays, etc.)
+    {}
+  );
+```
+
+The namespace facade re-exports the wrapper as `ExtensionMethods`:
+
+```typescript
+// System.Linq.d.ts
+export type { ExtensionMethods_System_Linq as ExtensionMethods } from "./__internal/extensions/index.js";
+```
+
+Usage looks like a type-level `using System.Linq;`:
+
+```typescript
+import type { ExtensionMethods as Linq } from "./System.Linq.js";
+import type { IEnumerable } from "./System.Collections.Generic.js";
+
+type LinqSeq<T> = Linq<IEnumerable<T>>;
+declare const xs: LinqSeq<number>;
+xs.where((x) => x > 0).select((x) => x * 2);
 ```
 
 ### Implementation

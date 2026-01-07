@@ -18,7 +18,7 @@ npx tsbindgen generate -d $DOTNET_RUNTIME -o ./out --naming clr
 list.GetEnumerator();
 Console.WriteLine("hello");
 String.IsNullOrEmpty(s);
-array.Sort();
+Array.Sort(array);
 ```
 
 ## JavaScript Mode
@@ -33,9 +33,9 @@ npx tsbindgen generate -d $DOTNET_RUNTIME -o ./out --naming js
 
 ```typescript
 list.getEnumerator();
-console.writeLine("hello");
-string.isNullOrEmpty(s);
-array.sort();
+Console.writeLine("hello");
+String.isNullOrEmpty(s);
+Array.sort(array);
 ```
 
 ## Conversion Rules
@@ -79,6 +79,13 @@ List_1<T>
 Dictionary_2<TKey, TValue>
 IEnumerable_1<T>
 ```
+
+## Extension Methods
+
+Extension method names follow the same naming mode:
+
+- `--naming clr`: `Where`, `Select`, `ToList`, ...
+- `--naming js`: `where`, `select`, `toList`, ...
 
 ## Reserved Words
 
