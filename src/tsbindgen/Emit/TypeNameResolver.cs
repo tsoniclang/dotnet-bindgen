@@ -1,3 +1,4 @@
+using tsbindgen.Core;
 using tsbindgen.Model;
 using tsbindgen.Model.Types;
 using tsbindgen.Plan;

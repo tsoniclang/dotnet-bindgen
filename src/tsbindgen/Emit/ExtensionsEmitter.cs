@@ -1,6 +1,7 @@
 using System.Collections.Immutable;
 using System.Text;
 using tsbindgen.Analysis;
+using tsbindgen.Core;
 using tsbindgen.Emit.Printers;
 using tsbindgen.Model.Symbols.MemberSymbols;
 using tsbindgen.Renaming;

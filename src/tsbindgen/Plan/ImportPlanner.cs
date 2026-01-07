@@ -1,5 +1,6 @@
 using System.Collections.Generic;
 using System.Linq;
+using tsbindgen.Core;
 using tsbindgen.Library;
 using tsbindgen.Model;
 using tsbindgen.Model.Symbols;
