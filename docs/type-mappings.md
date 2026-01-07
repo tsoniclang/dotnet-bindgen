@@ -56,8 +56,8 @@ Facades export friendly aliases without arity suffix:
 
 ```typescript
 // Both work:
-import { List_1 } from "@tsonic/dotnet/System.Collections.Generic";
-import { List } from "@tsonic/dotnet/System.Collections.Generic";  // Alias
+import { List_1 } from "@tsonic/dotnet/System.Collections.Generic.js";
+import { List } from "@tsonic/dotnet/System.Collections.Generic.js";  // Alias
 ```
 
 ## Type Kinds

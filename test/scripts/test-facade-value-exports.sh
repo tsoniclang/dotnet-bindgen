@@ -57,14 +57,14 @@ cat > "$TEST_DIR/static-method-access.ts" << 'EOF'
 // This verifies that Console is exported as a VALUE, not just a type.
 // If exported as type-only, this would fail with "Console only refers to a type"
 
-import { Console } from "@tsonic/dotnet/System";
+import { Console } from "@tsonic/dotnet/System.js";
 
 // Access static method - requires value export
 Console.WriteLine("Hello from static method test");
 Console.Write("Writing without newline");
 
 // Also test other static classes
-import { GC, Environment } from "@tsonic/dotnet/System";
+import { GC, Environment } from "@tsonic/dotnet/System.js";
 
 // GC.Collect() with no args works
 GC.Collect();
@@ -84,7 +84,7 @@ cat > "$TEST_DIR/enum-value-access.ts" << 'EOF'
 // This verifies that enums are exported as VALUES, not just types.
 // If exported as type-only, this would fail with "ConsoleColor only refers to a type"
 
-import { ConsoleColor, ConsoleKey, DayOfWeek } from "@tsonic/dotnet/System";
+import { ConsoleColor, ConsoleKey, DayOfWeek } from "@tsonic/dotnet/System.js";
 
 // Access enum members - requires value export
 const color = ConsoleColor.Red;
@@ -101,7 +101,7 @@ function getColorName(c: ConsoleColor): string {
     }
 }
 
-import { FileMode, FileAccess } from "@tsonic/dotnet/System.IO";
+import { FileMode, FileAccess } from "@tsonic/dotnet/System.IO.js";
 
 const mode = FileMode.Create;
 const access = FileAccess.ReadWrite;
@@ -115,7 +115,7 @@ cat > "$TEST_DIR/generic-class-construction.ts" << 'EOF'
 // We use the friendly aliases (List, Dictionary) - arity names (List_1, Dictionary_2)
 // are internal implementation details not exported from facade.
 
-import { List, Dictionary } from "@tsonic/dotnet/System.Collections.Generic";
+import { List, Dictionary } from "@tsonic/dotnet/System.Collections.Generic.js";
 
 // Construction requires value export
 const stringList = new List<string>();
@@ -128,7 +128,7 @@ stringList.Add("world");
 const count = stringList.Count;
 
 // Also test Exception (a common non-generic class)
-import { Exception } from "@tsonic/dotnet/System";
+import { Exception } from "@tsonic/dotnet/System.js";
 const err = new Exception();
 const msg = err.Message;
 EOF
@@ -141,8 +141,8 @@ cat > "$TEST_DIR/interface-type-only.ts" << 'EOF'
 // Interfaces have no runtime value, so type-only is correct.
 // We use friendly names (IEnumerable, IList) not arity names (IEnumerable_1, IList_1).
 
-import type { IEnumerable, IList, IDictionary } from "@tsonic/dotnet/System.Collections.Generic";
-import type { IDisposable, IComparable } from "@tsonic/dotnet/System";
+import type { IEnumerable, IList, IDictionary } from "@tsonic/dotnet/System.Collections.Generic.js";
+import type { IDisposable, IComparable } from "@tsonic/dotnet/System.js";
 
 // Use as type annotations - this should always work
 function process(items: IEnumerable<string>): void {
@@ -167,7 +167,7 @@ cat > "$TEST_DIR/struct-value-export.ts" << 'EOF'
 // Structs in our model are emitted as classes, so they need value exports
 // for construction and static member access.
 
-import { DateTime, TimeSpan, Guid } from "@tsonic/dotnet/System";
+import { DateTime, TimeSpan, Guid } from "@tsonic/dotnet/System.js";
 
 // Static property access - requires value export
 const now = DateTime.Now;
@@ -193,7 +193,7 @@ cat > "$TEST_DIR/abstract-class-not-instantiable.ts" << 'EOF'
 // This is a negative test - we expect TypeScript to reject "new Stream()"
 // because Stream is abstract and has no new() signature in its const export.
 
-import { Stream } from "@tsonic/dotnet/System.IO";
+import { Stream } from "@tsonic/dotnet/System.IO.js";
 
 // This should fail to compile because Stream is abstract
 // @ts-expect-error - Stream is abstract, cannot be instantiated
