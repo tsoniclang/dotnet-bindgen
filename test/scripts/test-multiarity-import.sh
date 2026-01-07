@@ -5,24 +5,15 @@
 # Verifies that multi-arity family types can be imported
 # and used correctly with various arities.
 
-set -e
+source "$(dirname "${BASH_SOURCE[0]}")/_common.sh"
 
 echo "================================================"
 echo "Multi-Arity Import Correctness Test"
 echo "================================================"
 echo
 
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-PROJECT_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
-BCL_DIR="${PROJECT_ROOT}/.tests/bcl"
-TEST_DIR="${PROJECT_ROOT}/.tests/multiarity-import"
-
-# Ensure BCL is generated
-if [[ ! -d "$BCL_DIR" ]]; then
-    echo "[ERROR] BCL directory not found: $BCL_DIR"
-    echo "Run: bash test/scripts/capture-baseline.sh"
-    exit 1
-fi
+BCL_DIR=$(ensure_bcl default)
+TEST_DIR="$TESTS_DIR/multiarity-import"
 
 # Create test directory
 rm -rf "$TEST_DIR"
@@ -121,7 +112,13 @@ echo "[3/3] Running TypeScript compilation..."
 cd "$TEST_DIR"
 
 # Run tsc and capture output
-if npx tsc --noEmit 2>&1; then
+tsc_path=$(get_tsc)
+if [ -z "$tsc_path" ]; then
+    echo -e "${RED}ERROR: TypeScript not installed. Run 'npm install' first.${NC}" >&2
+    exit 1
+fi
+
+if "$tsc_path" --noEmit 2>&1; then
     echo
     echo "================================================"
     echo "[PASSED] Multi-arity import test compiled successfully"

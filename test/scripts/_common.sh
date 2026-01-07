@@ -77,13 +77,36 @@ init_runtime() {
 
 # Get path to tsc, preferring local installation
 get_tsc() {
-    if [ -x "$PROJECT_ROOT/node_modules/.bin/tsc" ]; then
-        echo "$PROJECT_ROOT/node_modules/.bin/tsc"
-    elif command -v tsc &> /dev/null; then
-        echo "tsc"
-    else
-        echo ""
+    if [ -n "${TSC:-}" ]; then
+        if [ -x "$TSC" ]; then
+            echo "$TSC"
+            return 0
+        fi
+
+        if command -v "$TSC" &> /dev/null; then
+            echo "$TSC"
+            return 0
+        fi
     fi
+
+    local candidates=(
+        "$PROJECT_ROOT/node_modules/.bin/tsc"
+        "$PROJECT_ROOT/../tsonic/node_modules/.bin/tsc"
+    )
+
+    for candidate in "${candidates[@]}"; do
+        if [ -x "$candidate" ]; then
+            echo "$candidate"
+            return 0
+        fi
+    done
+
+    if command -v tsc &> /dev/null; then
+        echo "tsc"
+        return 0
+    fi
+
+    echo ""
 }
 
 # Run tsc without network access

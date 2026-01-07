@@ -10,7 +10,7 @@ echo "================================================"
 echo ""
 
 # Use the nodejs package which has console methods with params
-NODEJS_DIR="/home/jeswin/repos/tsoniclang/nodejs"
+NODEJS_DIR="${NODEJS_DIR:-$PROJECT_ROOT/../nodejs}"
 
 if [ ! -d "$NODEJS_DIR" ]; then
     echo -e "${RED}❌ FAILED: nodejs directory not found${NC}"
@@ -43,7 +43,13 @@ echo "[2/3] Verifying no 'required after optional' errors..."
 
 # Run tsc and check for TS1016 errors in nodejs files
 cd "$NODEJS_DIR"
-TSC_OUTPUT=$(timeout 120 npx tsc 2>&1 || true)
+tsc_path=$(get_tsc)
+if [ -z "$tsc_path" ]; then
+    echo -e "${RED}ERROR: TypeScript not installed. Run 'npm install' first.${NC}" >&2
+    exit 1
+fi
+
+TSC_OUTPUT=$(timeout 120 "$tsc_path" 2>&1 || true)
 
 # Check for TS1016 errors specifically in nodejs files
 TS1016_ERRORS=$(echo "$TSC_OUTPUT" | grep -E "^nodejs.*TS1016" || true)
