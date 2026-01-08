@@ -2,6 +2,7 @@ using System.Text;
 using System.Collections.Generic;
 using System.Collections.Immutable;
 using System.Linq;
+using tsbindgen.Core;
 using tsbindgen.Model;
 using tsbindgen.Model.Symbols;
 using tsbindgen.Model.Symbols.MemberSymbols;

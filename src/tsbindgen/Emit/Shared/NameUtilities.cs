@@ -1,4 +1,4 @@
-using tsbindgen.Renaming;
+using tsbindgen.Core;
 
 namespace tsbindgen.Emit.Shared;
 
@@ -26,7 +26,7 @@ public static class NameUtilities
     /// </summary>
     private static string SanitizeIdentifier(string name)
     {
-        var result = Renaming.TypeScriptReservedWords.Sanitize(name);
+        var result = TypeScriptReservedWords.Sanitize(name);
         return result.Sanitized;
     }
 

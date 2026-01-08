@@ -1,6 +1,7 @@
 using System.Collections.Immutable;
 using System.Linq;
 using System.Text;
+using tsbindgen.Core;
 using tsbindgen.Model;
 using tsbindgen.Model.Symbols;
 using tsbindgen.Model.Symbols.MemberSymbols;

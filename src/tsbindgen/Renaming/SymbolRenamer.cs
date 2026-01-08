@@ -1,4 +1,5 @@
 using System.Diagnostics;
+using tsbindgen.Core;
 using tsbindgen.Model.Symbols;
 
 namespace tsbindgen.Renaming;

@@ -1,6 +1,7 @@
 using System.Collections.Immutable;
 using System.Linq;
 using System.Reflection;
+using tsbindgen.Core;
 using tsbindgen.Renaming;
 using tsbindgen.Model;
 using tsbindgen.Model.Symbols;
