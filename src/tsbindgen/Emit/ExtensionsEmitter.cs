@@ -16,6 +16,30 @@ namespace tsbindgen.Emit;
 /// </summary>
 public static class ExtensionsEmitter
 {
+    private static string GetShapeTypeExpressionForConditional(ExtensionBucketPlan bucket, string targetNamespaceAlias)
+    {
+        // For TS primitives, always match against the TS primitive keyword type.
+        // This prevents extension method availability from depending on global interface augmentation.
+        //
+        // Example:
+        //   System.String is emitted as `type String = string & ...`
+        //   Without global augmentation, `string` does not extend `System.String`.
+        //   But users will naturally write `ExtensionMethods<string>`, so we must match `string`.
+        var target = bucket.TargetType;
+        if (target.Namespace == "System")
+        {
+            return target.TsEmitName switch
+            {
+                "String" => "string",
+                "Boolean" => "boolean",
+                "Double" => "number",
+                _ => $"{targetNamespaceAlias}.{target.TsEmitName}",
+            };
+        }
+
+        return $"{targetNamespaceAlias}.{target.TsEmitName}";
+    }
+
     /// <summary>
     /// Emit the __internal/extensions/index.d.ts file containing all bucket interfaces.
     /// </summary>
@@ -558,8 +582,9 @@ public static class ExtensionsEmitter
                 }
                 else
                 {
+                    var shapeTypeExpression = GetShapeTypeExpressionForConditional(bucket, targetNamespaceAlias);
                     conditionals.Add(
-                        $"(TShape extends {targetNamespaceAlias}.{targetType.TsEmitName} ? {bucket.BucketInterfaceName} : {{}})");
+                        $"(TShape extends {shapeTypeExpression} ? {bucket.BucketInterfaceName} : {{}})");
                 }
             }
 
