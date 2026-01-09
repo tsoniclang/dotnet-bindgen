@@ -78,6 +78,7 @@ npx tsbindgen generate -a ./MyLibrary.dll -d $DOTNET_RUNTIME -o ./my-lib --lib .
 | Command | Description |
 |---------|-------------|
 | `generate` | Generate TypeScript declarations from .NET assemblies |
+| `resolve-closure` | Resolve transitive assembly dependency closure (JSON) |
 
 ### Generate Options
 
@@ -85,6 +86,7 @@ npx tsbindgen generate -a ./MyLibrary.dll -d $DOTNET_RUNTIME -o ./my-lib --lib .
 |--------|-------|-------------|---------|
 | `--assembly` | `-a` | Path to assembly file(s) to process | - |
 | `--assembly-dir` | `-d` | Directory containing .NET runtime assemblies | - |
+| `--ref-dir` | - | Additional directory to search for referenced assemblies (repeatable) | - |
 | `--out-dir` | `-o` | Output directory for generated files | `out` |
 | `--namespaces` | `-n` | Namespace filter (reserved; currently ignored) | (all) |
 | `--naming` | - | Naming convention: `js` (camelCase) or `clr` (PascalCase) | `clr` |
@@ -95,11 +97,28 @@ npx tsbindgen generate -a ./MyLibrary.dll -d $DOTNET_RUNTIME -o ./my-lib --lib .
 | `--logs` | - | Enable specific log categories (repeatable; space-separated values) | - |
 | `--strict` | - | Enable strict mode validation | false |
 
+### resolve-closure
+
+Machine-readable dependency resolution for one or more seed assemblies. Useful for:
+- Debugging missing dependencies before generation
+- Tooling integrations (e.g. build systems) that need deterministic closure resolution
+
+```bash
+npx tsbindgen resolve-closure \
+  -a ./MyLibrary.dll \
+  --ref-dir $DOTNET_RUNTIME \
+  --ref-dir ./libs
+```
+
 ### Examples
 
 ```bash
 # Generate BCL with JavaScript naming
 npx tsbindgen generate -d $DOTNET_RUNTIME -o ./out --naming js
+
+# Generate a custom assembly when dependencies live outside the runtime directory
+npx tsbindgen generate -a ./MyLibrary.dll -d $DOTNET_RUNTIME -o ./out \
+  --ref-dir ./libs
 
 # Verbose output with specific log categories
 npx tsbindgen generate -d $DOTNET_RUNTIME -o ./out -v --logs ImportPlanner FacadeEmitter

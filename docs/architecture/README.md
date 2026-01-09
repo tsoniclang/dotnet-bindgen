@@ -97,7 +97,8 @@ src/tsbindgen/
 ├── BuildContext.cs         # Shared context
 ├── Cli/                    # Command-line interface
 │   ├── Program.cs
-│   └── GenerateCommand.cs
+│   ├── GenerateCommand.cs
+│   └── ResolveClosureCommand.cs
 ├── Core/
 │   ├── Diagnostics/        # Error/warning infrastructure
 │   └── Policy/             # Configuration
