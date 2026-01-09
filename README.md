@@ -132,6 +132,44 @@ output/
         └── metadata.json
 ```
 
+### Publishing Bindings Packages (dist/ + npm `exports`)
+
+When you publish bindings for your own assemblies (or generate them inside an npm workspace), you can keep generated artifacts out of git by writing them under `dist/` and exposing the facades via npm `exports`:
+
+```
+dist/tsonic/bindings/
+  Acme.Domain.js
+  Acme.Domain.d.ts
+  Acme.Domain/
+    bindings.json
+    internal/
+      index.d.ts
+      metadata.json
+```
+
+`package.json`:
+
+```json
+{
+  "type": "module",
+  "exports": {
+    "./package.json": "./package.json",
+    "./*.js": {
+      "types": "./dist/tsonic/bindings/*.d.ts",
+      "default": "./dist/tsonic/bindings/*.js"
+    }
+  }
+}
+```
+
+Consumers can then import CLR namespaces ergonomically:
+
+```ts
+import { TodoItem } from "@acme/domain/Acme.Domain.js";
+```
+
+Tsonic resolves the import using Node’s module resolution (including `exports`) and locates the nearest `bindings.json` for CLR discovery.
+
 ### Output Files
 
 | File | Description |
