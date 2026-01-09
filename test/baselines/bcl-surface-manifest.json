@@ -1,6 +1,6 @@
 {
   "dotnetVersion": "10.0.1",
-  "capturedAt": "2026-01-07T20:23:02Z",
+  "capturedAt": "2026-01-09T09:46:03Z",
   "generation": {
     "namespaces": 130,
     "types": 4296,
@@ -8,7 +8,7 @@
   },
   "files": {
     "Internal.d.ts": "sha256:42d6112f5830e0464ca1976977fbe03a26beff499de34a16cc4014ecdbc5e5b9",
-    "__internal/extensions/index.d.ts": "sha256:4bdaf0fcd3f69986bbfd5d384125a683aaac49c0afc3922d1c2e39e009c61f4e",
+    "__internal/extensions/index.d.ts": "sha256:5e473ff538856ee40ce8604ffdc8b8ca34ad4de1804f0df4484d523a4dc23bd2",
     "Internal/internal/index.d.ts": "sha256:2e741cafe3606b39fb1b7432d3eb34404309d0628c5a53bee01926d481b140ee",
     "Microsoft.CSharp.RuntimeBinder.d.ts": "sha256:9b658994dad0ba151b7508022fb64746425320e672a6a0648a4cb9735dd48853",
     "Microsoft.CSharp.RuntimeBinder/internal/index.d.ts": "sha256:a31b30f62734bf4c402086711bf12fe58dff6a95f9d038f2be6584704a027bc2",
