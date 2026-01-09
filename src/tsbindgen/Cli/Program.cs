@@ -4,7 +4,9 @@ namespace tsbindgen.Cli;
 
 /// <summary>
 /// Entry point for tsbindgen CLI.
-/// Uses new two-phase pipeline: generate command only.
+/// Exposes:
+/// - generate: emit bindings
+/// - resolve-closure: resolve transitive assembly closure (JSON)
 /// </summary>
 public static class Program
 {
@@ -15,6 +17,10 @@ public static class Program
         // Add the generate command
         var generateCommand = GenerateCommand.Create();
         rootCommand.AddCommand(generateCommand);
+
+        // Resolve assembly dependency closure (machine-readable)
+        var resolveClosureCommand = ResolveClosureCommand.Create();
+        rootCommand.AddCommand(resolveClosureCommand);
 
         return await rootCommand.InvokeAsync(args);
     }

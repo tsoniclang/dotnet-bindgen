@@ -31,6 +31,16 @@ npx tsbindgen generate [options]
 dotnet run --project src/tsbindgen/tsbindgen.csproj -- generate [options]
 ```
 
+### resolve-closure
+
+Resolve the transitive closure of assembly references and emit machine-readable JSON.
+
+```bash
+# Resolve closure for a local library (requires runtime dirs in --ref-dir)
+npx tsbindgen resolve-closure -a ./MyLibrary.dll \
+  --ref-dir $DOTNET_RUNTIME
+```
+
 ## Options
 
 ### Assembly Input
@@ -39,6 +49,7 @@ dotnet run --project src/tsbindgen/tsbindgen.csproj -- generate [options]
 |--------|-------|-------------|
 | `--assembly <path>` | `-a` | Path to assembly file. Can be specified multiple times. |
 | `--assembly-dir <path>` | `-d` | Directory containing .NET runtime assemblies. |
+| `--ref-dir <path>` | - | Additional directory to search for referenced assemblies (repeatable). |
 
 At least one of `--assembly` or `--assembly-dir` is required.
 

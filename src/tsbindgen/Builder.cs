@@ -23,6 +23,7 @@ public static class Builder
     /// Build TypeScript declarations from .NET assemblies.
     /// </summary>
     /// <param name="assemblyPaths">Paths to assemblies to process</param>
+    /// <param name="referenceDirectories">Additional directories to search for referenced assemblies</param>
     /// <param name="outputDirectory">Where to write generated files</param>
     /// <param name="policy">Generation policy (uses defaults if null)</param>
     /// <param name="logger">Optional logger for progress messages</param>
@@ -39,7 +40,8 @@ public static class Builder
         bool verboseLogging = false,
         HashSet<string>? logCategories = null,
         bool strictMode = false,
-        string[] libraryPackagePaths = null!)
+        string[] libraryPackagePaths = null!,
+        IReadOnlyList<string>? referenceDirectories = null)
     {
         libraryPackagePaths ??= Array.Empty<string>();
 
@@ -71,7 +73,10 @@ public static class Builder
         {
             // Phase 1: Load
             ctx.Log("Build", "\n--- Phase 1: Load ---");
-            var (graph, loadContext) = LoadPhase(ctx, assemblyPaths);
+            var (graph, loadContext) = LoadPhase(
+                ctx,
+                assemblyPaths,
+                referenceDirectories ?? Array.Empty<string>());
             var stats = graph.GetStatistics();
             ctx.Log("Build", $"Loaded: {stats.NamespaceCount} namespaces, {stats.TypeCount} types, {stats.TotalMembers} members");
 
@@ -164,7 +169,10 @@ public static class Builder
     /// Uses transitive closure loading to resolve all assembly dependencies.
     /// Returns both the symbol graph and the MetadataLoadContext for later use.
     /// </summary>
-    private static (SymbolGraph Graph, MetadataLoadContext LoadContext) LoadPhase(BuildContext ctx, IReadOnlyList<string> assemblyPaths)
+    private static (SymbolGraph Graph, MetadataLoadContext LoadContext) LoadPhase(
+        BuildContext ctx,
+        IReadOnlyList<string> assemblyPaths,
+        IReadOnlyList<string> referenceDirectories)
     {
         var loader = new AssemblyLoader(ctx);
 
@@ -174,7 +182,8 @@ public static class Builder
             .Select(Path.GetDirectoryName)
             .Where(dir => dir != null)
             .Cast<string>()
-            .Distinct()
+            .Concat(referenceDirectories.Where(d => !string.IsNullOrWhiteSpace(d)))
+            .Distinct(StringComparer.OrdinalIgnoreCase)
             .ToList();
 
         ctx.Log("Load", $"Reference paths for dependency resolution: {refPaths.Count}");

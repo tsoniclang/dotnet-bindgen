@@ -24,6 +24,14 @@ public static class GenerateCommand
             aliases: new[] { "--assembly-dir", "-d" },
             description: "Directory containing assemblies to process");
 
+        var refDirOption = new Option<string[]>(
+            name: "--ref-dir",
+            description: "Additional directory to search for referenced assemblies (repeatable)")
+        {
+            AllowMultipleArgumentsPerToken = false,
+            Arity = ArgumentArity.ZeroOrMore
+        };
+
         // Output option
         var outDirOption = new Option<string>(
             aliases: new[] { "--out-dir", "-o" },
@@ -91,6 +99,7 @@ public static class GenerateCommand
 
         command.AddOption(assemblyOption);
         command.AddOption(assemblyDirOption);
+        command.AddOption(refDirOption);
         command.AddOption(outDirOption);
         command.AddOption(namespacesOption);
         command.AddOption(namingOption);
@@ -106,6 +115,7 @@ public static class GenerateCommand
         {
             var assemblies = context.ParseResult.GetValueForOption(assemblyOption) ?? Array.Empty<string>();
             var assemblyDir = context.ParseResult.GetValueForOption(assemblyDirOption);
+            var refDirs = context.ParseResult.GetValueForOption(refDirOption) ?? Array.Empty<string>();
             var outDir = context.ParseResult.GetValueForOption(outDirOption) ?? "out";
             var namespaces = context.ParseResult.GetValueForOption(namespacesOption) ?? Array.Empty<string>();
             var naming = context.ParseResult.GetValueForOption(namingOption);
@@ -120,6 +130,7 @@ public static class GenerateCommand
             await ExecuteAsync(
                 assemblies,
                 assemblyDir,
+                refDirs,
                 outDir,
                 namespaces,
                 naming,
@@ -138,6 +149,7 @@ public static class GenerateCommand
     private static async Task ExecuteAsync(
         string[] assemblyPaths,
         string? assemblyDir,
+        string[] refDirs,
         string outDir,
         string[] namespaceFilter,
         string? naming,
@@ -257,7 +269,8 @@ public static class GenerateCommand
                 verbose,
                 logCategories,
                 strict,
-                libs);
+                libs,
+                refDirs);
 
             // Report results
             Console.WriteLine();
