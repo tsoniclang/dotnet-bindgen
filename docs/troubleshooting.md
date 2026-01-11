@@ -23,6 +23,14 @@ ls -la ./MyLibrary.dll
 
 # Ensure runtime directory contains dependencies
 npx tsbindgen generate -a ./MyLibrary.dll -d $DOTNET_RUNTIME -o ./out
+
+# If the assembly references other DLLs outside the runtime directory,
+# add one or more extra search directories:
+npx tsbindgen generate -a ./MyLibrary.dll -d $DOTNET_RUNTIME -o ./out \
+  --ref-dir ./libs
+
+# To debug resolution without generating, inspect the dependency closure (JSON):
+npx tsbindgen resolve-closure -a ./MyLibrary.dll --ref-dir $DOTNET_RUNTIME --ref-dir ./libs
 ```
 
 ### Missing Runtime Directory
