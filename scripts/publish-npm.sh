@@ -10,7 +10,7 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 ROOT_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
-WRAPPER_DIR="$(cd "$ROOT_DIR/../tsbindgen-wrapper" && pwd)"
+WRAPPER_DIR="$ROOT_DIR/npm/tsbindgen"
 
 # Parse arguments
 IGNORE_BRANCHES_AHEAD=false
@@ -111,36 +111,7 @@ if [ -n "$(git status --porcelain)" ]; then
     exit 1
 fi
 
-# 5. Check wrapper repo state
-echo "=== Checking wrapper repo state ==="
-
-WRAPPER_BRANCH=$(git -C "$WRAPPER_DIR" branch --show-current)
-if [ "$WRAPPER_BRANCH" != "main" ]; then
-    echo "Error: Wrapper must be on main branch to publish."
-    echo "Current branch: $WRAPPER_BRANCH"
-    exit 1
-fi
-echo "  Wrapper on main branch"
-
-git -C "$WRAPPER_DIR" fetch origin main
-WRAPPER_LOCAL_COMMIT=$(git -C "$WRAPPER_DIR" rev-parse HEAD)
-WRAPPER_REMOTE_COMMIT=$(git -C "$WRAPPER_DIR" rev-parse origin/main)
-
-if [ "$WRAPPER_LOCAL_COMMIT" != "$WRAPPER_REMOTE_COMMIT" ]; then
-    echo "Error: Wrapper main is not synced with origin/main."
-    echo "Please run: cd $WRAPPER_DIR && git pull"
-    exit 1
-fi
-echo "  Wrapper synced with origin"
-
-if [ -n "$(git -C "$WRAPPER_DIR" status --porcelain)" ]; then
-    echo "Error: Wrapper has uncommitted changes."
-    echo "Please commit or discard changes first."
-    exit 1
-fi
-echo "  Wrapper has no uncommitted changes"
-
-# 6. Ensure tsbindgen and wrapper have the same version
+# 5. Ensure tsbindgen and wrapper have the same version
 echo "=== Checking package version consistency ==="
 LOCAL_VERSION=$(node -p "require('./package.json').version")
 WRAPPER_VERSION=$(node -p "require('$WRAPPER_DIR/package.json').version")
@@ -155,7 +126,7 @@ fi
 
 echo "  All packages at version $LOCAL_VERSION"
 
-# 7. Check versions against npm
+# 6. Check versions against npm
 echo "=== Checking versions against npm ==="
 NEEDS_BUMP=false
 
@@ -252,15 +223,9 @@ if [ "$NEED_BRANCH" = true ]; then
         fs.writeFileSync('$WRAPPER_DIR/package.json', JSON.stringify(pkg, null, 2) + '\n');
     "
 
-    echo "=== Committing tsbindgen version changes ==="
+    echo "=== Committing version changes ==="
     cd "$ROOT_DIR"
-    git add package.json
-    git commit -m "chore: bump version to $NEW_VERSION"
-    git push -u origin HEAD
-
-    echo "=== Committing wrapper version changes ==="
-    cd "$WRAPPER_DIR"
-    git add package.json
+    git add package.json npm/tsbindgen/package.json
     git commit -m "chore: bump version to $NEW_VERSION"
     git push -u origin HEAD
 
