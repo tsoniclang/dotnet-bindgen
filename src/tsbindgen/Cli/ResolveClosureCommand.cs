@@ -133,7 +133,18 @@ public static class ResolveClosureCommand
                     PublicKeyToken = kvp.Key.PublicKeyToken,
                     Culture = kvp.Key.Culture,
                     Version = kvp.Key.Version,
-                    Path = kvp.Value
+                    Path = kvp.Value,
+                    References = closure.References.TryGetValue(kvp.Key, out var refs)
+                        ? refs.Select(r => new ResolvedAssemblyRef
+                            {
+                                Name = r.Name,
+                                PublicKeyToken = r.PublicKeyToken,
+                                Culture = r.Culture,
+                                Version = r.Version
+                            })
+                            .OrderBy(r => r.Name, StringComparer.OrdinalIgnoreCase)
+                            .ToArray()
+                        : Array.Empty<ResolvedAssemblyRef>()
                 })
                 .OrderBy(a => a.Name, StringComparer.OrdinalIgnoreCase)
                 .ToArray();
@@ -179,6 +190,15 @@ public static class ResolveClosureCommand
         public required string Culture { get; init; }
         public required string Version { get; init; }
         public required string Path { get; init; }
+        public required ResolvedAssemblyRef[] References { get; init; }
+    }
+
+    private sealed record ResolvedAssemblyRef
+    {
+        public required string Name { get; init; }
+        public required string PublicKeyToken { get; init; }
+        public required string Culture { get; init; }
+        public required string Version { get; init; }
     }
 
     private sealed record ResolvedDiagnostic

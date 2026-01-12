@@ -12,7 +12,8 @@ namespace tsbindgen.Load;
 public sealed record LoadClosureResult(
     MetadataLoadContext LoadContext,
     IReadOnlyList<Assembly> Assemblies,
-    IReadOnlyDictionary<AssemblyKey, string> ResolvedPaths);
+    IReadOnlyDictionary<AssemblyKey, string> ResolvedPaths,
+    IReadOnlyDictionary<AssemblyKey, IReadOnlyList<AssemblyKey>> References);
 
 /// <summary>
 /// Creates MetadataLoadContext for loading assemblies in isolation.
@@ -27,6 +28,19 @@ public sealed class AssemblyLoader
     {
         _ctx = ctx;
     }
+
+    private readonly record struct AssemblyIdentityKey(
+        string Name,
+        string PublicKeyToken,
+        string Culture);
+
+    private sealed record CandidateAssembly(
+        AssemblyKey Key,
+        Version Version,
+        string Path);
+
+    private static AssemblyIdentityKey IdentityOf(AssemblyKey key) =>
+        new(key.Name, key.PublicKeyToken, key.Culture);
 
     /// <summary>
     /// Create a MetadataLoadContext for the given assemblies.
@@ -124,7 +138,7 @@ public sealed class AssemblyLoader
         _ctx.Log("AssemblyLoader", $"Candidate assemblies discovered: {candidateMap.Count}");
 
         // Phase 2: BFS closure resolution
-        var resolvedPaths = ResolveClosure(seedPaths, candidateMap, strictVersions);
+        var (resolvedPaths, references) = ResolveClosure(seedPaths, candidateMap, strictVersions);
         _ctx.Log("AssemblyLoader", $"Total assemblies in closure: {resolvedPaths.Count}");
 
         // Phase 3: Validate assembly identity (PG_LOAD_002/003/004)
@@ -157,16 +171,16 @@ public sealed class AssemblyLoader
             }
         }
 
-        return new LoadClosureResult(loadContext, assemblies, resolvedPaths);
+        return new LoadClosureResult(loadContext, assemblies, resolvedPaths, references);
     }
 
     /// <summary>
     /// Build map of available assemblies from reference directories.
-    /// Maps AssemblyKey → list of file paths (for version selection).
+    /// Maps (Name, PKT, Culture) → candidate assemblies (for version selection).
     /// </summary>
-    private Dictionary<AssemblyKey, List<string>> BuildCandidateMap(IReadOnlyList<string> refPaths)
+    private Dictionary<AssemblyIdentityKey, List<CandidateAssembly>> BuildCandidateMap(IReadOnlyList<string> refPaths)
     {
-        var candidateMap = new Dictionary<AssemblyKey, List<string>>();
+        var candidateMap = new Dictionary<AssemblyIdentityKey, List<CandidateAssembly>>();
 
         foreach (var refPath in refPaths)
         {
@@ -182,13 +196,18 @@ public sealed class AssemblyLoader
                 {
                     var assemblyName = AssemblyName.GetAssemblyName(dllPath);
                     var key = AssemblyKey.From(assemblyName);
+                    var identity = IdentityOf(key);
 
-                    if (!candidateMap.ContainsKey(key))
+                    if (!candidateMap.TryGetValue(identity, out var candidates))
                     {
-                        candidateMap[key] = new List<string>();
+                        candidates = new List<CandidateAssembly>();
+                        candidateMap[identity] = candidates;
                     }
 
-                    candidateMap[key].Add(dllPath);
+                    if (!Version.TryParse(key.Version, out var ver))
+                        continue;
+
+                    candidates.Add(new CandidateAssembly(key, ver, dllPath));
                 }
                 catch
                 {
@@ -202,50 +221,146 @@ public sealed class AssemblyLoader
 
     /// <summary>
     /// Resolve transitive closure via BFS over assembly references.
-    /// Returns map of AssemblyKey → resolved file path (highest version wins).
+    /// Returns map of AssemblyKey → resolved file path.
+    ///
+    /// Important invariant: for each (Name, PKT, Culture) identity, we load exactly one
+    /// assembly version into the closure. Version selection is deterministic:
+    /// - Prefer exact match
+    /// - Otherwise, allow minor/patch roll-forward within the same major version
+    /// - If strictVersions=false, allow best-effort selection across majors (warn)
     /// </summary>
-    private Dictionary<AssemblyKey, string> ResolveClosure(
+    private (
+        Dictionary<AssemblyKey, string> ResolvedPaths,
+        Dictionary<AssemblyKey, IReadOnlyList<AssemblyKey>> References
+    ) ResolveClosure(
         IReadOnlyList<string> seedPaths,
-        Dictionary<AssemblyKey, List<string>> candidateMap,
+        Dictionary<AssemblyIdentityKey, List<CandidateAssembly>> candidateMap,
         bool strictVersions)
     {
-        var queue = new Queue<string>(seedPaths);
-        var visited = new HashSet<AssemblyKey>();
-        var resolved = new Dictionary<AssemblyKey, string>();
+        static CandidateAssembly? PickCandidate(
+            IReadOnlyList<CandidateAssembly> candidates,
+            Version requiredVersion,
+            bool strictVersions,
+            BuildContext ctx,
+            AssemblyIdentityKey identity,
+            string? requestedBy)
+        {
+            // Prefer exact match.
+            var exact = candidates.FirstOrDefault(c => c.Version == requiredVersion);
+            if (exact is not null)
+                return exact;
+
+            // Strict mode: allow only same-major roll-forward (pick closest >= required).
+            if (strictVersions)
+            {
+                var sameMajor = candidates
+                    .Where(c => c.Version.Major == requiredVersion.Major)
+                    .OrderBy(c => c.Version)
+                    .ToList();
+
+                var rollForward = sameMajor.FirstOrDefault(c => c.Version >= requiredVersion);
+                if (rollForward is not null)
+                {
+                    return rollForward;
+                }
+
+                // If we have candidates for the same major but all are lower, this is a hard failure.
+                if (sameMajor.Count > 0)
+                {
+                    var available = string.Join(", ", sameMajor.Select(c => c.Version.ToString()));
+                    ctx.Diagnostics.Error(
+                        Core.Diagnostics.DiagnosticCodes.VersionDriftForSameIdentity,
+                        $"No candidate for '{identity.Name}' satisfies required version {requiredVersion} (requested by {requestedBy ?? "unknown"}). " +
+                        $"Available (major {requiredVersion.Major}): {available}");
+                    return null;
+                }
+
+                // Major drift: strict mode forbids selecting a different major.
+                var majors = candidates.Select(c => c.Version.Major).Distinct().OrderBy(m => m).ToArray();
+                ctx.Diagnostics.Error(
+                    Core.Diagnostics.DiagnosticCodes.VersionDriftForSameIdentity,
+                    $"Assembly '{identity.Name}' requires major version {requiredVersion.Major} but only majors [{string.Join(", ", majors)}] were found " +
+                    $"(requested by {requestedBy ?? "unknown"}).");
+                return null;
+            }
+
+            // Non-strict mode: pick highest available version (warn on major drift).
+            var best = candidates
+                .OrderByDescending(c => c.Version)
+                .FirstOrDefault();
+
+            if (best is null)
+                return null;
+
+            if (best.Version.Major != requiredVersion.Major)
+            {
+                ctx.Diagnostics.Warning(
+                    Core.Diagnostics.DiagnosticCodes.VersionDriftForSameIdentity,
+                    $"Assembly '{identity.Name}' requested {requiredVersion} but resolved to {best.Version} (major drift) " +
+                    $"(requested by {requestedBy ?? "unknown"}).");
+            }
+
+            return best;
+        }
+
+        var queue = new Queue<AssemblyIdentityKey>();
+        var visited = new HashSet<AssemblyIdentityKey>();
+        var resolved = new Dictionary<AssemblyIdentityKey, CandidateAssembly>();
+        var required = new Dictionary<AssemblyIdentityKey, Version>();
+        var directRefs = new Dictionary<AssemblyIdentityKey, List<AssemblyKey>>();
+
+        foreach (var seedPath in seedPaths)
+        {
+            try
+            {
+                var seedName = AssemblyName.GetAssemblyName(seedPath);
+                var seedKey = AssemblyKey.From(seedName);
+                var seedIdentity = IdentityOf(seedKey);
+
+                if (!Version.TryParse(seedKey.Version, out var seedVersion))
+                    continue;
+
+                // Airplane-grade: seeds define reality. Conflicting seed versions are a hard error.
+                if (resolved.TryGetValue(seedIdentity, out var existingSeed))
+                {
+                    if (existingSeed.Version != seedVersion)
+                    {
+                        _ctx.Diagnostics.Error(
+                            Core.Diagnostics.DiagnosticCodes.VersionDriftForSameIdentity,
+                            $"Conflicting seed assemblies for '{seedKey.Name}': {existingSeed.Version} vs {seedVersion}");
+                    }
+                    continue;
+                }
+
+                resolved[seedIdentity] = new CandidateAssembly(seedKey, seedVersion, seedPath);
+                required[seedIdentity] = seedVersion;
+                queue.Enqueue(seedIdentity);
+            }
+            catch (Exception ex)
+            {
+                _ctx.Log("AssemblyLoader", $"  Warning: Could not read seed {Path.GetFileName(seedPath)}: {ex.Message}");
+            }
+        }
 
         while (queue.Count > 0)
         {
-            var currentPath = queue.Dequeue();
+            var currentIdentity = queue.Dequeue();
 
-            // Get key for current assembly
-            var currentName = AssemblyName.GetAssemblyName(currentPath);
-            var currentKey = AssemblyKey.From(currentName);
-
-            // Skip if already visited
-            if (visited.Contains(currentKey))
+            if (!resolved.TryGetValue(currentIdentity, out var currentAsm))
                 continue;
 
-            visited.Add(currentKey);
-
-            // Version policy: if we already have this assembly, keep highest version
-            if (resolved.TryGetValue(currentKey, out var existingPath))
-            {
-                var existingVersion = new Version(AssemblyKey.From(AssemblyName.GetAssemblyName(existingPath)).Version);
-                var currentVersion = new Version(currentKey.Version);
-
-                if (currentVersion > existingVersion)
-                {
-                    resolved[currentKey] = currentPath;
-                    _ctx.Log("AssemblyLoader", $"  Version upgrade: {currentKey.Name} {existingVersion} → {currentVersion}");
-                }
+            // Skip if already visited (we only enqueue when we first resolve or upgrade).
+            if (visited.Contains(currentIdentity))
                 continue;
-            }
 
-            resolved[currentKey] = currentPath;
+            visited.Add(currentIdentity);
+
+            var currentPath = currentAsm.Path;
 
             // Load assembly to get references (lightweight - just metadata)
             try
             {
+                var currentRefs = new List<AssemblyKey>();
                 using var fs = new FileStream(currentPath, FileMode.Open, FileAccess.Read, FileShare.Read);
                 using var peReader = new System.Reflection.PortableExecutable.PEReader(fs);
                 var metadataReader = peReader.GetMetadataReader();
@@ -255,29 +370,83 @@ public sealed class AssemblyLoader
                 {
                     var reference = metadataReader.GetAssemblyReference(refHandle);
                     var refName = metadataReader.GetString(reference.Name);
-                    var refVersion = reference.Version.ToString();
                     var refCulture = reference.Culture.IsNil ? "" : metadataReader.GetString(reference.Culture);
                     var refToken = reference.PublicKeyOrToken.IsNil
                         ? "null"
                         : BitConverter.ToString(metadataReader.GetBlobBytes(reference.PublicKeyOrToken)).Replace("-", "").ToLowerInvariant();
 
-                    var refKey = new AssemblyKey(refName, refToken, refCulture, refVersion);
+                    var refIdentity = new AssemblyIdentityKey(refName, refToken, refCulture);
+                    var requestedVersion = reference.Version;
+
+                    currentRefs.Add(new AssemblyKey(refName, refToken, refCulture, requestedVersion.ToString()));
+
+                    if (!required.TryGetValue(refIdentity, out var requiredVersion))
+                    {
+                        requiredVersion = requestedVersion;
+                    }
+                    else
+                    {
+                        // Major drift detection at requirement level.
+                        if (requiredVersion.Major != requestedVersion.Major)
+                        {
+                            if (strictVersions)
+                            {
+                                _ctx.Diagnostics.Error(
+                                    Core.Diagnostics.DiagnosticCodes.VersionDriftForSameIdentity,
+                                    $"Assembly '{refName}' referenced with multiple major versions: {requiredVersion} vs {requestedVersion} (requested by {currentAsm.Key.Name})");
+                                continue;
+                            }
+
+                            _ctx.Diagnostics.Warning(
+                                Core.Diagnostics.DiagnosticCodes.VersionDriftForSameIdentity,
+                                $"Assembly '{refName}' referenced with multiple major versions: {requiredVersion} vs {requestedVersion} (requested by {currentAsm.Key.Name})");
+                        }
+
+                        if (requestedVersion > requiredVersion)
+                        {
+                            requiredVersion = requestedVersion;
+                        }
+                    }
+
+                    required[refIdentity] = requiredVersion;
 
                     // Look up in candidate map
-                    if (!candidateMap.TryGetValue(refKey, out var candidates) || candidates.Count == 0)
+                    if (!candidateMap.TryGetValue(refIdentity, out var candidates) || candidates.Count == 0)
                     {
                         // PG_LOAD_001: External reference not in candidate set
                         // This will be caught by PhaseGate validation later
                         continue;
                     }
 
-                    // Pick highest version from candidates
-                    var bestCandidate = candidates
-                        .OrderByDescending(c => new Version(AssemblyKey.From(AssemblyName.GetAssemblyName(c)).Version))
-                        .First();
+                    var chosen = PickCandidate(
+                        candidates,
+                        requiredVersion,
+                        strictVersions,
+                        _ctx,
+                        refIdentity,
+                        currentAsm.Key.Name);
 
-                    queue.Enqueue(bestCandidate);
+                    if (chosen is null)
+                        continue;
+
+                    // If already resolved, upgrade if needed to satisfy the (max) required version.
+                    if (resolved.TryGetValue(refIdentity, out var existing))
+                    {
+                        if (existing.Version >= requiredVersion)
+                            continue;
+
+                        // Attempt to roll-forward to satisfy the requirement.
+                        resolved[refIdentity] = chosen;
+                        visited.Remove(refIdentity); // force reprocess with new version
+                        queue.Enqueue(refIdentity);
+                        continue;
+                    }
+
+                    resolved[refIdentity] = chosen;
+                    queue.Enqueue(refIdentity);
                 }
+
+                directRefs[currentIdentity] = currentRefs;
             }
             catch (Exception ex)
             {
@@ -285,7 +454,17 @@ public sealed class AssemblyLoader
             }
         }
 
-        return resolved;
+        var resolvedPaths = resolved.Values.ToDictionary(v => v.Key, v => v.Path);
+
+        var refsOut = new Dictionary<AssemblyKey, IReadOnlyList<AssemblyKey>>();
+        foreach (var (identity, asm) in resolved)
+        {
+            refsOut[asm.Key] = directRefs.TryGetValue(identity, out var refs)
+                ? refs
+                : Array.Empty<AssemblyKey>();
+        }
+
+        return (resolvedPaths, refsOut);
     }
 
     /// <summary>
