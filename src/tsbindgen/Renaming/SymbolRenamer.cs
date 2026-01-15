@@ -87,7 +87,8 @@ public sealed class SymbolRenamer
             reason,
             decisionSource,
             isStatic: null,
-            styleTransform: _typeStyleTransform);
+            styleTransform: _typeStyleTransform,
+            reservedWordSanitizer: static s => TypeScriptReservedWords.SanitizeTypeName(s).Sanitized);
 
         // Record decision
         RecordDecision(new RenameDecision
@@ -131,7 +132,8 @@ public sealed class SymbolRenamer
             reason,
             decisionSource,
             isStatic,
-            styleTransform: _memberStyleTransform);
+            styleTransform: _memberStyleTransform,
+            reservedWordSanitizer: static s => TypeScriptReservedWords.SanitizeMemberName(s).Sanitized);
 
         // Record decision
         RecordDecision(new RenameDecision
@@ -421,7 +423,7 @@ public sealed class SymbolRenamer
 
         // Apply transforms like in ResolveNameWithConflicts
         var styled = _memberStyleTransform.Invoke(requestedBase);
-        var sanitized = TypeScriptReservedWords.Sanitize(styled).Sanitized;
+        var sanitized = TypeScriptReservedWords.SanitizeMemberName(styled).Sanitized;
 
         if (!_tablesByScope.TryGetValue(effectiveScope.ScopeKey, out var table))
         {
@@ -464,7 +466,8 @@ public sealed class SymbolRenamer
         string reason,
         string decisionSource,
         bool? isStatic,
-        Func<string, string> styleTransform)
+        Func<string, string> styleTransform,
+        Func<string, string> reservedWordSanitizer)
     {
         // 1. Check for explicit override
         if (_explicitOverrides.TryGetValue(stableId, out var explicitName))
@@ -477,8 +480,9 @@ public sealed class SymbolRenamer
         // 2. Apply style transform
         var styled = styleTransform.Invoke(requested);
 
-        // 3. Sanitize TypeScript reserved words (add trailing underscore if needed)
-        var sanitized = TypeScriptReservedWords.Sanitize(styled).Sanitized;
+        // 3. Sanitize TypeScript reserved words (context-dependent)
+        // Type names must be valid Identifiers; member names are emitted in IdentifierName positions.
+        var sanitized = reservedWordSanitizer.Invoke(styled);
 
         // 4. Try to reserve the sanitized name
         if (table.TryReserve(sanitized, stableId))

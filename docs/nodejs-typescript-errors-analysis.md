@@ -282,18 +282,18 @@ The nodejs code uses `ValueTuple<T1, T2>` (2-element tuple):
 
 ```csharp
 // C# source
-public static ValueTuple<KeyObject, KeyObject> generateKeyPairSync(string type_, object? options = null)
+public static ValueTuple<KeyObject, KeyObject> generateKeyPairSync(string type, object? options = null)
 ```
 
 Which should emit as:
 ```typescript
-static generateKeyPairSync(type_: string, options?: unknown): ValueTuple_2<KeyObject, KeyObject>;
+static generateKeyPairSync(type: string, options?: unknown): ValueTuple_2<KeyObject, KeyObject>;
 ```
 
 But it emits as:
 ```typescript
 // Generated (WRONG)
-static generateKeyPairSync(type_: string, options?: unknown): ValueTuple<KeyObject, KeyObject>;
+static generateKeyPairSync(type: string, options?: unknown): ValueTuple<KeyObject, KeyObject>;
 ```
 
 The problem: `ValueTuple` in the facade maps to `ValueTuple_1` (1-arg), not a conditional type that handles all arities:

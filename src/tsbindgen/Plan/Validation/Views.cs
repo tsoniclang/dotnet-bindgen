@@ -232,24 +232,8 @@ internal static class Views
                         seenInterfaces[ifaceStableId] = view.ViewPropertyName;
                     }
 
-                    // Rule 3: PG_VIEW_003 - Valid/sanitized view property name
-                    // View property name must be a valid TS identifier
-                    // If it's a reserved word, it must end with "_"
-                    if (IsReservedWord(view.ViewPropertyName) &&
-                        !view.ViewPropertyName.EndsWith("_"))
-                    {
-                        invalidViewNames++;
-                        validationCtx.RecordDiagnostic(
-                            DiagnosticCodes.InvalidViewPropertyName,
-                            "ERROR",
-                            $"Invalid/unsanitized view property name\n" +
-                            $"  type:     {type.ClrFullName}\n" +
-                            $"  view:     {view.ViewPropertyName}\n" +
-                            $"  expected: {view.ViewPropertyName}_\n" +
-                            $"  reason:   TypeScript reserved word");
-                    }
-
-                    // Check for invalid characters in view property name
+                    // Rule 3: PG_VIEW_003 - Valid view property name (identifier characters)
+                    // View property name is emitted as a member name (IdentifierName position), so keywords are allowed.
                     if (!Shared.IsValidTypeScriptIdentifier(view.ViewPropertyName))
                     {
                         invalidViewNames++;

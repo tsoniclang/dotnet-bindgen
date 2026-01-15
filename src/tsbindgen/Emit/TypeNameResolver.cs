@@ -146,7 +146,7 @@ public sealed class TypeNameResolver
             // CRITICAL: Check if sanitized name is a TypeScript reserved word
             // External types (not in current graph) still need reserved word handling
             // Example: System.Type referenced from another namespace → Type_
-            var result = TypeScriptReservedWords.Sanitize(sanitized);
+            var result = TypeScriptReservedWords.SanitizeTypeName(sanitized);
             var finalExternalName = result.Sanitized;
 
             return finalExternalName;

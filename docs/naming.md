@@ -89,7 +89,11 @@ Extension method names follow the same naming mode:
 
 ## Reserved Words
 
-TypeScript reserved words get a trailing underscore:
+Reserved words are sanitized only when they appear in **Identifier** contexts (for example: binding identifiers like parameters, and type names).
+
+Member names (methods/properties) are emitted in **IdentifierName** positions, so keywords are allowed and are emitted as-is.
+
+### Binding identifiers (params/vars)
 
 | Original | TypeScript |
 |----------|-----------|
@@ -97,7 +101,11 @@ TypeScript reserved words get a trailing underscore:
 | `class` | `class_` |
 | `function` | `function_` |
 | `import` | `import_` |
-| `export` | `export_` |
+
+### Member names (methods/properties)
+
+- No `_` suffix is added for keywords.
+- Examples: `delete()`, `export()`, `with()`, `type`, `from`, `set(...)`, `get(...)`
 
 ## Name Conflicts
 

@@ -503,7 +503,7 @@ public static class ImportPlanner
 
         // CRITICAL: Check if sanitized name is a TypeScript reserved word
         // Example: "Type" → "Type_", "Object" → "Object_"
-        var result = TypeScriptReservedWords.Sanitize(sanitized);
+        var result = TypeScriptReservedWords.SanitizeTypeName(sanitized);
         return result.Sanitized;
     }
 
