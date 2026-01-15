@@ -80,24 +80,14 @@ Type names are NOT transformed (always PascalCase).
 
 ## Reserved Word Handling
 
-TypeScript reserved words get trailing underscore:
+TypeScript reserved words are sanitized **only** when they appear in **Identifier** contexts (for example: parameters, locals, or other places where the token must parse as an identifier).
 
-```csharp
-public static class TypeScriptReservedWords
-{
-    public static (string Sanitized, bool WasSanitized) Sanitize(string name)
-    {
-        if (IsReserved(name))
-            return (name + "_", true);
-        return (name, false);
-    }
-}
+Member names (methods/properties/enum members) are emitted in **IdentifierName** positions, so keywords are allowed and are emitted as-is (no `_` suffix).
 
-// Examples:
-// "default" -> "default_"
-// "class" -> "class_"
-// "function" -> "function_"
-```
+Examples:
+
+- Parameter/local: `default` → `default_`
+- Member: `.default(...)` stays `.default(...)`
 
 ## Rename Decisions
 

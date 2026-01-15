@@ -180,5 +180,5 @@ public sealed record RenameDecision
 **Strategies:**
 - `None` - No rename needed
 - `NumericSuffix` - Added numeric suffix (add2, add3)
-- `ReservedWord` - Added underscore (default_)
+- `ReservedWord` - Sanitized an Identifier with `_` (example: parameter `default` → `default_`; member names can be keywords and are emitted as-is)
 - `OverloadFamily` - Shares name with overload family
