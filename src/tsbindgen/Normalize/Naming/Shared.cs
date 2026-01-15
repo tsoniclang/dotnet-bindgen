@@ -88,7 +88,7 @@ internal static class Shared
         baseName = baseName.Replace(']', '_');
 
         // Apply reserved word sanitization
-        var sanitized = TypeScriptReservedWords.Sanitize(baseName);
+        var sanitized = TypeScriptReservedWords.SanitizeTypeName(baseName);
         return sanitized.Sanitized;
     }
 
@@ -131,9 +131,8 @@ internal static class Shared
                 _ => name.Replace("op_", "operator_")
             };
 
-            // Apply reserved word sanitization to operator names
-            var sanitized = TypeScriptReservedWords.Sanitize(mapped);
-            return sanitized.Sanitized;
+            // Operator names are member names (IdentifierName position) - keywords are allowed.
+            return mapped;
         }
 
         // Accessors (get_, set_, add_, remove_) and regular methods use CLR name
@@ -152,9 +151,8 @@ internal static class Shared
         cleaned = cleaned.Replace(']', '_');
         cleaned = cleaned.Replace('+', '_');
 
-        // Apply reserved word sanitization
-        var sanitized = TypeScriptReservedWords.Sanitize(cleaned);
-        return sanitized.Sanitized;
+        // Member names are emitted in IdentifierName positions - keywords are allowed.
+        return cleaned;
     }
 
     /// <summary>

@@ -324,9 +324,6 @@ internal static class Names
                     var methodScope = ScopeFactory.ClassSurface(type, method.IsStatic);
                     var emittedMethodName = ctx.Renamer.GetFinalMemberName(method.StableId, methodScope);
 
-                    totalIdentifiersChecked++;
-                    CheckIdentifier(ctx, validationCtx, "method", $"{type.ClrFullName}::{method.ClrName}", method.StableId.ToString(), emittedMethodName, ref unsanitizedCount);
-
                     // Check method parameters
                     int paramIndex = 0;
                     foreach (var param in method.Parameters)
@@ -360,9 +357,6 @@ internal static class Names
                     var propertyScope = ScopeFactory.ClassSurface(type, property.IsStatic);
                     var emittedPropertyName = ctx.Renamer.GetFinalMemberName(property.StableId, propertyScope);
 
-                    totalIdentifiersChecked++;
-                    CheckIdentifier(ctx, validationCtx, "property", $"{type.ClrFullName}::{property.ClrName}", property.StableId.ToString(), emittedPropertyName, ref unsanitizedCount);
-
                     // Check indexer parameters
                     int indexerParamIndex = 0;
                     foreach (var param in property.IndexParameters)
@@ -383,9 +377,6 @@ internal static class Names
                     // Fields are always ClassSurface (no ViewOnly fields)
                     var fieldScope = ScopeFactory.ClassSurface(type, field.IsStatic);
                     var emittedFieldName = ctx.Renamer.GetFinalMemberName(field.StableId, fieldScope);
-
-                    totalIdentifiersChecked++;
-                    CheckIdentifier(ctx, validationCtx, "field", $"{type.ClrFullName}::{field.ClrName}", field.StableId.ToString(), emittedFieldName, ref unsanitizedCount);
                 }
 
                 // Check events
@@ -397,18 +388,11 @@ internal static class Names
                     // Events are always ClassSurface (no ViewOnly events)
                     var eventScope = ScopeFactory.ClassSurface(type, evt.IsStatic);
                     var emittedEventName = ctx.Renamer.GetFinalMemberName(evt.StableId, eventScope);
-
-                    totalIdentifiersChecked++;
-                    CheckIdentifier(ctx, validationCtx, "event", $"{type.ClrFullName}::{evt.ClrName}", evt.StableId.ToString(), emittedEventName, ref unsanitizedCount);
                 }
 
                 // Check view members
                 foreach (var view in type.ExplicitViews)
                 {
-                    // Check view property name
-                    totalIdentifiersChecked++;
-                    CheckIdentifier(ctx, validationCtx, "view property", $"{type.ClrFullName}.{view.ViewPropertyName}", type.StableId.ToString(), view.ViewPropertyName, ref unsanitizedCount);
-
                     // Check each view member's emitted name (to catch mismatches or synthetic entries)
                     // Get interface StableId for this view (needed for ViewSurface scope)
                     var interfaceStableId = ScopeFactory.GetInterfaceStableId(view.InterfaceReference);
@@ -427,8 +411,6 @@ internal static class Names
                                     var methodScope = ScopeFactory.ViewSurface(type, interfaceStableId, method.IsStatic);
                                     emittedMemberName = ctx.Renamer.GetFinalMemberName(method.StableId, methodScope);
                                     memberOwner = $"{type.ClrFullName}::{method.ClrName} (in view {view.ViewPropertyName})";
-                                    totalIdentifiersChecked++;
-                                    CheckIdentifier(ctx, validationCtx, "view method", memberOwner, method.StableId.ToString(), emittedMemberName, ref unsanitizedCount);
                                 }
                                 break;
 
@@ -439,8 +421,6 @@ internal static class Names
                                     var propertyScope = ScopeFactory.ViewSurface(type, interfaceStableId, property.IsStatic);
                                     emittedMemberName = ctx.Renamer.GetFinalMemberName(property.StableId, propertyScope);
                                     memberOwner = $"{type.ClrFullName}::{property.ClrName} (in view {view.ViewPropertyName})";
-                                    totalIdentifiersChecked++;
-                                    CheckIdentifier(ctx, validationCtx, "view property member", memberOwner, property.StableId.ToString(), emittedMemberName, ref unsanitizedCount);
                                 }
                                 break;
 
@@ -451,8 +431,6 @@ internal static class Names
                                     var eventScope = ScopeFactory.ViewSurface(type, interfaceStableId, evt.IsStatic);
                                     emittedMemberName = ctx.Renamer.GetFinalMemberName(evt.StableId, eventScope);
                                     memberOwner = $"{type.ClrFullName}::{evt.ClrName} (in view {view.ViewPropertyName})";
-                                    totalIdentifiersChecked++;
-                                    CheckIdentifier(ctx, validationCtx, "view event", memberOwner, evt.StableId.ToString(), emittedMemberName, ref unsanitizedCount);
                                 }
                                 break;
                         }
@@ -574,7 +552,7 @@ internal static class Names
             return;
 
         // Check if the emitted name is a TypeScript reserved word and doesn't have the trailing underscore
-        if (IsReservedWord(emittedName) && !emittedName.EndsWith("_"))
+        if (IsReservedBindingIdentifier(emittedName) && !emittedName.EndsWith("_"))
         {
             unsanitizedCount++;
             validationCtx.RecordDiagnostic(

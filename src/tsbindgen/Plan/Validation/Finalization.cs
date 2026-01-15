@@ -283,21 +283,14 @@ internal static class Finalization
                 // PG_FIN_009: Check for unsanitized identifiers in emitting members
                 foreach (var prop in type.Members.Properties.Where(p => p.EmitScope != EmitScope.Omitted))
                 {
-                    var sanitized = Sanitize(prop.TsEmitName);
-                    if (sanitized.WasSanitized && sanitized.Sanitized != prop.TsEmitName)
-                    {
-                        validationCtx.RecordDiagnostic(
-                            DiagnosticCodes.PostSanitizerUnsanitizedIdentifier,
-                            "ERROR",
-                            $"Property {prop.ClrName} in {type.ClrFullName} has unsanitized TsEmitName '{prop.TsEmitName}' (reserved word)");
-                    }
+                    // Property names are emitted in IdentifierName positions; keywords are allowed.
 
                     // Check indexer parameters (if this is an indexer property)
                     if (prop.IsIndexer)
                     {
                         foreach (var param in prop.IndexParameters)
                         {
-                            var paramSanitized = Sanitize(param.Name);
+                            var paramSanitized = SanitizeBindingIdentifier(param.Name);
                             if (paramSanitized.WasSanitized && paramSanitized.Sanitized != param.Name)
                             {
                                 validationCtx.RecordDiagnostic(
@@ -311,19 +304,12 @@ internal static class Finalization
 
                 foreach (var method in type.Members.Methods.Where(m => m.EmitScope != EmitScope.Omitted))
                 {
-                    var sanitized = Sanitize(method.TsEmitName);
-                    if (sanitized.WasSanitized && sanitized.Sanitized != method.TsEmitName)
-                    {
-                        validationCtx.RecordDiagnostic(
-                            DiagnosticCodes.PostSanitizerUnsanitizedIdentifier,
-                            "ERROR",
-                            $"Method {method.ClrName} in {type.ClrFullName} has unsanitized TsEmitName '{method.TsEmitName}' (reserved word)");
-                    }
+                    // Method names are emitted in IdentifierName positions; keywords are allowed.
 
                     // Check method parameters
                     foreach (var param in method.Parameters)
                     {
-                        var paramSanitized = Sanitize(param.Name);
+                        var paramSanitized = SanitizeBindingIdentifier(param.Name);
                         if (paramSanitized.WasSanitized && paramSanitized.Sanitized != param.Name)
                         {
                             validationCtx.RecordDiagnostic(
@@ -336,7 +322,7 @@ internal static class Finalization
                     // Check generic type parameters
                     foreach (var tp in method.GenericParameters)
                     {
-                        var tpSanitized = Sanitize(tp.Name);
+                        var tpSanitized = SanitizeBindingIdentifier(tp.Name);
                         if (tpSanitized.WasSanitized && tpSanitized.Sanitized != tp.Name)
                         {
                             validationCtx.RecordDiagnostic(
@@ -349,20 +335,13 @@ internal static class Finalization
 
                 foreach (var field in type.Members.Fields.Where(f => f.EmitScope != EmitScope.Omitted))
                 {
-                    var sanitized = Sanitize(field.TsEmitName);
-                    if (sanitized.WasSanitized && sanitized.Sanitized != field.TsEmitName)
-                    {
-                        validationCtx.RecordDiagnostic(
-                            DiagnosticCodes.PostSanitizerUnsanitizedIdentifier,
-                            "ERROR",
-                            $"Field {field.ClrName} in {type.ClrFullName} has unsanitized TsEmitName '{field.TsEmitName}' (reserved word)");
-                    }
+                    // Field names are emitted in IdentifierName positions; keywords are allowed.
                 }
 
                 // Check type-level generic parameters
                 foreach (var tp in type.GenericParameters)
                 {
-                    var tpSanitized = Sanitize(tp.Name);
+                    var tpSanitized = SanitizeBindingIdentifier(tp.Name);
                     if (tpSanitized.WasSanitized && tpSanitized.Sanitized != tp.Name)
                     {
                         validationCtx.RecordDiagnostic(
@@ -375,15 +354,7 @@ internal static class Finalization
                 // Check view property names
                 foreach (var view in type.ExplicitViews)
                 {
-                    var viewPropSanitized = Sanitize(view.ViewPropertyName);
-                    if (viewPropSanitized.WasSanitized && viewPropSanitized.Sanitized != view.ViewPropertyName)
-                    {
-                        var ifaceStableId = ScopeFactory.GetInterfaceStableId(view.InterfaceReference);
-                        validationCtx.RecordDiagnostic(
-                            DiagnosticCodes.PostSanitizerUnsanitizedIdentifier,
-                            "ERROR",
-                            $"View property '{view.ViewPropertyName}' for {ifaceStableId} in {type.ClrFullName} is unsanitized (reserved word)");
-                    }
+                    // View property names are emitted in IdentifierName positions; keywords are allowed.
                 }
             }
         }
@@ -431,7 +402,7 @@ internal static class Finalization
             }
 
             // Check if name is a reserved word (after sanitization)
-            var sanitized = Sanitize(bucketName);
+            var sanitized = SanitizeTypeName(bucketName);
             if (sanitized.WasSanitized)
             {
                 validationCtx.RecordDiagnostic(
