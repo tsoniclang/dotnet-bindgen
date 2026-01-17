@@ -19,9 +19,22 @@ fi
 
 echo "[1/3] Checking for cross-module aliasing in imports..."
 
+# Resolve latest version directory under nodejs/versions (e.g. versions/10)
+VERSIONS_DIR="$NODEJS_DIR/versions"
+if [ ! -d "$VERSIONS_DIR" ]; then
+    echo -e "${RED}❌ FAILED: nodejs versions directory not found: $VERSIONS_DIR${NC}"
+    exit 1
+fi
+
+LATEST_VERSION_DIR=$(ls -d "$VERSIONS_DIR"/*/ 2>/dev/null | sort -V | tail -1 | sed 's:/*$::')
+if [ -z "$LATEST_VERSION_DIR" ]; then
+    echo -e "${RED}❌ FAILED: no version directories found under: $VERSIONS_DIR${NC}"
+    exit 1
+fi
+
 # Check that the internal file has the aliased import
-# Note: nodejs uses --namespace-map "nodejs=index" so path is index/internal/index.d.ts
-INTERNAL_FILE="$NODEJS_DIR/index/internal/index.d.ts"
+# Note: nodejs uses --namespace-map "nodejs=index" so path is versions/<ver>/index/internal/index.d.ts
+INTERNAL_FILE="$LATEST_VERSION_DIR/index/internal/index.d.ts"
 if ! grep -q "IEnumerable as IEnumerable__System_Collections" "$INTERNAL_FILE"; then
     echo -e "${RED}❌ FAILED: Missing cross-module alias in $INTERNAL_FILE${NC}"
     echo "Expected: import type { ..., IEnumerable as IEnumerable__System_Collections_Generic, ... }"
@@ -31,8 +44,8 @@ fi
 echo -e "${GREEN}✓ Found cross-module alias: IEnumerable__System_Collections_Generic${NC}"
 
 # Check facade file too
-# Note: nodejs uses --namespace-map "nodejs=index" so facade is index.d.ts
-FACADE_FILE="$NODEJS_DIR/index.d.ts"
+# Note: nodejs uses --namespace-map "nodejs=index" so facade is versions/<ver>/index.d.ts
+FACADE_FILE="$LATEST_VERSION_DIR/index.d.ts"
 if ! grep -q "IEnumerable as IEnumerable__System_Collections" "$FACADE_FILE"; then
     echo -e "${RED}❌ FAILED: Missing cross-module alias in facade${NC}"
     exit 1

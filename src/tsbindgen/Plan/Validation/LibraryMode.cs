@@ -13,7 +13,7 @@ internal static class LibraryMode
 {
     // LIB001: Library contract path validation
     // This validation is performed during contract loading (LibraryContractLoader.Load)
-    // Checks: directory exists, has metadata.json files, has bindings.json files
+    // Checks: directory exists, has bindings.json files
     // If contract loading fails, build terminates before reaching PhaseGate
 
     /// <summary>

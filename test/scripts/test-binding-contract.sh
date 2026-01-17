@@ -13,7 +13,7 @@
 # 2. Each overload has a distinct normalizedSignature
 # 3. parameterModifiers MUST exist for EVERY byref parameter (not optional)
 # 4. parameterModifiers correctly distinguish ref/out/in
-# 5. (tsEmitName, normalizedSignature) is unique per type
+# 5. normalizedSignature is unique per type
 
 source "$(dirname "${BASH_SOURCE[0]}")/_common.sh"
 
@@ -57,21 +57,16 @@ echo "          ✓ Generation succeeded"
 
 # Verify output files exist
 BINDINGS="$TEST_DIR/MyCompany.Utils/bindings.json"
-METADATA="$TEST_DIR/MyCompany.Utils/internal/metadata.json"
 
 if [ ! -f "$BINDINGS" ]; then
     echo -e "${RED}❌ FAILED: bindings.json not found${NC}"
-    exit 1
-fi
-if [ ! -f "$METADATA" ]; then
-    echo -e "${RED}❌ FAILED: metadata.json not found${NC}"
     exit 1
 fi
 
 # Step 4: Verify F overloads (val vs ref) have distinct signatures
 echo "[4/8] Verifying F overloads have distinct signatures..."
 
-F_SIGNATURES=$(jq -r '.types[] | select(.clrName | contains("OverloadRefInOut")) | .methods[] | select(.clrName=="F") | .normalizedSignature' "$METADATA")
+F_SIGNATURES=$(jq -r '.types[] | select(.clrName | contains("OverloadRefInOut")) | .methods[] | select(.clrName=="F") | .normalizedSignature' "$BINDINGS")
 F_COUNT=$(echo "$F_SIGNATURES" | wc -l | tr -d ' ')
 F_UNIQUE=$(echo "$F_SIGNATURES" | sort -u | wc -l | tr -d ' ')
 
@@ -91,7 +86,7 @@ echo "          ✓ F has $F_COUNT distinct normalizedSignatures (val vs ref)"
 echo "[5/8] Verifying H/K/L prove modifier encoding (all System.Int32&)..."
 
 # H(ref int) - must have ref modifier
-H_MOD=$(jq -r '.types[] | select(.clrName | contains("OverloadRefInOut")) | .methods[] | select(.clrName=="H") | .parameterModifiers[0].modifier // "MISSING"' "$METADATA")
+H_MOD=$(jq -r '.types[] | select(.clrName | contains("OverloadRefInOut")) | .methods[] | select(.clrName=="H") | .parameterModifiers[0].modifier // "MISSING"' "$BINDINGS")
 if [ "$H_MOD" != "ref" ]; then
     echo -e "${RED}❌ FAILED: H(ref int) expected modifier 'ref', got '$H_MOD'${NC}"
     exit 1
@@ -99,7 +94,7 @@ fi
 echo "          ✓ H(ref int) has modifier: ref"
 
 # K(out int) - must have out modifier
-K_MOD=$(jq -r '.types[] | select(.clrName | contains("OverloadRefInOut")) | .methods[] | select(.clrName=="K") | .parameterModifiers[0].modifier // "MISSING"' "$METADATA")
+K_MOD=$(jq -r '.types[] | select(.clrName | contains("OverloadRefInOut")) | .methods[] | select(.clrName=="K") | .parameterModifiers[0].modifier // "MISSING"' "$BINDINGS")
 if [ "$K_MOD" != "out" ]; then
     echo -e "${RED}❌ FAILED: K(out int) expected modifier 'out', got '$K_MOD'${NC}"
     exit 1
@@ -107,7 +102,7 @@ fi
 echo "          ✓ K(out int) has modifier: out"
 
 # L(in int) - must have in modifier
-L_MOD=$(jq -r '.types[] | select(.clrName | contains("OverloadRefInOut")) | .methods[] | select(.clrName=="L") | .parameterModifiers[0].modifier // "MISSING"' "$METADATA")
+L_MOD=$(jq -r '.types[] | select(.clrName | contains("OverloadRefInOut")) | .methods[] | select(.clrName=="L") | .parameterModifiers[0].modifier // "MISSING"' "$BINDINGS")
 if [ "$L_MOD" != "in" ]; then
     echo -e "${RED}❌ FAILED: L(in int) expected modifier 'in', got '$L_MOD'${NC}"
     exit 1
@@ -119,12 +114,12 @@ echo "[6/8] Verifying modifier vector exists for ALL byref parameters..."
 
 # Find all methods with byref params (signature contains &) and verify they have parameterModifiers
 # Use stableId which always contains the signature string
-BYREF_METHODS=$(jq -r '.types[] | select(.clrName | contains("OverloadRefInOut")) | .methods[] | select(.stableId | contains("&")) | .clrName' "$METADATA" | sort -u)
+BYREF_METHODS=$(jq -r '.types[] | select(.clrName | contains("OverloadRefInOut")) | .methods[] | select(.stableId | contains("&")) | .clrName' "$BINDINGS" | sort -u)
 
 MISSING_MODIFIERS=0
 for method in $BYREF_METHODS; do
     # Check if this method has parameterModifiers
-    HAS_MODIFIERS=$(jq -r ".types[] | select(.clrName | contains(\"OverloadRefInOut\")) | .methods[] | select(.clrName==\"$method\" and (.stableId | contains(\"&\"))) | if .parameterModifiers != null and (.parameterModifiers | length) > 0 then \"yes\" else \"no\" end" "$METADATA" | head -1)
+    HAS_MODIFIERS=$(jq -r ".types[] | select(.clrName | contains(\"OverloadRefInOut\")) | .methods[] | select(.clrName==\"$method\" and (.stableId | contains(\"&\"))) | if .parameterModifiers != null and (.parameterModifiers | length) > 0 then \"yes\" else \"no\" end" "$BINDINGS" | head -1)
     if [ "$HAS_MODIFIERS" != "yes" ]; then
         echo -e "          ${RED}✗ $method has byref param but no parameterModifiers${NC}"
         ((MISSING_MODIFIERS++))
@@ -142,7 +137,7 @@ echo "          ✓ All byref methods have parameterModifiers (modifier vector r
 echo "[7/8] Verifying additional modifier cases..."
 
 # F(ref int) has ref modifier
-REF_F=$(jq -r '.types[] | select(.clrName | contains("OverloadRefInOut")) | .methods[] | select(.clrName=="F" and .parameterModifiers != null and .parameterModifiers[0].modifier == "ref") | .normalizedSignature' "$METADATA")
+REF_F=$(jq -r '.types[] | select(.clrName | contains("OverloadRefInOut")) | .methods[] | select(.clrName=="F" and .parameterModifiers != null and .parameterModifiers[0].modifier == "ref") | .normalizedSignature' "$BINDINGS")
 if [ -z "$REF_F" ]; then
     echo -e "${RED}❌ FAILED: F(ref int) not found with ref modifier${NC}"
     exit 1
@@ -150,7 +145,7 @@ fi
 echo "          ✓ F(ref int) has modifier: ref"
 
 # G(in int) has in modifier
-IN_G=$(jq -r '.types[] | select(.clrName | contains("OverloadRefInOut")) | .methods[] | select(.clrName=="G" and .parameterModifiers != null and .parameterModifiers[0].modifier == "in") | .normalizedSignature' "$METADATA")
+IN_G=$(jq -r '.types[] | select(.clrName | contains("OverloadRefInOut")) | .methods[] | select(.clrName=="G" and .parameterModifiers != null and .parameterModifiers[0].modifier == "in") | .normalizedSignature' "$BINDINGS")
 if [ -z "$IN_G" ]; then
     echo -e "${RED}❌ FAILED: G(in int) not found with in modifier${NC}"
     exit 1
@@ -158,25 +153,25 @@ fi
 echo "          ✓ G(in int) has modifier: in"
 
 # TryGet has out modifier (index 1, not 0 - first param is string)
-OUT_TRYGET=$(jq -r '.types[] | select(.clrName | contains("OverloadRefInOut")) | .methods[] | select(.clrName=="TryGet" and .parameterModifiers != null and .parameterModifiers[0].modifier == "out") | .normalizedSignature' "$METADATA")
+OUT_TRYGET=$(jq -r '.types[] | select(.clrName | contains("OverloadRefInOut")) | .methods[] | select(.clrName=="TryGet" and .parameterModifiers != null and .parameterModifiers[0].modifier == "out") | .normalizedSignature' "$BINDINGS")
 if [ -z "$OUT_TRYGET" ]; then
     echo -e "${RED}❌ FAILED: TryGet(out int) not found with out modifier${NC}"
     exit 1
 fi
 echo "          ✓ TryGet has modifier: out"
 
-# Step 8: Verify (tsEmitName, normalizedSignature) uniqueness
-echo "[8/8] Verifying (tsEmitName, normalizedSignature) uniqueness..."
+# Step 8: Verify normalizedSignature uniqueness
+echo "[8/8] Verifying normalizedSignature uniqueness..."
 
-EMIT_SIG_PAIRS=$(jq -r '.types[] | select(.clrName | contains("OverloadRefInOut")) | .methods[] | "\(.tsEmitName)|\(.normalizedSignature)"' "$METADATA")
-PAIR_COUNT=$(echo "$EMIT_SIG_PAIRS" | wc -l | tr -d ' ')
-PAIR_UNIQUE=$(echo "$EMIT_SIG_PAIRS" | sort -u | wc -l | tr -d ' ')
+SIGS=$(jq -r '.types[] | select(.clrName | contains("OverloadRefInOut")) | .methods[] | .normalizedSignature' "$BINDINGS")
+SIG_COUNT=$(echo "$SIGS" | wc -l | tr -d ' ')
+SIG_UNIQUE=$(echo "$SIGS" | sort -u | wc -l | tr -d ' ')
 
-if [ "$PAIR_COUNT" -ne "$PAIR_UNIQUE" ]; then
-    echo -e "${RED}❌ FAILED: Duplicate (tsEmitName, normalizedSignature) pairs found${NC}"
+if [ "$SIG_COUNT" -ne "$SIG_UNIQUE" ]; then
+    echo -e "${RED}❌ FAILED: Duplicate normalizedSignature values found${NC}"
     exit 1
 fi
-echo "          ✓ All (tsEmitName, normalizedSignature) pairs are unique"
+echo "          ✓ All normalizedSignature values are unique"
 
 echo ""
 echo "================================================"
@@ -190,7 +185,7 @@ echo "  ✓ F overloads (val vs ref) have distinct normalizedSignatures"
 echo "  ✓ H/K/L prove modifier encoding (all System.Int32& with ref/out/in)"
 echo "  ✓ ALL byref methods have parameterModifiers (not optional)"
 echo "  ✓ parameterModifiers correctly distinguish ref/out/in"
-echo "  ✓ (tsEmitName, normalizedSignature) unique per type"
+echo "  ✓ normalizedSignature unique per type"
 echo ""
 echo "Tsonic contract guarantees:"
 echo "  - stableId uniquely identifies overload (includes CLR types with &)"

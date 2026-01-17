@@ -55,14 +55,9 @@ fi
 echo "          ✓ Generation succeeded"
 
 # Verify output files exist
-METADATA="$TEST_DIR/MyCompany.Utils/internal/metadata.json"
 BINDINGS="$TEST_DIR/MyCompany.Utils/bindings.json"
 INDEX_DTS="$TEST_DIR/MyCompany.Utils/internal/index.d.ts"
 
-if [ ! -f "$METADATA" ]; then
-    echo -e "${RED}❌ FAILED: metadata.json not found${NC}"
-    exit 1
-fi
 if [ ! -f "$BINDINGS" ]; then
     echo -e "${RED}❌ FAILED: bindings.json not found${NC}"
     exit 1
@@ -88,19 +83,19 @@ if [ -z "$ref_sig" ]; then
 fi
 echo "          ✓ Found Process(ref int) byref signature (System.Int32&)"
 
-# Step 4: Verify parameterModifiers are present in metadata
-echo "[5/6] Testing parameterModifiers tracked in metadata..."
+# Step 4: Verify parameterModifiers are present in bindings.json
+echo "[5/6] Testing parameterModifiers tracked in bindings.json..."
 
 # Check for ref modifier (Process(ref int x))
-if ! grep -q '"modifier": "ref"' "$METADATA"; then
-    echo -e "${RED}❌ FAILED: ref modifier not found in metadata${NC}"
+if ! grep -q '"modifier": "ref"' "$BINDINGS"; then
+    echo -e "${RED}❌ FAILED: ref modifier not found in bindings.json${NC}"
     exit 1
 fi
 echo "          ✓ ref modifier tracked"
 
 # Check for out modifier (TryGet(string key, out int value))
-if ! grep -q '"modifier": "out"' "$METADATA"; then
-    echo -e "${RED}❌ FAILED: out modifier not found in metadata${NC}"
+if ! grep -q '"modifier": "out"' "$BINDINGS"; then
+    echo -e "${RED}❌ FAILED: out modifier not found in bindings.json${NC}"
     exit 1
 fi
 echo "          ✓ out modifier tracked"
@@ -110,7 +105,7 @@ echo "          ✓ out modifier tracked"
 # - ABI (readonly byref vs mutable byref)
 # - Call legality (readonly rules)
 # - Overload resolution (overloads can differ only by in/ref)
-if ! grep -q '"modifier": "in"' "$METADATA"; then
+if ! grep -q '"modifier": "in"' "$BINDINGS"; then
     echo -e "${RED}❌ FAILED: in modifier not detected${NC}"
     echo "  'in' vs 'ref' must be distinguished for correct ABI and overload resolution"
     exit 1

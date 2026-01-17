@@ -12,8 +12,8 @@ public sealed record RenameDecision
     public required StableId Id { get; init; }
 
     /// <summary>
-    /// What the caller requested (post-style transform).
-    /// Null if this is the original name with no transformation.
+    /// What the caller requested (after deterministic sanitization/normalization).
+    /// Null if this is the original name with no changes.
     /// </summary>
     public string? Requested { get; init; }
 
@@ -23,13 +23,13 @@ public sealed record RenameDecision
     public required string Final { get; init; }
 
     /// <summary>
-    /// Original CLR logical name (pre-style transform, for traceability).
+    /// Original CLR logical name (pre-sanitization, for traceability).
     /// </summary>
     public required string From { get; init; }
 
     /// <summary>
     /// Why this rename was needed.
-    /// Examples: "NameTransform(CamelCase)", "HiddenNewConflict",
+    /// Examples: "ReservedWordSanitization", "HiddenNewConflict",
     /// "StaticSideNameCollision", "ExplicitUserOverride", "InterfaceSynthesis",
     /// "StructuralConformanceView", "ReturnTypeConflictNormalization"
     /// </summary>

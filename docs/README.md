@@ -10,7 +10,7 @@ tsbindgen generates TypeScript declaration files from .NET assemblies.
 
 ### Type Generation
 3. [Type Mappings](type-mappings.md) - How CLR types map to TypeScript
-4. [Naming Conventions](naming.md) - CLR vs JavaScript naming
+4. [Naming & Identifiers](naming.md) - CLR-faithful names and TS-safe identifiers
 5. [Library Mode](library-mode.md) - Generating for custom assemblies
 
 ### Validation
@@ -37,17 +37,17 @@ tsbindgen generates TypeScript declaration files (.d.ts) from .NET assemblies:
 - **Complete BCL Coverage**: All 130 namespaces, 4,296 types, 50,675+ members
 - **Type Safety**: Branded primitives, generic constraints preserved
 - **IDE Support**: Full IntelliSense for .NET types in TypeScript
-- **Dual Naming**: CLR PascalCase or JavaScript camelCase
+- **CLR-faithful names**: No casing transforms; names match the CLR surface
 
 ### Output Example
 
 ```typescript
 // System.Collections.Generic
 export interface List_1<T> {
-    readonly count: int;
-    add(item: T): void;
-    remove(item: T): boolean;
-    clear(): void;
+    readonly Count: int;
+    Add(item: T): void;
+    Remove(item: T): boolean;
+    Clear(): void;
 }
 
 export declare const List_1: {

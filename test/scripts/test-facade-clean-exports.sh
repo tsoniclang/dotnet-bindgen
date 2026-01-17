@@ -15,7 +15,7 @@ source "$(dirname "${BASH_SOURCE[0]}")/_common.sh"
 echo "=== Testing Facade Clean Exports ==="
 
 # Use BCL cache for testing
-OUTPUT_DIR=$(ensure_bcl naming-js)
+OUTPUT_DIR=$(ensure_bcl default)
 
 ERRORS=0
 

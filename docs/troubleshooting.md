@@ -146,14 +146,13 @@ Error LIB001: Type 'System.String' not found in library
 Error LIB002: Member signature mismatch for 'List.Add'
 ```
 
-**Cause:** Library was generated with different options (e.g., different `--naming`).
+**Cause:** Library was generated against a different set of reference libraries / tool version than the `--lib` package.
 
-**Solution:** Regenerate library with matching options:
+**Solution:** Regenerate both with the same inputs:
 
 ```bash
-# Both must use same naming
-npx tsbindgen generate -d $DOTNET_RUNTIME -o ./bcl --naming js
-npx tsbindgen generate -a ./MyLib.dll -d $DOTNET_RUNTIME -o ./out --lib ./bcl --naming js
+npx tsbindgen generate -d $DOTNET_RUNTIME -o ./bcl
+npx tsbindgen generate -a ./MyLib.dll -d $DOTNET_RUNTIME -o ./out --lib ./bcl
 ```
 
 ## Performance Issues
@@ -217,9 +216,6 @@ Available log categories:
 ```bash
 # View TypeScript output
 cat output/System.d.ts
-
-# View metadata
-cat output/System/internal/metadata.json | jq .
 
 # View bindings
 cat output/System/bindings.json | jq .

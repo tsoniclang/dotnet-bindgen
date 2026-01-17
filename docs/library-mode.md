@@ -86,7 +86,6 @@ output/
     +-- bindings.json
     +-- internal/
         +-- index.d.ts
-        +-- metadata.json
 ```
 
 BCL references become imports:
@@ -97,8 +96,8 @@ import type { List_1 } from '@tsonic/dotnet/System.Collections.Generic.js';
 import type { Exception } from '@tsonic/dotnet/System.js';
 
 export interface MyClass$instance {
-    getItems(): List_1<string>;
-    getError(): Exception;
+    GetItems(): List_1<string>;
+    GetError(): Exception;
 }
 ```
 
@@ -136,8 +135,8 @@ import type { List_1 } from '@tsonic/dotnet/System.Collections.Generic.js';
 import type { Exception } from '@tsonic/dotnet/System.js';
 
 export interface DataProcessor$instance {
-    process(items: string[]): List_1<string>;
-    handleError(ex: Exception): void;
+    Process(items: string[]): List_1<string>;
+    HandleError(ex: Exception): void;
 }
 
 export declare const DataProcessor: {
@@ -154,11 +153,11 @@ Library mode performs strict validation:
 | Error | Description | Fix |
 |-------|-------------|-----|
 | `LIB001` | Type not found in library | Ensure BCL is complete |
-| `LIB002` | Member signature mismatch | Regenerate with same options |
+| `LIB002` | Member signature mismatch | Regenerate with the same inputs |
 | `LIB003` | Generic constraint mismatch | Check constraint compatibility |
 
 ## Best Practices
 
-1. **Use same --naming** - Match the naming mode of your BCL package
-2. **Keep BCL updated** - Regenerate when .NET version changes
-3. **Pin versions** - Use specific @tsonic/dotnet version in package.json
+1. **Keep BCL updated** - Regenerate when .NET version changes
+2. **Pin versions** - Use a specific `@tsonic/dotnet` version in `package.json`
+3. **Regenerate together** - Generate your library and its referenced libs with the same dotnet/toolchain inputs

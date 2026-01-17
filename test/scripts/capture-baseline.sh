@@ -46,8 +46,8 @@ echo ""
 # Compute file hashes
 echo "[3/4] Computing file hashes..."
 
-# Find all .d.ts and .metadata.json files, sorted for stability
-files=$(find "$TEMP_OUTPUT" -type f \( -name "*.d.ts" -o -name "*.metadata.json" \) | sort)
+# Find all .d.ts and bindings.json files, sorted for stability
+files=$(find "$TEMP_OUTPUT" -type f \( -name "*.d.ts" -o -name "bindings.json" \) | sort)
 
 # Build JSON manually for stable output
 manifest_entries=""

@@ -11,7 +11,6 @@ namespace tsbindgen.Normalize;
 ///
 /// This is the SINGLE canonical format used across:
 /// - BindingEmitter (bindings.json)
-/// - MetadataEmitter (metadata.json)
 /// - StructuralConformance (interface matching)
 /// - ViewPlanner (member filtering)
 /// </summary>

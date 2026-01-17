@@ -6,8 +6,7 @@ namespace tsbindgen.Library;
 
 /// <summary>
 /// Loads a LibraryContract from an existing tsbindgen package directory.
-/// Reads all metadata.json files to extract type and member StableIds.
-/// Reads bindings.json to extract binding StableIds.
+/// Reads all bindings.json files to extract type and member StableIds.
 /// </summary>
 public static class LibraryContractLoader
 {
@@ -39,20 +38,6 @@ public static class LibraryContractLoader
         var allowedMembers = new HashSet<string>();
         var namespaceToTypes = new Dictionary<string, HashSet<string>>();
 
-        // Find all metadata.json files
-        var metadataFiles = Directory.GetFiles(packagePath, "metadata.json", SearchOption.AllDirectories);
-
-        if (metadataFiles.Length == 0)
-        {
-            throw new FileNotFoundException($"No metadata.json files found in library package: {packagePath}");
-        }
-
-        // Parse each metadata file
-        foreach (var metadataFile in metadataFiles)
-        {
-            ProcessMetadataFile(metadataFile, allowedTypes, allowedMembers, namespaceToTypes);
-        }
-
         // Load all bindings.json files from namespace subdirectories
         var bindingsFiles = Directory.GetFiles(packagePath, "bindings.json", SearchOption.AllDirectories);
 
@@ -61,10 +46,12 @@ public static class LibraryContractLoader
             throw new FileNotFoundException($"No bindings.json files found in library package: {packagePath}");
         }
 
-        var allowedBindings = new HashSet<string>();
+        // In the unified bindings.json format, "bindings" are defined by the presence of
+        // member entries in the bindings.json files. The binding set is therefore the
+        // same as the member stable-id set.
         foreach (var bindingsFile in bindingsFiles)
         {
-            ProcessBindingsFile(bindingsFile, allowedBindings);
+            ProcessBindingsFile(bindingsFile, allowedTypes, allowedMembers, namespaceToTypes);
         }
 
         // Load families.json if it exists (optional, enables multi-arity facade support)
@@ -109,7 +96,7 @@ public static class LibraryContractLoader
             PackageName = packageName,
             AllowedTypeStableIds = allowedTypes.ToImmutableHashSet(),
             AllowedMemberStableIds = allowedMembers.ToImmutableHashSet(),
-            AllowedBindingStableIds = allowedBindings.ToImmutableHashSet(),
+            AllowedBindingStableIds = allowedMembers.ToImmutableHashSet(),
             NamespaceToTypes = namespaceToTypes.ToImmutableDictionary(
                 kvp => kvp.Key,
                 kvp => kvp.Value.ToImmutableHashSet()),
@@ -134,7 +121,7 @@ public static class LibraryContractLoader
         return nameElement.GetString() ?? throw new InvalidOperationException($"Null package name in {packageJsonPath}");
     }
 
-    private static void ProcessMetadataFile(
+    private static void ProcessBindingsFile(
         string filePath,
         HashSet<string> allowedTypes,
         HashSet<string> allowedMembers,
@@ -147,75 +134,60 @@ public static class LibraryContractLoader
         // Get namespace name
         if (!root.TryGetProperty("namespace", out var nsElement))
         {
-            throw new InvalidOperationException($"Missing 'namespace' field in metadata file: {filePath}");
+            throw new InvalidOperationException($"Missing 'namespace' field in bindings file: {filePath}");
         }
         var namespaceName = nsElement.GetString() ?? throw new InvalidOperationException($"Null namespace in {filePath}");
 
         // Get types array
         if (!root.TryGetProperty("types", out var typesElement) || typesElement.ValueKind != JsonValueKind.Array)
         {
-            throw new InvalidOperationException($"Missing or invalid 'types' array in metadata file: {filePath}");
+            throw new InvalidOperationException($"Missing or invalid 'types' array in bindings file: {filePath}");
         }
 
-        var namespaceTypes = new HashSet<string>();
+        var namespaceTypes = namespaceToTypes.TryGetValue(namespaceName, out var existing)
+            ? existing
+            : new HashSet<string>();
 
-        // Process each type
         foreach (var typeElement in typesElement.EnumerateArray())
         {
-            // Extract type StableId
             if (!typeElement.TryGetProperty("stableId", out var stableIdElement))
             {
-                throw new InvalidOperationException($"Missing 'stableId' field for type in metadata file: {filePath}");
+                throw new InvalidOperationException($"Missing 'stableId' field for type in bindings file: {filePath}");
             }
-            var typeStableId = stableIdElement.GetString() ?? throw new InvalidOperationException($"Null stableId in {filePath}");
 
+            var typeStableId = stableIdElement.GetString() ?? throw new InvalidOperationException($"Null stableId in {filePath}");
             allowedTypes.Add(typeStableId);
             namespaceTypes.Add(typeStableId);
 
-            // Extract member StableIds from all member arrays
-            ProcessMemberArray(typeElement, "methods", allowedMembers, filePath);
-            ProcessMemberArray(typeElement, "properties", allowedMembers, filePath);
-            ProcessMemberArray(typeElement, "fields", allowedMembers, filePath);
-            ProcessMemberArray(typeElement, "events", allowedMembers, filePath);
+            ProcessMemberArray(typeElement, "methods", allowedMembers);
+            ProcessMemberArray(typeElement, "properties", allowedMembers);
+            ProcessMemberArray(typeElement, "fields", allowedMembers);
+            ProcessMemberArray(typeElement, "events", allowedMembers);
+            ProcessMemberArray(typeElement, "constructors", allowedMembers);
         }
 
         namespaceToTypes[namespaceName] = namespaceTypes;
     }
 
-    private static void ProcessMemberArray(JsonElement typeElement, string memberArrayName, HashSet<string> allowedMembers, string filePath)
+    private static void ProcessMemberArray(JsonElement typeElement, string memberArrayName, HashSet<string> allowedMembers)
     {
         if (!typeElement.TryGetProperty(memberArrayName, out var memberArray) || memberArray.ValueKind != JsonValueKind.Array)
         {
-            return; // Member array may be missing or empty - that's okay
+            return;
         }
 
         foreach (var member in memberArray.EnumerateArray())
         {
             if (!member.TryGetProperty("stableId", out var stableIdElement))
             {
-                // Skip members without StableId (e.g., constructors which might not have it)
                 continue;
             }
 
             var memberStableId = stableIdElement.GetString();
-            if (memberStableId != null)
+            if (!string.IsNullOrWhiteSpace(memberStableId))
             {
                 allowedMembers.Add(memberStableId);
             }
-        }
-    }
-
-    private static void ProcessBindingsFile(string bindingsPath, HashSet<string> bindings)
-    {
-        var json = File.ReadAllText(bindingsPath);
-        using var doc = JsonDocument.Parse(json);
-        var root = doc.RootElement;
-
-        // bindings.json structure: object with StableId keys
-        // We extract all keys
-        foreach (var property in root.EnumerateObject())
-        {
-            bindings.Add(property.Name);
         }
     }
 

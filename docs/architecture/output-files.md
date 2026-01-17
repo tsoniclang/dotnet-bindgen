@@ -13,17 +13,15 @@ output/
   System.d.ts             # Facade (re-exports)
   System.js               # Runtime stub (throws if executed)
   System/
-    bindings.json         # Name mappings
+    bindings.json         # CLR bindings manifest (names + CLR semantics)
     internal/
       index.d.ts          # Full declarations
-      metadata.json       # CLR semantics
   System.Collections.Generic.d.ts
   System.Collections.Generic.js
   System.Collections.Generic/
     bindings.json
     internal/
       index.d.ts
-      metadata.json
 ```
 
 ## File Purposes
@@ -36,8 +34,8 @@ Full TypeScript declarations for all public types.
 import type { IEnumerable_1 } from "../../System.Collections.Generic/internal/index.js";
 
 export interface List_1$instance<T> {
-    readonly count: int;
-    add(item: T): void;
+    readonly Count: int;
+    Add(item: T): void;
 }
 
 export declare const List_1: {
@@ -63,25 +61,27 @@ export { List_1 as List } from './System.Collections.Generic/internal/index.js';
 export type IEnumerable<T> = Internal.IEnumerable_1<T>;
 ```
 
-### metadata.json
+### bindings.json
 
-CLR semantics not expressible in TypeScript. Used by Tsonic compiler.
+CLR semantics not expressible in TypeScript. Used by the Tsonic compiler for correct C# interop and runtime binding.
 
 ```json
 {
-  "namespace": "System.Collections.Generic",
+  "namespace": "System",
   "contributingAssemblies": ["System.Private.CoreLib"],
   "types": [
     {
-      "stableId": "System.Private.CoreLib:System.Collections.Generic.List\u00601",
-      "clrName": "System.Collections.Generic.List\u00601",
-      "tsEmitName": "List_1",
-      "kind": "Class",
+      "stableId": "System.Private.CoreLib:System.Int32",
+      "clrName": "System.Int32",
+      "assemblyName": "System.Private.CoreLib",
+      "kind": "Struct",
+      "accessibility": "Public",
+      "isStatic": false,
       "methods": [
         {
-          "clrName": "TryGetValue",
-          "tsEmitName": "tryGetValue",
-          "parameterModifiers": [null, "out"]
+          "clrName": "TryParse",
+          "isStatic": true,
+          "parameterModifiers": [{ "index": 1, "modifier": "out" }]
         }
       ]
     }
@@ -90,21 +90,19 @@ CLR semantics not expressible in TypeScript. Used by Tsonic compiler.
 ```
 
 **Key fields:**
+- `kind` / `accessibility` / `isAbstract` / `isStatic` - Type semantics
 - `emitScope` - Where the member is emitted (`ClassSurface`, `ViewOnly`, etc.)
-- `isVirtual`, `isOverride`, `isAbstract` - Dispatch semantics
-- `isStatic` - Static vs instance
-- `hasGetter`, `hasSetter` - Property accessors
-- `parameterModifiers` - Array of ref/out/in modifiers per parameter (null = none)
+- `isVirtual` / `isOverride` / `isAbstract` - Dispatch semantics
+- `parameterModifiers` - Vector of ref/out/in modifiers for byref parameters
 
 ### Parameter Modifiers
 
-The `parameterModifiers` array tracks C# `ref`, `out`, and `in` parameter modifiers:
+The `parameterModifiers` vector tracks C# `ref`, `out`, and `in` parameter modifiers:
 
 ```json
 {
   "clrName": "TryParse",
-  "tsEmitName": "tryParse",
-  "parameterModifiers": [null, "out"]
+  "parameterModifiers": [{ "index": 1, "modifier": "out" }]
 }
 ```
 
@@ -114,32 +112,6 @@ The `parameterModifiers` array tracks C# `ref`, `out`, and `in` parameter modifi
 - `"in"` - By-reference, read-only
 
 This metadata is required by the Tsonic compiler for correct C# interop since TypeScript has no concept of by-reference parameters.
-
-### bindings.json
-
-CLR-to-TypeScript name mappings. Used for runtime binding.
-
-```json
-{
-  "namespace": "System.Linq",
-  "types": [{
-    "stableId": "System.Linq:System.Linq.Enumerable",
-    "clrName": "System.Linq.Enumerable",
-    "tsEmitName": "Enumerable",
-    "methods": [{
-      "clrName": "Where",
-      "tsEmitName": "Where",
-      "isExtensionMethod": true,
-      "metadataToken": 100663496
-    }]
-  }]
-}
-```
-
-**Key fields:**
-- `stableId` - Unique identifier (assembly:fullName)
-- `metadataToken` - CLR reflection token
-- `isExtensionMethod` - C# extension method flag
 
 ### families.json
 
@@ -207,5 +179,5 @@ import type { ptr } from "@tsonic/core/types.js";
 | CLR | TypeScript |
 |-----|------------|
 | Generic arity: `List`1` | Underscore: `List_1` |
-| Nested type: `Outer+Inner` | Dollar: `Outer$Inner` |
+| Nested type: `Outer+Inner` | Underscore: `Outer_Inner` |
 | Namespace | Directory name (with dots) |

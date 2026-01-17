@@ -97,46 +97,7 @@ internal static class Shared
     /// </summary>
     internal static string ComputeMethodBase(MethodSymbol method)
     {
-        var name = method.ClrName;
-
-        // Handle operators (map to policy-defined names)
-        if (name.StartsWith("op_"))
-        {
-            var mapped = name switch
-            {
-                "op_Equality" => "equals",
-                "op_Inequality" => "notEquals",
-                "op_Addition" => "add",
-                "op_Subtraction" => "subtract",
-                "op_Multiply" => "multiply",
-                "op_Division" => "divide",
-                "op_Modulus" => "modulus",
-                "op_BitwiseAnd" => "bitwiseAnd",
-                "op_BitwiseOr" => "bitwiseOr",
-                "op_ExclusiveOr" => "bitwiseXor",
-                "op_LeftShift" => "leftShift",
-                "op_RightShift" => "rightShift",
-                "op_UnaryNegation" => "negate",
-                "op_UnaryPlus" => "plus",
-                "op_LogicalNot" => "not",
-                "op_OnesComplement" => "complement",
-                "op_Increment" => "increment",
-                "op_Decrement" => "decrement",
-                "op_True" => "isTrue",
-                "op_False" => "isFalse",
-                "op_GreaterThan" => "greaterThan",
-                "op_LessThan" => "lessThan",
-                "op_GreaterThanOrEqual" => "greaterThanOrEqual",
-                "op_LessThanOrEqual" => "lessThanOrEqual",
-                _ => name.Replace("op_", "operator_")
-            };
-
-            // Operator names are member names (IdentifierName position) - keywords are allowed.
-            return mapped;
-        }
-
-        // Accessors (get_, set_, add_, remove_) and regular methods use CLR name
-        return SanitizeMemberName(name);
+        return SanitizeMemberName(method.ClrName);
     }
 
     /// <summary>

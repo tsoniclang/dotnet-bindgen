@@ -143,14 +143,8 @@ public enum ConstraintMergeStrategy
 public sealed record EmissionPolicy
 {
     /// <summary>
-    /// Naming style for member names (methods, properties, fields, events, enum members).
-    /// Default: Js (JavaScript-style lowerFirst for PascalCase members).
-    /// </summary>
-    public NamingStyle Naming { get; init; } = NamingStyle.Js;
-
-    /// <summary>
-    /// Sorting order for types and members.
-    /// </summary>
+     /// Sorting order for types and members.
+     /// </summary>
     public required SortOrderStrategy SortOrder { get; init; }
 
     /// <summary>
@@ -175,28 +169,6 @@ public sealed record EmissionPolicy
     /// </summary>
     public IReadOnlySet<string> FlattenedClasses { get; init; }
         = new HashSet<string>();
-}
-
-/// <summary>
-/// Naming style for emitted member names.
-/// </summary>
-public enum NamingStyle
-{
-    /// <summary>
-    /// CLR-style: preserve original C# names as-is.
-    /// "GetValue" → "GetValue", "CC_CDECL" → "CC_CDECL"
-    /// </summary>
-    Clr,
-
-    /// <summary>
-    /// JavaScript-style: lowerFirst for pure PascalCase members.
-    /// Only transforms C# PascalCase: "GetValue" → "getValue", "HelloWorld" → "helloWorld"
-    /// Leaves everything else unchanged:
-    ///   - ALL-UPPERCASE: "CC_CDECL" → "CC_CDECL"
-    ///   - Underscores: "Hello_World" → "Hello_World"
-    ///   - CLR-reserved: "value__" → "value__"
-    /// </summary>
-    Js
 }
 
 public enum SortOrderStrategy

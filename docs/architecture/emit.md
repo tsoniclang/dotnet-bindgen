@@ -10,8 +10,7 @@ The Emit phase generates TypeScript declaration files from the emission plan.
 | InternalIndexEmitter | `<Namespace>/internal/index.d.ts` | Full type declarations |
 | FacadeEmitter | `<Namespace>.d.ts` | Public facade with re-exports |
 | FamilyIndexEmitter | `families.json` | Multi-arity family index |
-| MetadataEmitter | `<Namespace>/internal/metadata.json` | CLR semantics |
-| BindingEmitter | `<Namespace>/bindings.json` | CLR↔TS name mappings |
+| BindingEmitter | `<Namespace>/bindings.json` | CLR bindings manifest (names + CLR semantics) |
 | ModuleStubEmitter | `<Namespace>.js` | Runtime stubs (throw if executed) |
 
 ## InternalIndexEmitter
@@ -48,8 +47,8 @@ import type { IEnumerable_1 } from '../../System.Collections/internal/index.js';
 
 // Type declarations
 export interface List_1$instance<T> {
-    readonly count: int;
-    add(item: T): void;
+    readonly Count: int;
+    Add(item: T): void;
     // ...
 }
 

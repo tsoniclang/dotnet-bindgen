@@ -1,6 +1,5 @@
 using System.Collections.Immutable;
 using System.Text;
-using tsbindgen.Core.Naming;
 using tsbindgen.Core.Policy;
 using tsbindgen.Emit.Printers;
 using tsbindgen.Model;
@@ -803,24 +802,16 @@ public static class InternalIndexEmitter
                 return $"import(\"../../System/internal/index\").{simpleName}";
         }
 
-        // Helper to transform method names based on naming style
-        // Must match the interface member naming to satisfy TypeScript structural typing
-        string M(string pascalCaseName) => ctx.Policy.Emission.Naming switch
-        {
-            NamingStyle.Js => NameTransform.ToJsStyle(pascalCaseName),
-            _ => pascalCaseName
-        };
-
         // IEquatable<T>.Equals
         if (numericInterfaces.Contains("IEquatable"))
         {
-            sb.AppendLine($"    {M("Equals")}(other: {typeName}): boolean;");
+            sb.AppendLine($"    Equals(other: {typeName}): boolean;");
         }
 
         // IComparable.CompareTo
         if (numericInterfaces.Contains("IComparable"))
         {
-            sb.AppendLine($"    {M("CompareTo")}(obj: unknown): int;");
+            sb.AppendLine($"    CompareTo(obj: unknown): int;");
         }
 
         // INumberBase<TSelf>, INumber<TSelf>, IBinaryInteger<TSelf>, IFloatingPoint<TSelf>, etc.
@@ -832,9 +823,9 @@ public static class InternalIndexEmitter
             numericInterfaces.Contains("IRootFunctions") ||
             numericInterfaces.Contains("ITrigonometricFunctions"))
         {
-            sb.AppendLine($"    {M("ToString")}(format: string, formatProvider: {Qualified("IFormatProvider")}): string;");
+            sb.AppendLine($"    ToString(format: string, formatProvider: {Qualified("IFormatProvider")}): string;");
             // ref/out modifiers are ABI semantics tracked in metadata, not TS types - emit plain element type
-            sb.AppendLine($"    {M("TryFormat")}(destination: {Qualified("Span_1")}<{Qualified("Char")}>, charsWritten: int, format: {Qualified("ReadOnlySpan_1")}<{Qualified("Char")}>, provider: {Qualified("IFormatProvider")}): boolean;");
+            sb.AppendLine($"    TryFormat(destination: {Qualified("Span_1")}<{Qualified("Char")}>, charsWritten: int, format: {Qualified("ReadOnlySpan_1")}<{Qualified("Char")}>, provider: {Qualified("IFormatProvider")}): boolean;");
         }
 
         // IUtf8SpanFormattable - TryFormat UTF-8 overload (byte version)
@@ -842,32 +833,32 @@ public static class InternalIndexEmitter
         if (numericInterfaces.Contains("IUtf8SpanFormattable"))
         {
             // ref/out modifiers are ABI semantics tracked in metadata, not TS types - emit plain element type
-            sb.AppendLine($"    {M("TryFormat")}(utf8Destination: {Qualified("Span_1")}<{Qualified("Byte")}>, bytesWritten: int, format: {Qualified("ReadOnlySpan_1")}<{Qualified("Char")}>, provider: {Qualified("IFormatProvider")}): boolean;");
+            sb.AppendLine($"    TryFormat(utf8Destination: {Qualified("Span_1")}<{Qualified("Byte")}>, bytesWritten: int, format: {Qualified("ReadOnlySpan_1")}<{Qualified("Char")}>, provider: {Qualified("IFormatProvider")}): boolean;");
         }
 
         // IBinaryInteger<TSelf> - GetByteCount, TryWriteBigEndian, WriteBigEndian
         if (numericInterfaces.Contains("IBinaryInteger"))
         {
-            sb.AppendLine($"    {M("GetByteCount")}(): int;");
+            sb.AppendLine($"    GetByteCount(): int;");
             // ref/out modifiers are ABI semantics tracked in metadata, not TS types - emit plain element type
-            sb.AppendLine($"    {M("TryWriteBigEndian")}(destination: {Qualified("Span_1")}<{Qualified("Byte")}>, bytesWritten: int): boolean;");
+            sb.AppendLine($"    TryWriteBigEndian(destination: {Qualified("Span_1")}<{Qualified("Byte")}>, bytesWritten: int): boolean;");
             // WriteBigEndian overloads
-            sb.AppendLine($"    {M("WriteBigEndian")}(destination: byte[], startIndex: int): int;");
-            sb.AppendLine($"    {M("WriteBigEndian")}(destination: byte[]): int;");
-            sb.AppendLine($"    {M("WriteBigEndian")}(destination: {Qualified("Span_1")}<{Qualified("Byte")}>): int;");
+            sb.AppendLine($"    WriteBigEndian(destination: byte[], startIndex: int): int;");
+            sb.AppendLine($"    WriteBigEndian(destination: byte[]): int;");
+            sb.AppendLine($"    WriteBigEndian(destination: {Qualified("Span_1")}<{Qualified("Byte")}>): int;");
         }
 
         // IFloatingPoint<TSelf> - GetExponentByteCount, GetExponentShortestBitLength, TryWriteExponentBigEndian, WriteExponentBigEndian
         if (numericInterfaces.Contains("IFloatingPoint"))
         {
-            sb.AppendLine($"    {M("GetExponentByteCount")}(): int;");
-            sb.AppendLine($"    {M("GetExponentShortestBitLength")}(): int;");
+            sb.AppendLine($"    GetExponentByteCount(): int;");
+            sb.AppendLine($"    GetExponentShortestBitLength(): int;");
             // ref/out modifiers are ABI semantics tracked in metadata, not TS types - emit plain element type
-            sb.AppendLine($"    {M("TryWriteExponentBigEndian")}(destination: {Qualified("Span_1")}<{Qualified("Byte")}>, bytesWritten: int): boolean;");
+            sb.AppendLine($"    TryWriteExponentBigEndian(destination: {Qualified("Span_1")}<{Qualified("Byte")}>, bytesWritten: int): boolean;");
             // WriteExponentBigEndian overloads
-            sb.AppendLine($"    {M("WriteExponentBigEndian")}(destination: byte[], startIndex: int): int;");
-            sb.AppendLine($"    {M("WriteExponentBigEndian")}(destination: byte[]): int;");
-            sb.AppendLine($"    {M("WriteExponentBigEndian")}(destination: {Qualified("Span_1")}<{Qualified("Byte")}>): int;");
+            sb.AppendLine($"    WriteExponentBigEndian(destination: byte[], startIndex: int): int;");
+            sb.AppendLine($"    WriteExponentBigEndian(destination: byte[]): int;");
+            sb.AppendLine($"    WriteExponentBigEndian(destination: {Qualified("Span_1")}<{Qualified("Byte")}>): int;");
         }
     }
 
