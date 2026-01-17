@@ -112,7 +112,7 @@ npx tsbindgen generate -a ./MyLib.dll -d $DOTNET_RUNTIME -o ./out \
 # Multiple library references
 npx tsbindgen generate -a ./MyLib.dll -d $DOTNET_RUNTIME -o ./out \
   --lib node_modules/@tsonic/dotnet \
-  --lib node_modules/@tsonic/core
+  --lib node_modules/@tsonic/microsoft-extensions
 ```
 
 ### Namespace Mapping

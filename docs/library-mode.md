@@ -6,7 +6,7 @@ Library mode generates declarations for your assembly without duplicating types 
 
 When building a TypeScript package with .NET bindings:
 - BCL types come from `@tsonic/dotnet` (published package)
-- Runtime types come from `@tsonic/core` (Tsonic runtime primitives)
+- Runtime primitives come from `@tsonic/core` (installed as a dependency; `@tsonic/dotnet` imports these types)
 - Your types are generated fresh with references to these packages
 
 ## Workflow
@@ -51,13 +51,13 @@ npx tsbindgen generate \
   -d $DOTNET_RUNTIME \
   -o ./my-lib-types \
   --lib ./node_modules/@tsonic/dotnet \
-  --lib ./node_modules/@tsonic/core
+  --lib ./node_modules/@tsonic/microsoft-extensions
 ```
 
 When a type is referenced, tsbindgen checks each library in order and imports from the first one that provides it. This allows layered package structures:
 
-- `@tsonic/core` - Tsonic runtime types (primitives, Array, etc.)
-- `@tsonic/dotnet` - .NET BCL types (references `@tsonic/core` for primitives)
+- `@tsonic/dotnet` - .NET BCL types
+- `@tsonic/microsoft-extensions` - Additional shared framework assemblies (e.g., DI/Logging/Config)
 - Your package - Your types (references both)
 
 ## Output Structure
