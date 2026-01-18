@@ -92,29 +92,7 @@ npx tsbindgen generate -d $DOTNET_RUNTIME -o ./out
 
 ### Naming
 
-| Option | Values | Default | Description |
-|--------|--------|---------|-------------|
-| `--naming` | `js`, `clr` | `clr` | Member naming convention. |
-
-**Values:**
-
-- `clr`: PascalCase (C# convention)
-  ```typescript
-  list.GetEnumerator();
-  Console.WriteLine("hello");
-  ```
-
-- `js`: camelCase (JavaScript convention)
-  ```typescript
-  list.getEnumerator();
-  Console.writeLine("hello");
-  ```
-
-**Example:**
-
-```bash
-npx tsbindgen generate -d $DOTNET_RUNTIME -o ./out --naming js
-```
+tsbindgen emits **CLR-faithful names**. There are no casing transforms and no `--naming` flag.
 
 ### Library Mode
 
@@ -134,7 +112,7 @@ npx tsbindgen generate -a ./MyLib.dll -d $DOTNET_RUNTIME -o ./out \
 # Multiple library references
 npx tsbindgen generate -a ./MyLib.dll -d $DOTNET_RUNTIME -o ./out \
   --lib node_modules/@tsonic/dotnet \
-  --lib node_modules/@tsonic/core
+  --lib node_modules/@tsonic/microsoft-extensions
 ```
 
 ### Namespace Mapping
@@ -218,7 +196,6 @@ npx tsbindgen generate -d $DOTNET_RUNTIME -o ./out --strict
 npx tsbindgen generate \
   -d ~/.dotnet/shared/Microsoft.NETCore.App/10.0.0 \
   -o ./output \
-  --naming js \
   -v
 ```
 

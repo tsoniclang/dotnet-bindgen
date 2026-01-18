@@ -265,7 +265,7 @@ public sealed record ByRefTypeReference(
 ) : TypeReference;
 ```
 
-Tracked in `metadata.json` via `parameterModifiers` (ref/out/in). The emitted `.d.ts` uses the element type directly.
+Tracked in `bindings.json` via `parameterModifiers` (ref/out/in). The emitted `.d.ts` uses the element type directly.
 
 ### NullableTypeReference
 

@@ -4,7 +4,7 @@
 #
 # This script:
 # 1. Cleans all BCL caches (unless --no-clean)
-# 2. Pre-generates BCL caches (default + naming-js modes)
+# 2. Pre-generates BCL cache (default)
 # 3. Runs all test scripts
 # 4. Reports summary
 
@@ -51,10 +51,6 @@ echo "[2/3] Pre-generating BCL caches..."
 echo "      Generating default mode..."
 BCL_PATH=$(ensure_bcl default) || exit 1
 echo "      Generated: $BCL_PATH"
-
-echo "      Generating naming-js mode..."
-BCL_JS_PATH=$(ensure_bcl naming-js) || exit 1
-echo "      Generated: $BCL_JS_PATH"
 
 # Step 3: Run all tests
 echo ""

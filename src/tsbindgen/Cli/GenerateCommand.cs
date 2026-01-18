@@ -46,11 +46,6 @@ public static class GenerateCommand
             AllowMultipleArgumentsPerToken = true
         };
 
-        // Naming style option
-        var namingOption = new Option<string?>(
-            name: "--naming",
-            description: "Member naming style: 'js' (JavaScript-style lowerFirst) or 'clr' (preserve C# names). Default: clr");
-
         var verboseOption = new Option<bool>(
             aliases: new[] { "--verbose", "-v" },
             getDefaultValue: () => false,
@@ -102,7 +97,6 @@ public static class GenerateCommand
         command.AddOption(refDirOption);
         command.AddOption(outDirOption);
         command.AddOption(namespacesOption);
-        command.AddOption(namingOption);
         command.AddOption(verboseOption);
         command.AddOption(logsOption);
         command.AddOption(strictOption);
@@ -118,7 +112,6 @@ public static class GenerateCommand
             var refDirs = context.ParseResult.GetValueForOption(refDirOption) ?? Array.Empty<string>();
             var outDir = context.ParseResult.GetValueForOption(outDirOption) ?? "out";
             var namespaces = context.ParseResult.GetValueForOption(namespacesOption) ?? Array.Empty<string>();
-            var naming = context.ParseResult.GetValueForOption(namingOption);
             var verbose = context.ParseResult.GetValueForOption(verboseOption);
             var logs = context.ParseResult.GetValueForOption(logsOption) ?? Array.Empty<string>();
             var strict = context.ParseResult.GetValueForOption(strictOption);
@@ -133,7 +126,6 @@ public static class GenerateCommand
                 refDirs,
                 outDir,
                 namespaces,
-                naming,
                 verbose,
                 logs,
                 strict,
@@ -152,7 +144,6 @@ public static class GenerateCommand
         string[] refDirs,
         string outDir,
         string[] namespaceFilter,
-        string? naming,
         bool verbose,
         string[] logs,
         bool strict,
@@ -186,25 +177,6 @@ public static class GenerateCommand
 
             // Build policy from CLI options
             var policy = Core.Policy.PolicyDefaults.Create();
-
-            // Apply naming style if specified
-            if (!string.IsNullOrWhiteSpace(naming))
-            {
-                var namingStyle = naming.ToLowerInvariant() switch
-                {
-                    "js" => Core.Policy.NamingStyle.Js,
-                    "clr" => Core.Policy.NamingStyle.Clr,
-                    _ => throw new ArgumentException($"Unknown naming style: '{naming}'. Use 'js' or 'clr'.")
-                };
-
-                policy = policy with
-                {
-                    Emission = policy.Emission with
-                    {
-                        Naming = namingStyle
-                    }
-                };
-            }
 
             if (allowConstructorConstraintLoss)
             {

@@ -135,27 +135,13 @@ public static (string Sanitized, bool WasSanitized) Sanitize(string name)
 
 ## Style Transforms
 
-### CLR Style (default)
-
-No transformation - PascalCase preserved:
+tsbindgen emits CLR-faithful names. Member style transforms are identity transforms (no casing changes).
 
 ```csharp
 Renamer.AdoptMemberStyleTransform(name => name);
 
 // GetEnumerator -> GetEnumerator
 // WriteLine -> WriteLine
-```
-
-### JavaScript Style (`--naming js`)
-
-camelCase transformation:
-
-```csharp
-Renamer.AdoptMemberStyleTransform(name => ToCamelCase(name));
-
-// GetEnumerator -> getEnumerator
-// WriteLine -> writeLine
-// XMLReader -> xmlReader
 ```
 
 ## Rename Decisions

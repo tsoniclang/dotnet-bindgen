@@ -4,11 +4,12 @@ using System.Linq;
 using tsbindgen.Model;
 using tsbindgen.Model.Symbols;
 using tsbindgen.Model.Symbols.MemberSymbols;
+using tsbindgen.Normalize.Naming;
 
 namespace tsbindgen.Shape;
 
 /// <summary>
-/// Deduplicates class surface by emitted name (post-camelCase).
+/// Deduplicates class surface by emitted member name.
 /// When multiple properties emit to the same name, keeps the most specific one
 /// and demotes others to ViewOnly.
 /// PURE - returns new SymbolGraph.
@@ -71,10 +72,10 @@ public static class ClassSurfaceDeduplicator
         BuildContext ctx,
         TypeSymbol type)
     {
-        // Group class-surface properties by emitted name (camelCase)
+        // Group class-surface properties by requested member name (no casing transforms).
         var groups = type.Members.Properties
             .Where(p => p.EmitScope == EmitScope.ClassSurface)
-            .GroupBy(p => ApplyCamelCase(p.ClrName))
+            .GroupBy(p => Shared.RequestedBaseForMember(p.ClrName))
             .Where(g => g.Count() > 1) // Only groups with duplicates
             .ToList();
 
@@ -159,15 +160,4 @@ public static class ClassSurfaceDeduplicator
         return false;
     }
 
-    /// <summary>
-    /// Apply camelCase transformation to a name (simplified).
-    /// </summary>
-    private static string ApplyCamelCase(string name)
-    {
-        if (string.IsNullOrEmpty(name))
-            return name;
-
-        // Simple lowercase first character
-        return char.ToLowerInvariant(name[0]) + name.Substring(1);
-    }
 }

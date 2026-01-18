@@ -318,7 +318,7 @@ public static class ExtensionsEmitter
 
         sb.Append("  ");
 
-        // Method name: use TsEmitName (camelCase for @tsonic/dotnet, PascalCase for @tsonic/dotnet-pure)
+        // Method name: CLR-faithful (no casing transforms).
         var methodName = method.TsEmitName;
         sb.Append(methodName);
 

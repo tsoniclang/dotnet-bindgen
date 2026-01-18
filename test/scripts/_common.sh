@@ -16,7 +16,6 @@ TESTS_DIR="$PROJECT_ROOT/.tests"
 
 # Cached BCL output directories (one per mode)
 BCL_DEFAULT_DIR="$TESTS_DIR/bcl"
-BCL_NAMING_JS_DIR="$TESTS_DIR/bcl-naming-js"
 
 # Colors for output
 RED='\033[0;31m'
@@ -130,25 +129,20 @@ run_tsc() {
 # BCL Generation Cache
 # ============================================================
 
-# Ensure BCL is generated for the given mode
-# Usage: ensure_bcl [default|naming-js]
+# Ensure BCL is generated.
+# Usage: ensure_bcl [default]
 # Returns: path to the BCL output directory
 ensure_bcl() {
     local mode="${1:-default}"
     local out_dir
-    local extra_args=""
 
     case "$mode" in
         default)
             out_dir="$BCL_DEFAULT_DIR"
             ;;
-        naming-js)
-            out_dir="$BCL_NAMING_JS_DIR"
-            extra_args="--naming js"
-            ;;
         *)
             echo "ERROR: Unknown BCL mode: $mode" >&2
-            echo "Valid modes: default, naming-js" >&2
+            echo "Valid modes: default" >&2
             return 1
             ;;
     esac
@@ -168,7 +162,6 @@ ensure_bcl() {
     if ! dotnet run --project "$PROJECT_ROOT/src/tsbindgen/tsbindgen.csproj" -- \
         generate -d "$DOTNET_RUNTIME" \
         --out-dir "$out_dir" \
-        $extra_args \
         > /dev/null 2>&1; then
         echo -e "${RED}ERROR: BCL generation failed${NC}" >&2
         rm -rf "$out_dir"
@@ -251,7 +244,7 @@ assert_not_grep() {
 
 # Clean all BCL caches
 clean_bcl_caches() {
-    rm -rf "$BCL_DEFAULT_DIR" "$BCL_NAMING_JS_DIR"
+    rm -rf "$BCL_DEFAULT_DIR"
 }
 
 # ============================================================

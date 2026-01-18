@@ -444,9 +444,6 @@ public static class Builder
         // Emit families.json (canonical family index for library consumers)
         FamilyIndexEmitter.Emit(ctx, plan, outputDirectory);
 
-        // Emit metadata.json for each namespace
-        MetadataEmitter.Emit(ctx, plan, outputDirectory);
-
         // Emit bindings.json for each namespace
         BindingEmitter.Emit(ctx, plan, outputDirectory);
 

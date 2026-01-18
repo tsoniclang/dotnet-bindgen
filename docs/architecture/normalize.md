@@ -40,13 +40,13 @@ Namespace Scope: "ns:System.Collections.Generic#internal"
     └── Type names (List_1, Dictionary_2, ...)
 
 Type Scope: "type:System.Collections.Generic.List`1#instance"
-    └── Instance member names (add, remove, count, ...)
+    └── Instance member names (Add, Remove, Count, ...)
 
 Type Scope: "type:System.Collections.Generic.List`1#static"
-    └── Static member names (empty, ...)
+    └── Static member names (Empty, ...)
 
 View Scope: "view:System.Collections.Generic.List`1:IEnumerable`1#instance"
-    └── View member names (getEnumerator, ...)
+    └── View member names (GetEnumerator, ...)
 ```
 
 ## Conflict Resolution
@@ -55,28 +55,18 @@ When a name is already taken in a scope, numeric suffixes are added:
 
 ```csharp
 // First reservation
-"add" -> "add"
+"Add" -> "Add"
 
 // Conflict - add suffix
-"add" -> "add2"
+"Add" -> "Add2"
 
 // Another conflict
-"add" -> "add3"
+"Add" -> "Add3"
 ```
 
-## Naming Style Transform
+## Naming Style
 
-The `--naming js` option applies camelCase transform:
-
-```csharp
-ctx.Renamer.AdoptMemberStyleTransform(name => ToCamelCase(name));
-
-// GetEnumerator -> getEnumerator
-// WriteLine -> writeLine
-// XMLReader -> xmlReader
-```
-
-Type names are NOT transformed (always PascalCase).
+tsbindgen emits **CLR-faithful names**. The renamer’s style transforms are identity transforms (no casing changes), and there is no `--naming` option.
 
 ## Reserved Word Handling
 

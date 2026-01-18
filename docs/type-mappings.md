@@ -154,7 +154,7 @@ export abstract class Console {
 
 ### ref/out/in Parameters
 
-Parameter modifiers (`ref`, `out`, `in`) are tracked in the metadata sidecar, not the TypeScript declarations:
+Parameter modifiers (`ref`, `out`, `in`) are tracked in the bindings manifest (`<Namespace>/bindings.json`), not the TypeScript declarations:
 
 ```typescript
 // TypeScript declaration (no visible difference)
@@ -162,13 +162,22 @@ function tryParse(value: string, result: int): bool;
 ```
 
 ```json
-// metadata.json tracks the modifier
+// bindings.json tracks the modifier (simplified example)
 {
-  "methods": {
-    "tryParse": {
-      "parameterModifiers": [null, "out"]
+  "namespace": "System",
+  "types": [
+    {
+      "clrName": "System.Int32",
+      "methods": [
+        {
+          "clrName": "TryParse",
+          "parameterModifiers": [
+            { "index": 1, "modifier": "out" }
+          ]
+        }
+      ]
     }
-  }
+  ]
 }
 ```
 
@@ -177,7 +186,7 @@ This approach is used because:
 2. The Tsonic compiler needs this info for correct C# interop
 3. Runtime behavior differs for ref/out/in (ABI concern)
 
-See [Output Files](architecture/output-files.md) for metadata structure.
+See [Output Files](architecture/output-files.md) for manifest structure.
 
 ## Nullable Types
 

@@ -19,8 +19,21 @@ fi
 
 echo "[1/3] Checking for rest parameter syntax in console methods..."
 
-# Note: nodejs uses --namespace-map "nodejs=index" so path is index/internal/index.d.ts
-INTERNAL_FILE="$NODEJS_DIR/index/internal/index.d.ts"
+# Resolve latest version directory under nodejs/versions (e.g. versions/10)
+VERSIONS_DIR="$NODEJS_DIR/versions"
+if [ ! -d "$VERSIONS_DIR" ]; then
+    echo -e "${RED}❌ FAILED: nodejs versions directory not found: $VERSIONS_DIR${NC}"
+    exit 1
+fi
+
+LATEST_VERSION_DIR=$(ls -d "$VERSIONS_DIR"/*/ 2>/dev/null | sort -V | tail -1 | sed 's:/*$::')
+if [ -z "$LATEST_VERSION_DIR" ]; then
+    echo -e "${RED}❌ FAILED: no version directories found under: $VERSIONS_DIR${NC}"
+    exit 1
+fi
+
+# Note: nodejs uses --namespace-map "nodejs=index" so path is versions/<ver>/index/internal/index.d.ts
+INTERNAL_FILE="$LATEST_VERSION_DIR/index/internal/index.d.ts"
 
 # Check console.assert has rest params
 if ! grep -q "static assert.*\\.\\.\\.optionalParams:" "$INTERNAL_FILE"; then

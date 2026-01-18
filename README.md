@@ -10,9 +10,9 @@ tsbindgen generates TypeScript declaration files (`.d.ts`) from .NET assemblies 
 - **Zero TypeScript errors** - Output validates cleanly with `tsc --strict`
 - **Nullable reference types** - NRT support for output positions (returns, properties, fields)
 - **CLR primitives** - Numeric type aliases (`int`, `long`, `decimal`, etc.) via `@tsonic/core`
-- **Dual naming modes** - CLR PascalCase (`GetEnumerator`) or JavaScript camelCase (`getEnumerator`)
+- **CLR-faithful names** - No casing transforms; member names match the CLR surface
 - **Generic type preservation** - Full generic type parameter support with constraints
-- **Metadata sidecars** - CLR-specific information (static, virtual, override, ref/out/in) in companion JSON files
+- **Unified bindings manifest** - CLR-specific information lives in `<Namespace>/bindings.json` (no metadata sidecars)
 - **Library mode** - Generate only your assembly's types, importing BCL types from pre-existing packages
 - **Namespace mapping** - Customize output directory names with `--namespace-map`
 - **Class flattening** - Export static class methods as top-level functions with `--flatten-class`
@@ -89,7 +89,6 @@ npx tsbindgen generate -a ./MyLibrary.dll -d $DOTNET_RUNTIME -o ./my-lib --lib .
 | `--ref-dir` | - | Additional directory to search for referenced assemblies (repeatable) | - |
 | `--out-dir` | `-o` | Output directory for generated files | `out` |
 | `--namespaces` | `-n` | Namespace filter (reserved; currently ignored) | (all) |
-| `--naming` | - | Naming convention: `js` (camelCase) or `clr` (PascalCase) | `clr` |
 | `--lib` | - | Path to pre-existing tsbindgen package (repeatable) | - |
 | `--namespace-map` | - | Map CLR namespace to output name (repeatable) | - |
 | `--flatten-class` | - | Flatten static class to top-level exports (repeatable) | - |
@@ -113,9 +112,6 @@ npx tsbindgen resolve-closure \
 ### Examples
 
 ```bash
-# Generate BCL with JavaScript naming
-npx tsbindgen generate -d $DOTNET_RUNTIME -o ./out --naming js
-
 # Generate a custom assembly when dependencies live outside the runtime directory
 npx tsbindgen generate -a ./MyLibrary.dll -d $DOTNET_RUNTIME -o ./out \
   --ref-dir ./libs
@@ -139,16 +135,12 @@ output/
 ├── System.js                          # Runtime stub (throws)
 ├── System/
 │   ├── bindings.json
-│   └── internal/
-│       ├── index.d.ts                 # Full declarations
-│       └── metadata.json              # CLR semantics
+│   └── internal/index.d.ts            # Full declarations
 ├── System.Collections.Generic.d.ts
 ├── System.Collections.Generic.js
 └── System.Collections.Generic/
     ├── bindings.json
-    └── internal/
-        ├── index.d.ts
-        └── metadata.json
+    └── internal/index.d.ts
 ```
 
 ### Publishing Bindings Packages (dist/ + npm `exports`)
@@ -161,9 +153,7 @@ dist/tsonic/bindings/
   Acme.Domain.d.ts
   Acme.Domain/
     bindings.json
-    internal/
-      index.d.ts
-      metadata.json
+    internal/index.d.ts
 ```
 
 `package.json`:
@@ -196,8 +186,7 @@ Tsonic resolves the import using Node’s module resolution (including `exports`
 | `<Namespace>.d.ts` | Public facade with curated exports and friendly aliases |
 | `<Namespace>.js` | Module stub that throws if executed in Node |
 | `<Namespace>/internal/index.d.ts` | Full type declarations (`$instance` + `__views`) |
-| `<Namespace>/internal/metadata.json` | CLR semantics (virtual/override, ref/out/in, etc.) |
-| `<Namespace>/bindings.json` | CLR↔TS name mappings for the Tsonic compiler |
+| `<Namespace>/bindings.json` | CLR bindings manifest for the Tsonic compiler (names + CLR semantics) |
 
 ## Extension Methods (C# `using` Semantics)
 
@@ -217,13 +206,8 @@ import type { IEnumerable } from "@tsonic/dotnet/System.Collections.Generic.js";
 type LinqSeq<T> = Linq<IEnumerable<T>>;
 
 declare const xs: LinqSeq<number>;
-xs.where((x) => x > 0).select((x) => x * 2);
+xs.Where((x) => x > 0).Select((x) => x * 2);
 ```
-
-Naming mode applies to extension method member names too:
-
-- `--naming clr`: `.Where(...)`, `.Select(...)`
-- `--naming js`: `.where(...)`, `.select(...)`
 
 ## Type Mapping
 
@@ -271,19 +255,9 @@ import { List } from "@tsonic/dotnet/System.Collections.Generic.js";  // Friendl
 | Delegate | `type` (function signature + CLR type intersection) |
 | Static class | `abstract class` (static methods only) |
 
-## Naming Conventions
+## Naming
 
-### Default (CLR) Naming
-```typescript
-list.GetEnumerator();  // PascalCase
-Console.WriteLine();   // PascalCase
-```
-
-### JavaScript Naming (`--naming js`)
-```typescript
-list.getEnumerator();  // camelCase
-Console.writeLine();   // camelCase
-```
+tsbindgen emits **CLR-faithful names** (no casing transforms).
 
 ## Testing
 

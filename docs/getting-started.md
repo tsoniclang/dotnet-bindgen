@@ -97,14 +97,12 @@ output/
 |   +-- bindings.json
 |   +-- internal/
 |       +-- index.d.ts          # Full declarations
-|       +-- metadata.json       # CLR semantics
 +-- System.Collections.Generic.d.ts
 +-- System.Collections.Generic.js
 +-- System.Collections.Generic/
 |   +-- bindings.json
 |   +-- internal/
 |       +-- index.d.ts
-|       +-- metadata.json
 +-- ... (130 namespaces)
 ```
 
@@ -130,8 +128,8 @@ Full type declarations:
 ```typescript
 // output/System.Collections.Generic/internal/index.d.ts
 export interface List_1$instance<T> {
-    readonly count: int;
-    add(item: T): void;
+    readonly Count: int;
+    Add(item: T): void;
     // ...
 }
 

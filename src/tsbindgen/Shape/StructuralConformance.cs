@@ -8,6 +8,7 @@ using tsbindgen.Model.Symbols;
 using tsbindgen.Model.Symbols.MemberSymbols;
 using tsbindgen.Model.Types;
 using tsbindgen.Normalize;
+using tsbindgen.Normalize.Naming;
 
 namespace tsbindgen.Shape;
 
@@ -438,9 +439,10 @@ public static class StructuralConformance
         /// </summary>
         public bool IsTsAssignableMethod(MethodSymbol ifaceMethod)
         {
-            // Find candidates by name (case-insensitive, since TS will lowercase both)
-            var candidates = Methods.Where(m =>
-                string.Equals(m.ClrName, ifaceMethod.ClrName, System.StringComparison.OrdinalIgnoreCase));
+            // Find candidates by emitted name (no casing transforms).
+            // Use the same deterministic member-name computation used by renaming/emission.
+            var ifaceName = Shared.RequestedBaseForMember(ifaceMethod.ClrName);
+            var candidates = Methods.Where(m => Shared.RequestedBaseForMember(m.ClrName) == ifaceName);
 
             // DEBUG: Log for Decimal To* methods
             bool isDecimalTo = candidates.Any() && ifaceMethod.ClrName.StartsWith("To");
@@ -473,8 +475,8 @@ public static class StructuralConformance
         /// </summary>
         public bool IsTsAssignableProperty(PropertySymbol ifaceProperty)
         {
-            var candidates = Properties.Where(p =>
-                string.Equals(p.ClrName, ifaceProperty.ClrName, System.StringComparison.OrdinalIgnoreCase));
+            var ifaceName = Shared.RequestedBaseForMember(ifaceProperty.ClrName);
+            var candidates = Properties.Where(p => Shared.RequestedBaseForMember(p.ClrName) == ifaceName);
 
             foreach (var classProperty in candidates)
             {
@@ -494,7 +496,7 @@ public static class StructuralConformance
         private static Plan.TsMethodSignature EraseMethodForAssignability(MethodSymbol method)
         {
             return new Plan.TsMethodSignature(
-                Name: method.ClrName.ToLowerInvariant(), // Apply camelCase rule directly
+                Name: Shared.RequestedBaseForMember(method.ClrName),
                 Arity: method.Arity,
                 Parameters: method.Parameters.Select(p => Plan.TsErase.EraseType(p.Type)).ToList(),
                 ReturnType: Plan.TsErase.EraseType(method.ReturnType));
@@ -506,7 +508,7 @@ public static class StructuralConformance
         private static Plan.TsPropertySignature ErasePropertyForAssignability(PropertySymbol property)
         {
             return new Plan.TsPropertySignature(
-                Name: property.ClrName.ToLowerInvariant(),
+                Name: Shared.RequestedBaseForMember(property.ClrName),
                 PropertyType: Plan.TsErase.EraseType(property.PropertyType),
                 IsReadonly: !property.HasSetter);
         }

@@ -217,7 +217,7 @@ function installTsonicCore() {
 }
 
 function validateMetadataFiles() {
-    log('Validating metadata files...');
+    log('Validating bindings files...');
 
     // Pipeline outputs namespace folders directly to VALIDATION_DIR (no 'namespaces/' subdirectory)
     const namespacesDir = VALIDATION_DIR;
@@ -227,7 +227,7 @@ function validateMetadataFiles() {
     }
 
     const namespaces = fs.readdirSync(namespacesDir);
-    let missingMetadata = 0;
+    let missingBindings = 0;
     let missingIndex = 0;
 
     for (const ns of namespaces) {
@@ -240,24 +240,24 @@ function validateMetadataFiles() {
         if (ns === 'internal' || ns === '_root' || ns === '_support' || ns === '__internal') continue;
 
         const indexPath = path.join(nsPath, 'internal', 'index.d.ts');
-        const metadataPath = path.join(nsPath, 'internal', 'metadata.json');
+        const bindingsPath = path.join(nsPath, 'bindings.json');
 
         if (!fs.existsSync(indexPath)) {
             error(`  Missing index.d.ts in ${ns}`);
             missingIndex++;
         }
 
-        if (!fs.existsSync(metadataPath)) {
-            error(`  Missing metadata.json in ${ns}`);
-            missingMetadata++;
+        if (!fs.existsSync(bindingsPath)) {
+            error(`  Missing bindings.json in ${ns}`);
+            missingBindings++;
         }
     }
 
-    if (missingIndex > 0 || missingMetadata > 0) {
-        throw new Error(`Missing ${missingIndex} index files and ${missingMetadata} metadata files`);
+    if (missingIndex > 0 || missingBindings > 0) {
+        throw new Error(`Missing ${missingIndex} index files and ${missingBindings} bindings files`);
     }
 
-    log(`  ✓ All ${namespaces.length} namespaces have index.d.ts and metadata.json`);
+    log(`  ✓ All ${namespaces.length} namespaces have index.d.ts and bindings.json`);
 }
 
 async function main() {

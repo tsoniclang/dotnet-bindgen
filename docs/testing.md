@@ -19,7 +19,7 @@ node test/validate/validate.js --strict 2>&1 | tee .tests/validation-$(date +%s)
 1. Cleans `.tests/validate/`
 2. Creates `tsconfig.json` in `.tests/validate/`
 3. Runs `tsbindgen generate` against the local .NET runtime
-4. Verifies each namespace has `internal/index.d.ts` and `internal/metadata.json`
+4. Verifies each namespace has `internal/index.d.ts` and `bindings.json`
 5. Installs `@tsonic/core` into `.tests/validate/` (requires npm network access)
 6. Runs `npx tsc` and writes output to `.tests/tsc-validation.txt`
 
@@ -30,7 +30,7 @@ node test/validate/validate.js --strict 2>&1 | tee .tests/validation-$(date +%s)
 | Zero TypeScript errors | Required when using `--strict` |
 | Zero syntax errors (TS1xxx) | Required (always) |
 | All assemblies generate | Required |
-| All metadata files present | Required |
+| All bindings manifests present | Required |
 
 ## Regression Tests
 
@@ -47,14 +47,13 @@ Individual test scripts verify specific behaviors.
 | Test | Purpose |
 |------|---------|
 | `test-lib.sh` | Library mode functionality |
-| `test-naming-js.sh` | JavaScript naming convention |
+| `test-naming-js.sh` | Naming invariants (no casing transforms) |
 | `test-strict-mode.sh` | Strict mode validation |
 | `test-delegate-callable.sh` | Delegate callable signatures |
 | `test-delegate-typescript.sh` | Delegate typing in TS |
 | `test-primitive-identity.sh` | Primitive type mappings |
 | `test-primitive-lifting.sh` | Primitive type lifting in generic args |
 | `test-primitive-constraints.sh` | Primitive constraint invariants |
-| `test-camelcase-regression.sh` | CamelCase conversion |
 | `test-multiarity-import.sh` | Multi-arity types import correctly |
 | `test-multiarity-no-wrong-export.sh` | Facades don't export wrong arity |
 | `test-facade-constraint-invariants.sh` | Constraint invariants validation |

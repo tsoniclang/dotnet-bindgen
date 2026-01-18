@@ -63,7 +63,7 @@ public static class BindingEmitter
 
         foreach (var typeOrder in nsOrder.OrderedTypes)
         {
-            typeBindings.Add(GenerateTypeBinding(typeOrder.Type, ctx, plan));
+            typeBindings.Add(GenerateTypeBinding(typeOrder.Type, ctx));
         }
 
         // Collect flattened exports from static classes marked with --flatten-class
@@ -72,6 +72,9 @@ public static class BindingEmitter
         return new NamespaceBindings
         {
             Namespace = nsOrder.Namespace.Name,
+            ContributingAssemblies = nsOrder.Namespace.ContributingAssemblies
+                .OrderBy(a => a)
+                .ToList(),
             Types = typeBindings,
             FlattenedExports = flattenedExports.Count > 0 ? flattenedExports : null
         };
@@ -108,13 +111,10 @@ public static class BindingEmitter
             // Collect all static methods
             foreach (var method in type.Members.Methods.Where(m => m.IsStatic && m.EmitScope != EmitScope.Omitted))
             {
-                var classScope = ScopeFactory.ClassSurface(type, isStatic: true);
-                var tsName = ctx.Renamer.GetFinalMemberName(method.StableId, classScope);
                 var normalizedSignature = SignatureNormalization.NormalizeMethod(method);
 
                 exports.Add(new FlattenedExportBinding
                 {
-                    TsName = tsName,
                     SourceClass = type.ClrFullName,
                     ClrMethodName = method.ClrName,
                     NormalizedSignature = normalizedSignature,
@@ -133,11 +133,8 @@ public static class BindingEmitter
         return exports;
     }
 
-    private static TypeBinding GenerateTypeBinding(TypeSymbol type, BuildContext ctx, EmissionPlan plan)
+    private static TypeBinding GenerateTypeBinding(TypeSymbol type, BuildContext ctx)
     {
-        // Get final TypeScript name from Renamer
-        var tsEmitName = ctx.Renamer.GetFinalTypeName(type);
-
         // V1: Generate definitions (what CLR declares on this type)
         var methodDefinitions = type.Members.Methods
             .Select(m => GenerateMethodBinding(m, type, ctx))
@@ -155,58 +152,30 @@ public static class BindingEmitter
             .Select(c => GenerateConstructorBinding(c, type, ctx))
             .ToList();
 
-        // V2: Generate exposures (what TS shows, and where it forwards)
-        // Collect both own members and inherited members
-        var exposedMethods = CollectMethodExposures(type, ctx, plan);
-        var exposedProperties = CollectPropertyExposures(type, ctx, plan);
-        var exposedFields = CollectFieldExposures(type, ctx, plan);
-        var exposedEvents = CollectEventExposures(type, ctx, plan);
-        var exposedConstructors = type.Members.Constructors
-            .Select(c => GenerateConstructorExposure(c, type, ctx))
-            .ToList();
-
         return new TypeBinding
         {
             StableId = type.StableId.ToString(),
             ClrName = type.ClrFullName,
-            TsEmitName = tsEmitName,
             AssemblyName = type.StableId.AssemblyName,
             MetadataToken = 0, // Types don't have metadata tokens
+            Kind = type.Kind.ToString(),
+            Accessibility = type.Accessibility.ToString(),
+            IsAbstract = type.IsAbstract,
+            IsSealed = type.IsSealed,
+            IsStatic = type.IsStatic,
+            Arity = type.Arity,
 
             // V1: Definitions
             Methods = methodDefinitions,
             Properties = propertyDefinitions,
             Fields = fieldDefinitions,
             Events = eventDefinitions,
-            Constructors = constructorDefinitions,
-
-            // V2: Exposures
-            ExposedMethods = exposedMethods.Any() ? exposedMethods : null,
-            ExposedProperties = exposedProperties.Any() ? exposedProperties : null,
-            ExposedFields = exposedFields.Any() ? exposedFields : null,
-            ExposedEvents = exposedEvents.Any() ? exposedEvents : null,
-            ExposedConstructors = exposedConstructors.Any() ? exposedConstructors : null
+            Constructors = constructorDefinitions
         };
     }
 
     private static MethodBinding GenerateMethodBinding(MethodSymbol method, TypeSymbol declaringType, BuildContext ctx)
     {
-        // Use view scope for ViewOnly members, class scope for others
-        string tsEmitName;
-        if (method.EmitScope == EmitScope.ViewOnly && method.SourceInterface != null)
-        {
-            // ViewOnly member - use view scope
-            var interfaceStableId = ScopeFactory.GetInterfaceStableId(method.SourceInterface);
-            var viewScope = ScopeFactory.ViewSurface(declaringType, interfaceStableId, method.IsStatic);
-            tsEmitName = ctx.Renamer.GetFinalMemberName(method.StableId, viewScope);
-        }
-        else
-        {
-            // Class surface member - use class scope
-            var classScope = ScopeFactory.ClassSurface(declaringType, method.IsStatic);
-            tsEmitName = ctx.Renamer.GetFinalMemberName(method.StableId, classScope);
-        }
-
         // Generate normalized signature for universal matching
         var normalizedSignature = SignatureNormalization.NormalizeMethod(method);
 
@@ -224,39 +193,29 @@ public static class BindingEmitter
         {
             StableId = method.StableId.ToString(),
             ClrName = method.ClrName,
-            TsEmitName = tsEmitName,
             MetadataToken = method.StableId.MetadataToken ?? 0,
             CanonicalSignature = method.StableId.CanonicalSignature,
             NormalizedSignature = normalizedSignature,
             EmitScope = method.EmitScope.ToString(),
+            Provenance = method.Provenance.ToString(),
             Arity = method.Arity,
             ParameterCount = method.Parameters.Length,
+            IsStatic = method.IsStatic,
+            IsAbstract = method.IsAbstract,
+            IsVirtual = method.IsVirtual,
+            IsOverride = method.IsOverride,
+            IsSealed = method.IsSealed,
             // V2: Add declaring type information from StableId
             DeclaringClrType = method.StableId.DeclaringClrFullName,
             DeclaringAssemblyName = method.StableId.AssemblyName,
             IsExtensionMethod = method.IsExtensionMethod,
+            SourceInterface = method.SourceInterface != null ? GetTypeRefName(method.SourceInterface) : null,
             ParameterModifiers = modifiers.Count > 0 ? modifiers : null
         };
     }
 
     private static PropertyBinding GeneratePropertyBinding(PropertySymbol property, TypeSymbol declaringType, BuildContext ctx)
     {
-        // Use view scope for ViewOnly members, class scope for others
-        string tsEmitName;
-        if (property.EmitScope == EmitScope.ViewOnly && property.SourceInterface != null)
-        {
-            // ViewOnly member - use view scope
-            var interfaceStableId = ScopeFactory.GetInterfaceStableId(property.SourceInterface);
-            var viewScope = ScopeFactory.ViewSurface(declaringType, interfaceStableId, property.IsStatic);
-            tsEmitName = ctx.Renamer.GetFinalMemberName(property.StableId, viewScope);
-        }
-        else
-        {
-            // Class surface member - use class scope
-            var classScope = ScopeFactory.ClassSurface(declaringType, property.IsStatic);
-            tsEmitName = ctx.Renamer.GetFinalMemberName(property.StableId, classScope);
-        }
-
         // Generate normalized signature for universal matching
         var normalizedSignature = SignatureNormalization.NormalizeProperty(property);
 
@@ -264,14 +223,19 @@ public static class BindingEmitter
         {
             StableId = property.StableId.ToString(),
             ClrName = property.ClrName,
-            TsEmitName = tsEmitName,
             MetadataToken = property.StableId.MetadataToken ?? 0,
             CanonicalSignature = property.StableId.CanonicalSignature,
             NormalizedSignature = normalizedSignature,
             EmitScope = property.EmitScope.ToString(),
+            Provenance = property.Provenance.ToString(),
             IsIndexer = property.IsIndexer,
             HasGetter = property.HasGetter,
             HasSetter = property.HasSetter,
+            IsStatic = property.IsStatic,
+            IsAbstract = property.IsAbstract,
+            IsVirtual = property.IsVirtual,
+            IsOverride = property.IsOverride,
+            SourceInterface = property.SourceInterface != null ? GetTypeRefName(property.SourceInterface) : null,
             // V2: Add declaring type information from StableId
             DeclaringClrType = property.StableId.DeclaringClrFullName,
             DeclaringAssemblyName = property.StableId.AssemblyName
@@ -280,10 +244,6 @@ public static class BindingEmitter
 
     private static FieldBinding GenerateFieldBinding(FieldSymbol field, TypeSymbol declaringType, BuildContext ctx)
     {
-        // Fields are always ClassSurface, use class scope
-        var classScope = ScopeFactory.ClassSurface(declaringType, field.IsStatic);
-        var tsEmitName = ctx.Renamer.GetFinalMemberName(field.StableId, classScope);
-
         // Generate normalized signature for universal matching
         var normalizedSignature = SignatureNormalization.NormalizeField(field);
 
@@ -291,11 +251,11 @@ public static class BindingEmitter
         {
             StableId = field.StableId.ToString(),
             ClrName = field.ClrName,
-            TsEmitName = tsEmitName,
             MetadataToken = field.StableId.MetadataToken ?? 0,
             NormalizedSignature = normalizedSignature,
             IsStatic = field.IsStatic,
             IsReadOnly = field.IsReadOnly,
+            IsLiteral = field.IsConst,
             // V2: Add declaring type information from StableId
             DeclaringClrType = field.StableId.DeclaringClrFullName,
             DeclaringAssemblyName = field.StableId.AssemblyName
@@ -304,10 +264,6 @@ public static class BindingEmitter
 
     private static EventBinding GenerateEventBinding(EventSymbol evt, TypeSymbol declaringType, BuildContext ctx)
     {
-        // Events are always ClassSurface, use class scope
-        var classScope = ScopeFactory.ClassSurface(declaringType, evt.IsStatic);
-        var tsEmitName = ctx.Renamer.GetFinalMemberName(evt.StableId, classScope);
-
         // Generate normalized signature for universal matching
         var normalizedSignature = SignatureNormalization.NormalizeEvent(evt);
 
@@ -315,7 +271,6 @@ public static class BindingEmitter
         {
             StableId = evt.StableId.ToString(),
             ClrName = evt.ClrName,
-            TsEmitName = tsEmitName,
             MetadataToken = evt.StableId.MetadataToken ?? 0,
             NormalizedSignature = normalizedSignature,
             IsStatic = evt.IsStatic,
@@ -754,6 +709,17 @@ public static class BindingEmitter
             }
         };
     }
+
+    private static string GetTypeRefName(tsbindgen.Model.Types.TypeReference typeRef)
+    {
+        return typeRef switch
+        {
+            tsbindgen.Model.Types.NamedTypeReference named => named.FullName,
+            tsbindgen.Model.Types.NestedTypeReference nested => nested.FullReference.FullName,
+            tsbindgen.Model.Types.GenericParameterReference gp => gp.Name,
+            _ => typeRef.ToString() ?? "Unknown"
+        };
+    }
 }
 
 /// <summary>
@@ -762,6 +728,7 @@ public static class BindingEmitter
 public sealed record NamespaceBindings
 {
     public required string Namespace { get; init; }
+    public required List<string> ContributingAssemblies { get; init; }
     public required List<TypeBinding> Types { get; init; }
 
     /// <summary>
@@ -777,11 +744,6 @@ public sealed record NamespaceBindings
 /// </summary>
 public sealed record FlattenedExportBinding
 {
-    /// <summary>
-    /// The TypeScript name of the exported function (e.g., "parseInt").
-    /// </summary>
-    public required string TsName { get; init; }
-
     /// <summary>
     /// The fully-qualified CLR name of the source static class (e.g., "Tsonic.JSRuntime.Globals").
     /// </summary>
@@ -810,9 +772,15 @@ public sealed record TypeBinding
 {
     public required string StableId { get; init; }
     public required string ClrName { get; init; }
-    public required string TsEmitName { get; init; }
     public required string AssemblyName { get; init; }
     public required int MetadataToken { get; init; }
+
+    public required string Kind { get; init; }
+    public required string Accessibility { get; init; }
+    public required bool IsAbstract { get; init; }
+    public required bool IsSealed { get; init; }
+    public required bool IsStatic { get; init; }
+    public required int Arity { get; init; }
 
     // V1: Definitions (what CLR declares on this type)
     public required List<MethodBinding> Methods { get; init; }
@@ -820,13 +788,6 @@ public sealed record TypeBinding
     public required List<FieldBinding> Fields { get; init; }
     public required List<EventBinding> Events { get; init; }
     public required List<ConstructorBinding> Constructors { get; init; }
-
-    // V2: Exposures (what TS shows, and where it forwards)
-    public List<MethodExposure>? ExposedMethods { get; init; }
-    public List<PropertyExposure>? ExposedProperties { get; init; }
-    public List<FieldExposure>? ExposedFields { get; init; }
-    public List<EventExposure>? ExposedEvents { get; init; }
-    public List<ConstructorExposure>? ExposedConstructors { get; init; }
 }
 
 /// <summary>
@@ -836,18 +797,24 @@ public sealed record MethodBinding
 {
     public required string StableId { get; init; }
     public required string ClrName { get; init; }
-    public required string TsEmitName { get; init; }
     public required int MetadataToken { get; init; }
     public required string CanonicalSignature { get; init; }
     public required string NormalizedSignature { get; init; }
     public required string EmitScope { get; init; }
+    public required string Provenance { get; init; }
     public required int Arity { get; init; }
     public required int ParameterCount { get; init; }
+    public required bool IsStatic { get; init; }
+    public required bool IsAbstract { get; init; }
+    public required bool IsVirtual { get; init; }
+    public required bool IsOverride { get; init; }
+    public required bool IsSealed { get; init; }
 
     // V2: Declaring type information
     public string? DeclaringClrType { get; init; }
     public string? DeclaringAssemblyName { get; init; }
     public bool IsExtensionMethod { get; init; }
+    public string? SourceInterface { get; init; }
 
     /// <summary>
     /// Parameter modifier vector for ref/out/in semantics.
@@ -864,14 +831,19 @@ public sealed record PropertyBinding
 {
     public required string StableId { get; init; }
     public required string ClrName { get; init; }
-    public required string TsEmitName { get; init; }
     public required int MetadataToken { get; init; }
     public required string CanonicalSignature { get; init; }
     public required string NormalizedSignature { get; init; }
     public required string EmitScope { get; init; }
+    public required string Provenance { get; init; }
     public required bool IsIndexer { get; init; }
     public required bool HasGetter { get; init; }
     public required bool HasSetter { get; init; }
+    public required bool IsStatic { get; init; }
+    public required bool IsAbstract { get; init; }
+    public required bool IsVirtual { get; init; }
+    public required bool IsOverride { get; init; }
+    public string? SourceInterface { get; init; }
 
     // V2: Declaring type information
     public string? DeclaringClrType { get; init; }
@@ -885,11 +857,11 @@ public sealed record FieldBinding
 {
     public required string StableId { get; init; }
     public required string ClrName { get; init; }
-    public required string TsEmitName { get; init; }
     public required int MetadataToken { get; init; }
     public required string NormalizedSignature { get; init; }
     public required bool IsStatic { get; init; }
     public required bool IsReadOnly { get; init; }
+    public required bool IsLiteral { get; init; }
 
     // V2: Declaring type information
     public string? DeclaringClrType { get; init; }
@@ -903,7 +875,6 @@ public sealed record EventBinding
 {
     public required string StableId { get; init; }
     public required string ClrName { get; init; }
-    public required string TsEmitName { get; init; }
     public required int MetadataToken { get; init; }
     public required string NormalizedSignature { get; init; }
     public required bool IsStatic { get; init; }
@@ -934,6 +905,15 @@ public sealed record ConstructorBinding
     /// Only included if any parameter has a non-"none" modifier.
     /// </summary>
     public List<ParameterModifierMetadata>? ParameterModifiers { get; init; }
+}
+
+/// <summary>
+/// Parameter modifier vector entry for ref/out/in semantics.
+/// </summary>
+public sealed record ParameterModifierMetadata
+{
+    public required int Index { get; init; }
+    public required ParameterModifier Modifier { get; init; }
 }
 
 // ============================================================================

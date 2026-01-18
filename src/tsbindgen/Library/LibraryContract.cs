@@ -5,7 +5,7 @@ namespace tsbindgen.Library;
 
 /// <summary>
 /// Represents the contract defined by an existing tsbindgen library package.
-/// Loaded from metadata.json, bindings.json, and families.json files.
+/// Loaded from bindings.json and families.json files.
 /// Used to filter emission to only symbols present in the library.
 /// </summary>
 public sealed record LibraryContract

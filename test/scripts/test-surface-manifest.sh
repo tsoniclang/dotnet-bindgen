@@ -43,7 +43,7 @@ fi
 echo ""
 echo "[1/3] Computing current manifest..."
 
-files=$(find "$TEMP_OUTPUT" -path "*/node_modules" -prune -o -type f \( -name "*.d.ts" -o -name "*.metadata.json" \) -print | sort)
+files=$(find "$TEMP_OUTPUT" -path "*/node_modules" -prune -o -type f \( -name "*.d.ts" -o -name "bindings.json" \) -print | sort)
 
 manifest_entries=""
 file_count=0

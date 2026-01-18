@@ -5,7 +5,7 @@ namespace tsbindgen.Plan;
 /// <summary>
 /// PR C: Plan for honest TypeScript emission of interface conformance.
 /// Tracks interfaces that types claim to implement in CLR but cannot fully express in TypeScript.
-/// These interfaces are omitted from TS 'implements' clauses but preserved in metadata.
+/// These interfaces are omitted from TS 'implements' clauses and are surfaced via validation/diagnostics.
 /// </summary>
 public sealed record HonestEmissionPlan
 {
@@ -13,7 +13,7 @@ public sealed record HonestEmissionPlan
     /// Maps type CLR full name → list of interface CLR full names that cannot be satisfied in TypeScript.
     /// These interfaces will be:
     /// - Omitted from TypeScript 'implements' clause
-    /// - Preserved in metadata.json with omission reason
+    /// - Recorded in the honest emission plan (for validation and debugging)
     /// </summary>
     public required IReadOnlyDictionary<string, IReadOnlyList<UnsatisfiableInterface>> UnsatisfiableInterfaces { get; init; }
 

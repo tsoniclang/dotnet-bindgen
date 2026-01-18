@@ -1,7 +1,6 @@
 using tsbindgen.Core.Canon;
 using tsbindgen.Core.Diagnostics;
 using tsbindgen.Core.Intern;
-using tsbindgen.Core.Naming;
 using tsbindgen.Core.Policy;
 using tsbindgen.Renaming;
 using tsbindgen.Library;
@@ -61,7 +60,7 @@ public sealed class BuildContext
     /// <summary>
     /// Library contract for library mode.
     /// When non-null, emission is filtered to only symbols present in the contract.
-    /// Loaded from existing tsbindgen package (metadata.json + bindings.json).
+    /// Loaded from existing tsbindgen package outputs (bindings.json + families.json).
     /// </summary>
     public LibraryContract? LibraryContract { get; init; }
 
@@ -93,20 +92,10 @@ public sealed class BuildContext
         // Apply explicit overrides from policy
         renamer.ApplyExplicitOverrides(policy.Renaming.ExplicitMap);
 
-        // Adopt style transforms from policy
-        // Type names: always preserve as-is (PascalCase from C#)
-        // Member names: apply JS-style transform if configured
-        Func<string, string> typeTransform = static name => name; // Identity - preserve type names
-
-        Func<string, string> memberTransform = policy.Emission.Naming switch
-        {
-            NamingStyle.Js => NameTransform.ToJsStyle,
-            NamingStyle.Clr => static name => name, // Identity - preserve CLR names
-            _ => static name => name
-        };
-
-        renamer.AdoptTypeStyleTransform(typeTransform);
-        renamer.AdoptMemberStyleTransform(memberTransform);
+        // No naming transforms. Preserve CLR names as-is.
+        // Any required identifier escaping happens via reservation/sanitization, not case rewriting.
+        renamer.AdoptTypeStyleTransform(static name => name);
+        renamer.AdoptMemberStyleTransform(static name => name);
 
         return new BuildContext
         {

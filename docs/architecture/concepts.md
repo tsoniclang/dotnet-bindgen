@@ -23,8 +23,7 @@ output/
   System.Collections.Generic/
     internal/
       index.d.ts            # Full declarations
-      metadata.json         # CLR semantics
-    bindings.json           # CLR↔TS name mappings
+    bindings.json           # CLR bindings manifest (names + CLR semantics)
   System.Collections.Generic.d.ts  # Facade (public API)
   System.Collections.Generic.js   # Runtime stub (throws)
 ```
@@ -43,15 +42,15 @@ import type { IEnumerable_1 } from "../../System.Collections.Generic/internal/in
 
 // Instance interface (properties and methods)
 export interface List_1$instance<T> {
-    readonly count: int;
-    readonly capacity: int;
-    add(item: T): void;
-    clear(): void;
-    contains(item: T): boolean;
-    indexOf(item: T): int;
-    insert(index: int, item: T): void;
-    remove(item: T): boolean;
-    removeAt(index: int): void;
+    readonly Count: int;
+    readonly Capacity: int;
+    Add(item: T): void;
+    Clear(): void;
+    Contains(item: T): boolean;
+    IndexOf(item: T): int;
+    Insert(index: int, item: T): void;
+    Remove(item: T): boolean;
+    RemoveAt(index: int): void;
 }
 
 // Constructor/static declaration
@@ -381,7 +380,7 @@ public enum EmitScope
     ClassSurface,   // On $instance interface
     StaticSurface,  // On static const declaration
     ViewOnly,       // Only in __$views interface
-    Omitted         // Not emitted (tracked in metadata)
+    Omitted         // Not emitted (tracked in bindings.json)
 }
 ```
 
@@ -389,10 +388,10 @@ public enum EmitScope
 
 | EmitScope | Output Location | Example |
 |-----------|-----------------|---------|
-| ClassSurface | `$instance` interface | `list.add(item)` |
-| StaticSurface | `const` declaration | `List_1.empty` |
+| ClassSurface | `$instance` interface | `list.Add(item)` |
+| StaticSurface | `const` declaration | `List_1.Empty` |
 | ViewOnly | `__$views` interface | `list.As_ICollection()` |
-| Omitted | Only in metadata.json | Indexers, generic statics |
+| Omitted | Only in bindings.json (`emitScope: "Omitted"`) | Indexers, generic statics |
 
 ### Real Example: List<T>
 
@@ -419,9 +418,9 @@ public class List<T> : IList<T>, ICollection {
 ```typescript
 // ClassSurface -> $instance interface
 export interface List_1$instance<T> {
-    add(item: T): void;     // EmitScope.ClassSurface
-    clear(): void;          // EmitScope.ClassSurface
-    readonly count: int;    // EmitScope.ClassSurface
+    Add(item: T): void;     // EmitScope.ClassSurface
+    Clear(): void;          // EmitScope.ClassSurface
+    readonly Count: int;    // EmitScope.ClassSurface
 }
 
 // StaticSurface -> const declaration
@@ -446,7 +445,7 @@ Different Shape passes assign EmitScope:
 | StructuralConformance | Explicit impls -> ViewOnly |
 | ExplicitImplSynthesizer | Synthesized members -> ViewOnly |
 | IndexerPlanner | Conflicting indexers -> Omitted |
-| ClassSurfaceDeduplicator | Duplicate losers -> Omitted |
+| ClassSurfaceDeduplicator | Duplicate losers -> ViewOnly |
 | OverloadUnifier | Duplicate overloads -> Omitted |
 | EnumeratorConformancePass | Reset() promoted -> ClassSurface |
 
@@ -461,22 +460,18 @@ Members are marked `Omitted` when they can't be safely emitted:
 | Duplicate signature | Method overloads with same erased signature | Would cause TS duplicate identifier error |
 | Pointer parameter | `void Process(int* ptr)` | Requires unsafe context |
 
-**Omitted members are tracked in metadata.json:**
+Omitted members remain present in `bindings.json` with `emitScope: "Omitted"` so compilers/tooling can treat omissions as explicit, deterministic decisions.
 
 ```json
 {
-  "types": {
-    "List_1": {
-      "intentionalOmissions": {
-        "indexers": [
-          {"signature": "Item[int]", "reason": "indexer_conflict"}
-        ],
-        "genericStatics": [
-          {"member": "Empty", "reason": "generic_static_not_supported"}
-        ]
-      }
+  "types": [
+    {
+      "clrName": "System.Collections.Generic.List`1",
+      "properties": [
+        { "clrName": "Empty", "emitScope": "Omitted" }
+      ]
     }
-  }
+  ]
 }
 ```
 
@@ -499,10 +494,9 @@ A unique identifier for a type or member that survives all transformations. Stab
 During pipeline execution, symbols get renamed and transformed:
 
 ```
-CLR name:           System.Collections.Generic.List`1.Add
-After CLR naming:   List_1.Add
-After JS naming:    List_1.add
-Emitted as:         List_1$instance.add
+CLR name:     System.Collections.Generic.List`1.Add
+TS name:      List_1.Add
+Emitted as:   List_1$instance.Add
 
 StableId stays constant: "System.Private.CoreLib:System.Collections.Generic.List`1::Add(T):void"
 ```
@@ -587,19 +581,18 @@ id1 == id2  // true if name+signature match, ignores token
 
 ### StableId in Bindings
 
-The bindings.json file maps TypeScript names back to StableId:
+The `bindings.json` manifest carries StableIds for deterministic compiler/runtime correlation:
 
 ```json
 {
   "types": [{
     "stableId": "System.Private.CoreLib:System.Collections.Generic.List`1",
     "clrName": "System.Collections.Generic.List`1",
-    "tsEmitName": "List_1",
     "methods": [{
       "stableId": "...List`1::Add(T):void",
       "clrName": "Add",
-      "tsEmitName": "add",
-      "metadataToken": 100663296
+      "metadataToken": 100663296,
+      "emitScope": "ClassSurface"
     }]
   }]
 }
@@ -616,10 +609,10 @@ Classes and structs emit as three parts in the internal index:
 
 // 1. Instance interface - instance properties and methods
 export interface List_1$instance<T> {
-    readonly count: int;
-    add(item: T): void;
-    remove(item: T): boolean;
-    clear(): void;
+    readonly Count: int;
+    Add(item: T): void;
+    Remove(item: T): boolean;
+    Clear(): void;
 }
 
 // 2. Static/constructor const - constructors and static members

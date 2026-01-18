@@ -327,13 +327,9 @@ mkdir -p .tests
 # Run validation with tee - shows output AND saves to file
 node test/validate/validate.js | tee .tests/validation-$(date +%s).txt
 
-# Run completeness verification
-node test/validate/verify-completeness.js | tee .tests/completeness-$(date +%s).txt
-
 # Analyze saved output later without re-running:
 grep "TS2416" .tests/validation-*.txt
 tail -50 .tests/validation-*.txt
-grep "types lost" .tests/completeness-*.txt
 ```
 
 **Benefits:**
@@ -415,7 +411,7 @@ Only after reading these documents should you proceed with implementation tasks.
 
 ## Project Overview
 
-**tsbindgen** is a .NET tool that generates TypeScript declaration files (.d.ts) and metadata sidecars (.metadata.json) from .NET assemblies using reflection.
+**tsbindgen** is a .NET tool that generates TypeScript declaration files (`.d.ts`) and CLR bindings manifests (`bindings.json`) from .NET assemblies using reflection.
 
 ### Purpose
 
@@ -424,7 +420,7 @@ Enable TypeScript code in the Tsonic compiler to reference .NET BCL types with f
 ### Key Features
 
 - Generates TypeScript declarations from any .NET assembly
-- Creates metadata sidecars with CLR-specific information (including ref/out/in parameter modifiers)
+- Creates a per-namespace `bindings.json` manifest with CLR-specific information (including `ref/out/in` parameter modifiers)
 - Nullable reference type (NRT) support for output positions
 - Multiple `--lib` support for referencing multiple packages
 - `--namespace-map` for custom output directory naming
@@ -436,92 +432,20 @@ Enable TypeScript code in the Tsonic compiler to reference .NET BCL types with f
 
 ## Architecture
 
-### Four-Phase Pipeline
+See `docs/architecture/pipeline.md` for the current pipeline description.
 
-**🚨 CRITICAL: The pipeline has FOUR distinct phases! 🚨**
+### Outputs
 
-The generator uses a strict four-phase pipeline:
+- `<Namespace>.d.ts` / `<Namespace>.js` facades
+- `<Namespace>/internal/index.d.ts` full declarations
+- `<Namespace>/bindings.json` unified manifest (names + CLR semantics)
+- `families.json` multi-arity family index
+- `__internal/extensions/index.d.ts` extension method buckets
 
-**Phase 1: Reflection** (Pure CLR domain)
-- Input: .NET assembly DLL files
-- Process: System.Reflection over assemblies
-- Output: `AssemblySnapshot` - pure CLR metadata (no TypeScript concepts)
-- Files: `*.snapshot.json` (optional debug output)
-- Code: `src/tsbindgen/Reflection/Reflect.cs`
+### Naming
 
-**Phase 2: Aggregation** (Pure CLR domain)
-- Input: Multiple `AssemblySnapshot` files
-- Process: Merge types from multiple assemblies by namespace
-- Output: `NamespaceBundle` - aggregated CLR data (still no TypeScript concepts)
-- Files: `namespaces/*.snapshot.json` (debug output)
-- Code: `src/tsbindgen/Snapshot/Aggregate.cs`
-
-**Phase 3: Transform** (CLR→TypeScript bridge - creates TsEmitName)
-- Input: `NamespaceBundle` (CLR)
-- Process:
-  - `ModelTransform.Build()` - Apply name transformations via `NameTransformation.Apply()`
-  - Analysis passes (covariance, diamond inheritance, explicit interfaces, etc.)
-- Output: `NamespaceModel` (in-memory, has both CLR names and TS names)
-- Code: `src/tsbindgen/Render/Transform/ModelTransform.cs`
-- **This is where `TsEmitName` is created based on CLI options**
-
-**Phase 4: Emit** (TypeScript domain - generates files)
-- Input: `NamespaceModel` (with TsEmitName already set)
-- Process:
-  - `TypeScriptEmit` - Generate `.d.ts` declarations
-  - `MetadataEmit` - Generate `.metadata.json`
-  - `BindingEmit` - Generate `.bindings.json` (CLR→TS name mappings)
-  - `TypeScriptTypeListEmit` - Generate `typelist.json` (completeness verification)
-- Output: String content for files
-- Write to disk:
-  - `index.d.ts` - TypeScript declarations
-  - `metadata.json` - CLR-specific info for Tsonic compiler
-  - `bindings.json` - CLR name → TS name mappings
-  - `typelist.json` - What was actually emitted (for verification)
-  - `snapshot.json` - Post-transform snapshot (for verification)
-- Code: `src/tsbindgen/Render/Output/*.cs`
-
-**CRITICAL**:
-- `TsEmitName` is created in **Phase 3** (Transform) using `NameTransformation.Apply()`
-- Phases 1-2 use **only CLR names** (no TypeScript concepts)
-- Phase 3 creates **both CLR names and TsEmitName** in models
-- Phase 4 uses the **TsEmitName** from models (no further name transformation)
-
-### Completeness Verification
-
-The pipeline ensures **100% data integrity** through verification:
-
-1. **snapshot.json** - What was reflected/transformed (Phase 2/3 output)
-2. **typelist.json** - What was actually emitted to .d.ts (Phase 4 output)
-3. **verify-completeness.js** - Compares the two to ensure zero data loss
-
-Both files use the same flat structure with `tsEmitName` as the key (e.g., `"Delegate$InvocationListEnumerator_1"` for nested types).
-
-### Output Files Per Namespace
-
-Each namespace generates multiple companion files:
-
-1. **TypeScript Declarations** (`index.d.ts`)
-   - Standard TypeScript type definitions
-   - Namespaces map to C# namespaces
-   - Classes, interfaces, enums, delegates
-   - Generic types with proper constraints
-   - Branded numeric types (int, decimal, etc.)
-
-2. **Metadata Sidecars** (`metadata.json`)
-   - CLR-specific information (virtual/override, static, ref/out)
-   - Used by Tsonic compiler for correct C# code generation
-   - Tracks intentional omissions (indexers, generic static members)
-
-3. **Binding Metadata** (`bindings.json`)
-   - Maps TypeScript names to CLR names
-   - Tracks member name transformations
-   - Used for runtime binding
-
-4. **Type List** (`typelist.json`)
-   - List of all types and members actually emitted
-   - Used for completeness verification
-   - Flat structure matching snapshot.json
+- No casing transforms (CLR-faithful names).
+- No `tsEmitName` fields are serialized into `bindings.json`; TS names are derived deterministically from CLR names in code.
 
 ## Critical Implementation Patterns
 
@@ -645,9 +569,6 @@ node test/validate/validate.js
 
 # With output capture for later analysis
 node test/validate/validate.js | tee .tests/validation-$(date +%s).txt
-
-# Run completeness verification
-node test/validate/verify-completeness.js | tee .tests/completeness-$(date +%s).txt
 ```
 
 ### Validation Steps
@@ -659,21 +580,12 @@ node test/validate/verify-completeness.js | tee .tests/completeness-$(date +%s).
 5. Runs TypeScript compiler (`tsc`)
 6. Reports error breakdown
 
-### Completeness Verification Steps
-
-1. Loads `snapshot.json` from each namespace (what was reflected/transformed)
-2. Loads `typelist.json` from each namespace (what was emitted)
-3. Compares types and members using `tsEmitName` as key
-4. Filters intentional omissions (indexers, etc.)
-5. Reports any data loss
-
 ### Success Criteria
 
 - ✅ **Zero syntax errors (TS1xxx)** - All output is valid TypeScript
 - ✅ **Zero semantic errors (TS2xxx)** - All type constraints satisfied (v0.7.4+)
 - ✅ **All assemblies generate** - No generation failures
-- ✅ **All metadata files present** - Each .d.ts has matching .metadata.json
-- ✅ **100% type coverage** - All reflected types appear in typelist
+- ✅ **All bindings files present** - Each namespace has `bindings.json`
 
 ### Error Categories
 
@@ -696,10 +608,9 @@ dotnet run --project src/tsbindgen/tsbindgen.csproj -- \
 ### Investigating Type Mapping Issues
 
 1. Generate single assembly: `dotnet run -- generate -a path/to/Assembly.dll --out-dir /tmp/test`
-2. Inspect output: `cat /tmp/test/Assembly/index.d.ts`
-3. Check metadata: `cat /tmp/test/Assembly/metadata.json`
-4. Check typelist: `cat /tmp/test/Assembly/typelist.json`
-5. Validate: `npx tsc --noEmit /tmp/test/Assembly/index.d.ts`
+2. Inspect output: `cat /tmp/test/<Namespace>/internal/index.d.ts`
+3. Check manifest: `cat /tmp/test/<Namespace>/bindings.json`
+4. Validate: `npx tsc --noEmit /tmp/test/<Namespace>/internal/index.d.ts`
 
 ### Analyzing Validation Errors
 
@@ -728,9 +639,6 @@ dotnet run --project src/tsbindgen/tsbindgen.csproj -- <args>
 
 # Validate all BCL assemblies
 node test/validate/validate.js
-
-# Verify completeness
-node test/validate/verify-completeness.js
 
 # Capture validation output
 node test/validate/validate.js | tee .tests/validation-$(date +%s).txt
@@ -812,18 +720,7 @@ git push
 - **4,047 types** emitted
 - **Zero syntax errors** (TS1xxx)
 - **Zero semantic errors** (TS2xxx)
-- **100% type coverage** - All reflected types accounted for
-- **241 indexers** intentionally omitted (tracked in metadata)
-
-### Completeness Verification
-
-✅ **VERIFICATION PASSED - ALL REFLECTED DATA ACCOUNTED FOR**
-
-- Types in snapshots: 4,047
-- Types in typelists: 4,047
-- Members in snapshots: 75,977
-- Members in typelists: 37,863 (ViewOnly and duplicate members filtered)
-- Intentional omissions: 241 indexers
+- **241 indexers** intentionally omitted (tracked in `bindings.json` via `emitScope: "Omitted"`)
 
 ## When You Get Stuck
 
@@ -840,7 +737,6 @@ If you encounter issues:
 - **STATUS.md** - Current project state and metrics
 - **CODING-STANDARDS.md** - C# style guidelines
 - **test/validate/validate.js** - BCL assembly validation script
-- **test/validate/verify-completeness.js** - Completeness verification script
 - **test/scripts/run-all.sh** - Run all regression tests
 - **test/baselines/** - Baseline manifests for surface verification
 - **.analysis/** - Analysis reports and documentation
@@ -854,4 +750,3 @@ If you encounter issues:
 5. **Commit before switching** - Never discard uncommitted work
 6. **Never use git stash** - Use WIP branches instead
 7. **Ask before changing** - Get user approval for all decisions
-8. **100% data integrity** - Run completeness verification to ensure zero loss
