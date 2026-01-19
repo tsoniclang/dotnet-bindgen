@@ -135,7 +135,7 @@ import { List } from '@tsonic/dotnet/System.Collections.Generic.js';
 
 ### The Problem
 
-A class member and an interface member might have the same name after transformation:
+A class member and an interface member can have the same name in the emitted TypeScript surface:
 
 ```csharp
 class MyClass : ICollection {
@@ -144,7 +144,7 @@ class MyClass : ICollection {
 }
 ```
 
-Both become `clear` in JavaScript naming mode. Without separate scopes, these would collide.
+Both are named `Clear`. Without separate scopes, these would collide.
 
 ### Scope Types
 
@@ -179,15 +179,15 @@ public class List<T> : IList<T>, ICollection, IEnumerable {
 
 ```
 Scope: type:System.Collections.Generic.List`1#instance
-  - clear           (own method)
-  - add             (own method)
-  - getEnumerator   (returns IEnumerator<T>)
+  - Clear           (own method)
+  - Add             (own method)
+  - GetEnumerator   (returns IEnumerator<T>)
 
 Scope: view:..List`1:System.Collections.ICollection#instance
-  - copyTo          (explicit ICollection.CopyTo)
+  - CopyTo          (explicit ICollection.CopyTo)
 
 Scope: view:..List`1:System.Collections.IEnumerable#instance
-  - getEnumerator   (explicit - different return type)
+  - GetEnumerator   (explicit - different return type)
 ```
 
 ### TypeScript Output
