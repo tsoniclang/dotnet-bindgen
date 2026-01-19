@@ -175,5 +175,5 @@ Total errors: 0
 
 - [CLI Reference](cli.md) - All commands and options
 - [Type Mappings](type-mappings.md) - How types are mapped
-- [Naming Conventions](naming.md) - CLR vs JavaScript naming
+- [Naming & Identifiers](naming.md) - CLR-faithful names and TS-safe identifiers
 - [Library Mode](library-mode.md) - Generate for custom assemblies

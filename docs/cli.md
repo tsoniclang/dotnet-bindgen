@@ -41,6 +41,12 @@ npx tsbindgen resolve-closure -a ./MyLibrary.dll \
   --ref-dir $DOTNET_RUNTIME
 ```
 
+`resolve-closure` options:
+
+| Option | Description |
+|--------|-------------|
+| `--strict-versions <bool>` | Error on major version drift for the same assembly name. Default: `true`. |
+
 ## Options
 
 ### Assembly Input
@@ -48,7 +54,7 @@ npx tsbindgen resolve-closure -a ./MyLibrary.dll \
 | Option | Short | Description |
 |--------|-------|-------------|
 | `--assembly <path>` | `-a` | Path to assembly file. Can be specified multiple times. |
-| `--assembly-dir <path>` | `-d` | Directory containing .NET runtime assemblies. |
+| `--assembly-dir <path>` | `-d` | Directory containing assemblies to process. |
 | `--ref-dir <path>` | - | Additional directory to search for referenced assemblies (repeatable). |
 
 At least one of `--assembly` or `--assembly-dir` is required.
@@ -82,12 +88,12 @@ npx tsbindgen generate -d $DOTNET_RUNTIME -o ./declarations
 
 | Option | Short | Description |
 |--------|-------|-------------|
-| `--namespaces <list>` | `-n` | Reserved (currently ignored). |
+| `--namespaces <list>` | `-n` | Comma-separated list of namespaces to include. |
 
 **Example:**
 
 ```bash
-npx tsbindgen generate -d $DOTNET_RUNTIME -o ./out
+npx tsbindgen generate -d $DOTNET_RUNTIME -o ./out -n System,System.Linq
 ```
 
 ### Naming
@@ -166,6 +172,7 @@ npx tsbindgen generate -d $DOTNET_RUNTIME -o ./out \
 | `--verbose` | `-v` | Enable detailed progress output. |
 | `--logs <categories>` | - | Enable specific log categories. |
 | `--strict` | - | Enable strict mode validation. |
+| `--allow-constructor-constraint-loss` | - | Allow generic `new()` constraint loss (downgrade to warning). |
 
 **Log categories:**
 
