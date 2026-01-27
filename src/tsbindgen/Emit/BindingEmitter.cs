@@ -164,6 +164,13 @@ public static class BindingEmitter
             IsSealed = type.IsSealed,
             IsStatic = type.IsStatic,
             Arity = type.Arity,
+            BaseType = type.BaseType != null ? GetHeritageTypeBinding(type.BaseType) : null,
+            Interfaces = type.Interfaces.Length > 0
+                ? type.Interfaces.Select(GetHeritageTypeBinding).ToList()
+                : null,
+            TypeParameters = type.GenericParameters.Length > 0
+                ? type.GenericParameters.Select(p => p.Name).ToList()
+                : null,
 
             // V1: Definitions
             Methods = methodDefinitions,
@@ -205,6 +212,7 @@ public static class BindingEmitter
             IsVirtual = method.IsVirtual,
             IsOverride = method.IsOverride,
             IsSealed = method.IsSealed,
+            Visibility = method.Visibility.ToString(),
             // V2: Add declaring type information from StableId
             DeclaringClrType = method.StableId.DeclaringClrFullName,
             DeclaringAssemblyName = method.StableId.AssemblyName,
@@ -235,6 +243,7 @@ public static class BindingEmitter
             IsAbstract = property.IsAbstract,
             IsVirtual = property.IsVirtual,
             IsOverride = property.IsOverride,
+            Visibility = property.Visibility.ToString(),
             SourceInterface = property.SourceInterface != null ? GetTypeRefName(property.SourceInterface) : null,
             // V2: Add declaring type information from StableId
             DeclaringClrType = property.StableId.DeclaringClrFullName,
@@ -256,6 +265,7 @@ public static class BindingEmitter
             IsStatic = field.IsStatic,
             IsReadOnly = field.IsReadOnly,
             IsLiteral = field.IsConst,
+            Visibility = field.Visibility.ToString(),
             // V2: Add declaring type information from StableId
             DeclaringClrType = field.StableId.DeclaringClrFullName,
             DeclaringAssemblyName = field.StableId.AssemblyName
@@ -274,6 +284,7 @@ public static class BindingEmitter
             MetadataToken = evt.StableId.MetadataToken ?? 0,
             NormalizedSignature = normalizedSignature,
             IsStatic = evt.IsStatic,
+            Visibility = evt.Visibility.ToString(),
             // V2: Add declaring type information from StableId
             DeclaringClrType = evt.StableId.DeclaringClrFullName,
             DeclaringAssemblyName = evt.StableId.AssemblyName
@@ -304,6 +315,7 @@ public static class BindingEmitter
             NormalizedSignature = normalizedSignature,
             IsStatic = ctor.IsStatic,
             ParameterCount = ctor.Parameters.Length,
+            Visibility = ctor.Visibility.ToString(),
             // V2: Add declaring type information from StableId
             DeclaringClrType = ctor.StableId.DeclaringClrFullName,
             DeclaringAssemblyName = ctor.StableId.AssemblyName,
@@ -720,6 +732,68 @@ public static class BindingEmitter
             _ => typeRef.ToString() ?? "Unknown"
         };
     }
+
+    private static HeritageTypeBinding GetHeritageTypeBinding(tsbindgen.Model.Types.TypeReference typeRef)
+    {
+        var named = typeRef switch
+        {
+            tsbindgen.Model.Types.NamedTypeReference n => n,
+            tsbindgen.Model.Types.NestedTypeReference nested => nested.FullReference,
+            _ => null
+        };
+
+        if (named == null)
+        {
+            // Fallback: preserve ToString() in clrName for debugging but avoid crashing emission.
+            // This should be rare (e.g., arrays/pointers as heritage types).
+            var fallbackName = GetTypeRefName(typeRef);
+            return new HeritageTypeBinding
+            {
+                StableId = $"Unknown:{fallbackName}",
+                ClrName = fallbackName
+            };
+        }
+
+        var stableId = $"{named.AssemblyName}:{named.FullName}";
+
+        var typeArgs = named.TypeArguments.Count > 0
+            ? named.TypeArguments.Select(EncodeHeritageTypeArgument).ToList()
+            : null;
+
+        return new HeritageTypeBinding
+        {
+            StableId = stableId,
+            ClrName = named.FullName,
+            TypeArguments = typeArgs
+        };
+    }
+
+    private static string EncodeHeritageTypeArgument(tsbindgen.Model.Types.TypeReference typeRef)
+    {
+        return typeRef switch
+        {
+            tsbindgen.Model.Types.GenericParameterReference gp => gp.Name,
+            tsbindgen.Model.Types.NamedTypeReference named => EncodeHeritageNamed(named),
+            tsbindgen.Model.Types.NestedTypeReference nested => EncodeHeritageNamed(nested.FullReference),
+            tsbindgen.Model.Types.ArrayTypeReference arr => $"{EncodeHeritageTypeArgument(arr.ElementType)}[]",
+            tsbindgen.Model.Types.PointerTypeReference ptr => $"{EncodeHeritageTypeArgument(ptr.PointeeType)}*",
+            tsbindgen.Model.Types.ByRefTypeReference byref => EncodeHeritageTypeArgument(byref.ReferencedType),
+            _ => typeRef.ToString() ?? "unknown"
+        };
+    }
+
+    private static string EncodeHeritageNamed(tsbindgen.Model.Types.NamedTypeReference named)
+    {
+        var baseName = named.Name.Replace("`", "_");
+
+        if (named.TypeArguments.Count == 0)
+            return baseName;
+
+        // tsbindgen deterministic encoding for generic heritage arguments:
+        //   KeyValuePair_2[[TKey,TValue]]
+        var args = string.Join(",", named.TypeArguments.Select(EncodeHeritageTypeArgument));
+        return $"{baseName}[[{args}]]";
+    }
 }
 
 /// <summary>
@@ -782,6 +856,21 @@ public sealed record TypeBinding
     public required bool IsStatic { get; init; }
     public required int Arity { get; init; }
 
+    /// <summary>
+    /// Base type for this type (if any). Omitted for root types (System.Object, interfaces, etc.).
+    /// </summary>
+    public HeritageTypeBinding? BaseType { get; init; }
+
+    /// <summary>
+    /// Implemented interfaces for this type (if any).
+    /// </summary>
+    public List<HeritageTypeBinding>? Interfaces { get; init; }
+
+    /// <summary>
+    /// Generic parameter names (when available).
+    /// </summary>
+    public List<string>? TypeParameters { get; init; }
+
     // V1: Definitions (what CLR declares on this type)
     public required List<MethodBinding> Methods { get; init; }
     public required List<PropertyBinding> Properties { get; init; }
@@ -809,6 +898,7 @@ public sealed record MethodBinding
     public required bool IsVirtual { get; init; }
     public required bool IsOverride { get; init; }
     public required bool IsSealed { get; init; }
+    public required string Visibility { get; init; }
 
     // V2: Declaring type information
     public string? DeclaringClrType { get; init; }
@@ -843,6 +933,7 @@ public sealed record PropertyBinding
     public required bool IsAbstract { get; init; }
     public required bool IsVirtual { get; init; }
     public required bool IsOverride { get; init; }
+    public required string Visibility { get; init; }
     public string? SourceInterface { get; init; }
 
     // V2: Declaring type information
@@ -862,6 +953,7 @@ public sealed record FieldBinding
     public required bool IsStatic { get; init; }
     public required bool IsReadOnly { get; init; }
     public required bool IsLiteral { get; init; }
+    public required string Visibility { get; init; }
 
     // V2: Declaring type information
     public string? DeclaringClrType { get; init; }
@@ -878,6 +970,7 @@ public sealed record EventBinding
     public required int MetadataToken { get; init; }
     public required string NormalizedSignature { get; init; }
     public required bool IsStatic { get; init; }
+    public required string Visibility { get; init; }
 
     // V2: Declaring type information
     public string? DeclaringClrType { get; init; }
@@ -895,6 +988,7 @@ public sealed record ConstructorBinding
     public required string NormalizedSignature { get; init; }
     public required bool IsStatic { get; init; }
     public required int ParameterCount { get; init; }
+    public required string Visibility { get; init; }
 
     // V2: Declaring type information
     public string? DeclaringClrType { get; init; }
@@ -914,6 +1008,21 @@ public sealed record ParameterModifierMetadata
 {
     public required int Index { get; init; }
     public required ParameterModifier Modifier { get; init; }
+}
+
+/// <summary>
+/// Heritage type reference stored in bindings.json (base type + interfaces).
+/// Uses StableId (Assembly:FullName) as the canonical identity.
+///
+/// TypeArguments are encoded using tsbindgen's deterministic "TS surface name" encoding:
+///   KeyValuePair_2[[TKey,TValue]]
+/// This is consumed by Tsonic for instantiation/substitution along inheritance edges.
+/// </summary>
+public sealed record HeritageTypeBinding
+{
+    public required string StableId { get; init; }
+    public required string ClrName { get; init; }
+    public List<string>? TypeArguments { get; init; }
 }
 
 // ============================================================================

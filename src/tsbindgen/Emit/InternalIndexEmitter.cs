@@ -203,6 +203,17 @@ public static class InternalIndexEmitter
             var views = typeOrder.Type.ExplicitViews;
             var hasViews = views.Length > 0 && (typeOrder.Type.Kind == Model.Symbols.TypeKind.Class || typeOrder.Type.Kind == Model.Symbols.TypeKind.Struct || typeOrder.Type.Kind == Model.Symbols.TypeKind.Delegate);
 
+            // Protected virtual surface (enables `protected override` typing for CLR base classes).
+            // Emitted as a companion abstract class so we can use `protected` members (interfaces cannot).
+            var protectedSurface = ClassPrinter.PrintProtectedSurface(typeOrder.Type, resolver, ctx, graph);
+            if (!string.IsNullOrEmpty(protectedSurface))
+            {
+                var indentedProtected = Indent(protectedSurface, indent);
+                sb.Append("export ");
+                sb.AppendLine(indentedProtected);
+                sb.AppendLine();
+            }
+
             if (hasViews)
             {
                 // Emit class with $instance suffix - PUBLIC TYPES GET export KEYWORD
