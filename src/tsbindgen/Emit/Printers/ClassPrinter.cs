@@ -18,10 +18,102 @@ namespace tsbindgen.Emit.Printers;
 /// </summary>
 public static class ClassPrinter
 {
+    private static bool HasProtectedVirtualMembers(TypeSymbol type)
+    {
+        // Only virtual/abstract/override protected members matter for subclass override typing.
+        // (Non-virtual protected members are intentionally omitted from the TS surface for now.)
+        static bool IsProtected(Visibility v) => v == Visibility.Protected || v == Visibility.ProtectedInternal;
+
+        return type.Members.Methods.Any(m =>
+                   !m.IsStatic &&
+                   m.EmitScope == EmitScope.ClassSurface &&
+                   IsProtected(m.Visibility) &&
+                   (m.IsVirtual || m.IsAbstract || m.IsOverride))
+               || type.Members.Properties.Any(p =>
+                   !p.IsStatic &&
+                   p.EmitScope == EmitScope.ClassSurface &&
+                   IsProtected(p.Visibility) &&
+                   (p.IsVirtual || p.IsAbstract || p.IsOverride));
+    }
+
+    public static string PrintProtectedSurface(TypeSymbol type, TypeNameResolver resolver, BuildContext ctx, Model.SymbolGraph graph)
+    {
+        if (type.Accessibility != Accessibility.Public)
+            return string.Empty;
+
+        if (type.Kind != TypeKind.Class)
+            return string.Empty;
+
+        if (!HasProtectedVirtualMembers(type))
+            return string.Empty;
+
+        var stem = ctx.Renamer.GetFinalTypeName(type);
+        var protectedName = stem + "$protected";
+
+        var sb = new StringBuilder();
+
+        sb.Append("abstract class ");
+        sb.Append(protectedName);
+
+        if (type.GenericParameters.Length > 0)
+        {
+            sb.Append('<');
+            sb.Append(string.Join(", ", type.GenericParameters.Select(gp => PrintGenericParameter(gp, resolver, ctx))));
+            sb.Append('>');
+        }
+
+        sb.AppendLine(" {");
+
+        var typeScope = ScopeFactory.ClassInstance(type);
+
+        static bool IsProtected(Visibility v) => v == Visibility.Protected || v == Visibility.ProtectedInternal;
+
+        // Properties (protected virtual/abstract/override only)
+        foreach (var prop in type.Members.Properties
+                     .Where(p =>
+                         !p.IsStatic &&
+                         p.EmitScope == EmitScope.ClassSurface &&
+                         IsProtected(p.Visibility) &&
+                         (p.IsVirtual || p.IsAbstract || p.IsOverride))
+                     .OrderBy(p => p.ClrName))
+        {
+            var emitName = ctx.Renamer.GetFinalMemberName(prop.StableId, typeScope);
+
+            sb.Append("    protected ");
+            if (!prop.HasSetter)
+                sb.Append("readonly ");
+            sb.Append(emitName);
+            sb.Append(": ");
+            sb.Append(TypeRefPrinter.Print(prop.PropertyType, resolver, ctx));
+            sb.AppendLine(";");
+        }
+
+        // Methods (protected virtual/abstract/override only)
+        foreach (var method in type.Members.Methods
+                     .Where(m =>
+                         !m.IsStatic &&
+                         m.EmitScope == EmitScope.ClassSurface &&
+                         IsProtected(m.Visibility) &&
+                         (m.IsVirtual || m.IsAbstract || m.IsOverride))
+                     .OrderBy(m => m.ClrName)
+                     .ThenBy(m => m.Parameters.Length))
+        {
+            var emitName = ctx.Renamer.GetFinalMemberName(method.StableId, typeScope);
+
+            sb.Append("    protected ");
+            sb.Append(MethodPrinter.PrintWithName(method, type, emitName, resolver, ctx));
+            sb.AppendLine(";");
+        }
+
+        sb.AppendLine("}");
+
+        return sb.ToString();
+    }
+
     /// <summary>
-    /// Print a complete class declaration.
-    /// GUARD: Only prints public types - internal types are rejected.
-    /// </summary>
+     /// Print a complete class declaration.
+     /// GUARD: Only prints public types - internal types are rejected.
+     /// </summary>
     /// <param name="typesWithoutGenerics">Optional set to track types that had generics in CLR but were emitted without them (e.g., static classes)</param>
     /// <param name="bindingsProvider">Optional bindings provider for V2 inherited member exposure (if null, falls back to V1 behavior)</param>
     /// <param name="staticFlattening">D1: Plan for flattening static-only type hierarchies (if null, no flattening)</param>
@@ -277,6 +369,20 @@ public static class ClassPrinter
         // STATIC-SIDE FIX: Build extends list from base class AND interfaces
         // Interfaces use "extends" for all inheritance (not "implements")
         var extendsList = new List<string>();
+
+        // Include protected virtual surface (enables `protected override` typing for CLR base classes).
+        if (HasProtectedVirtualMembers(type))
+        {
+            var stem = ctx.Renamer.GetFinalTypeName(type);
+            var protectedName = stem + "$protected";
+
+            if (type.GenericParameters.Length > 0)
+            {
+                protectedName += "<" + string.Join(", ", type.GenericParameters.Select(gp => gp.Name)) + ">";
+            }
+
+            extendsList.Add(protectedName);
+        }
 
         // Base class: extends BaseClass$instance
         // D1 FIX: Skip extends for static-only types that are being flattened
@@ -798,7 +904,7 @@ public static class ClassPrinter
         // NO CONSTRUCTORS - they go in the value export (const declaration)
 
         // Fields - only emit ClassSurface members, no static fields
-        foreach (var field in members.Fields.Where(f => !f.IsStatic && f.EmitScope == EmitScope.ClassSurface))
+        foreach (var field in members.Fields.Where(f => !f.IsStatic && f.EmitScope == EmitScope.ClassSurface && f.Visibility == Visibility.Public))
         {
             // Get final name from Renamer (applies camelCase transform if configured)
             var emitName = ctx.Renamer.GetFinalMemberName(field.StableId, typeScope);
@@ -829,6 +935,8 @@ public static class ClassPrinter
                 var ownProperty = exposures.FirstOrDefault(e => !e.IsInherited);
                 if (ownProperty == null)
                     continue;
+                if (ownProperty.Property.Visibility != Visibility.Public)
+                    continue;
 
                 var tsName = ownProperty.TsName;
 
@@ -851,7 +959,7 @@ public static class ClassPrinter
         else
         {
             // Fallback: Old path for types without bindings
-            foreach (var prop in members.Properties.Where(p => !p.IsStatic && p.EmitScope == EmitScope.ClassSurface))
+            foreach (var prop in members.Properties.Where(p => !p.IsStatic && p.EmitScope == EmitScope.ClassSurface && p.Visibility == Visibility.Public))
             {
                 // D3: Skip if this instance property conflicts with base class
                 if (ShouldSuppressMember(prop.StableId.ToString()))
@@ -885,7 +993,7 @@ public static class ClassPrinter
             {
                 var exposures = group.ToList();
 
-                var ownMethods = exposures.Where(e => !e.IsInherited).ToList();
+                var ownMethods = exposures.Where(e => !e.IsInherited && e.Method.Visibility == Visibility.Public).ToList();
                 if (!ownMethods.Any())
                     continue;
 
@@ -921,7 +1029,7 @@ public static class ClassPrinter
         {
             // V1 fallback path: Use only type's own methods
             var instanceMethods = members.Methods
-                .Where(m => !m.IsStatic && m.EmitScope == EmitScope.ClassSurface)
+                .Where(m => !m.IsStatic && m.EmitScope == EmitScope.ClassSurface && m.Visibility == Visibility.Public)
                 .ToList();
 
             var methodGroups = GroupMethodsByClrName(instanceMethods, isStatic: false);
