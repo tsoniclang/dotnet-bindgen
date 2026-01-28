@@ -500,37 +500,20 @@ public static class NrtContractNormalizer
     }
 
     /// <summary>
-    /// Find inheritance clusters using Transitive Common Ancestor (TCA) algorithm.
-    /// Types are in the same cluster if they share ANY common ancestor,
-    /// even if that ancestor is not in the type set itself.
+    /// Find inheritance clusters for a member group.
+    ///
+    /// IMPORTANT: We only cluster types that are connected via an actual inheritance edge
+    /// BETWEEN TYPES THAT DECLARE THE MEMBER (i.e., both types appear in the member group).
+    ///
+    /// We MUST NOT cluster unrelated types just because they share a common ancestor like
+    /// System.Object. Doing so would incorrectly normalize nullability across unrelated
+    /// members that happen to share a CLR name (e.g., many types have a "Value" property).
     /// </summary>
     private static List<HashSet<string>> FindInheritanceClustersViaTCA(
         Dictionary<string, HashSet<string>> ancestorIndex,
         List<string> typeNames)
     {
         var typeSet = new HashSet<string>(typeNames);
-
-        // Build ancestor -> types map for clustering
-        var ancestorToTypes = new Dictionary<string, List<string>>();
-
-        foreach (var typeName in typeNames)
-        {
-            if (!ancestorIndex.TryGetValue(typeName, out var ancestors))
-                continue;
-
-            foreach (var ancestor in ancestors)
-            {
-                if (!ancestorToTypes.TryGetValue(ancestor, out var typeList))
-                {
-                    typeList = new List<string>();
-                    ancestorToTypes[ancestor] = typeList;
-                }
-                typeList.Add(typeName);
-            }
-
-            // Also check if any other type IS an ancestor of this type
-            // (i.e., this type is in the ancestor set of the other type - handled symmetrically)
-        }
 
         // Union-Find to cluster types
         var parent = new Dictionary<string, string>();
@@ -551,19 +534,7 @@ public static class NrtContractNormalizer
                 parent[ra] = rb;
         }
 
-        // For each ancestor, union all types that share it
-        foreach (var (_, typesWithThisAncestor) in ancestorToTypes)
-        {
-            if (typesWithThisAncestor.Count < 2) continue;
-
-            // All types with this common ancestor should be in the same cluster
-            for (int i = 1; i < typesWithThisAncestor.Count; i++)
-            {
-                Union(typesWithThisAncestor[0], typesWithThisAncestor[i]);
-            }
-        }
-
-        // Also union types where one IS in the type set and is an ancestor of another
+        // Union types where an ancestor that DECLARES THE MEMBER is also in the type set.
         foreach (var typeName in typeNames)
         {
             if (!ancestorIndex.TryGetValue(typeName, out var ancestors))
