@@ -62,6 +62,30 @@ public static class ClassPrinter
             sb.Append('>');
         }
 
+        // IMPORTANT: Preserve protected-member nominal typing across inheritance.
+        // If both base and derived have protected virtual members, TypeScript requires
+        // the derived protected surface to *extend* the base protected surface, otherwise
+        // derived instances are not assignable to base instances when protected members exist.
+        if (type.BaseType is NamedTypeReference baseRef &&
+            graph.TypeIndex.TryGetValue(baseRef.FullName, out var baseType) &&
+            baseType.Accessibility == Accessibility.Public &&
+            baseType.Kind == TypeKind.Class &&
+            HasProtectedVirtualMembers(baseType))
+        {
+            var baseStem = ctx.Renamer.GetFinalTypeName(baseType);
+            var baseProtectedName = baseStem + "$protected";
+
+            sb.Append(" extends ");
+            sb.Append(baseProtectedName);
+
+            if (baseRef.TypeArguments.Count > 0)
+            {
+                sb.Append('<');
+                sb.Append(string.Join(", ", baseRef.TypeArguments.Select(a => TypeRefPrinter.Print(a, resolver, ctx))));
+                sb.Append('>');
+            }
+        }
+
         sb.AppendLine(" {");
 
         var typeScope = ScopeFactory.ClassInstance(type);
@@ -2365,9 +2389,15 @@ public static class ClassPrinter
     }
 
     /// <summary>
-    /// Emit a property, using split get/set accessors when needed for NRT nullability.
-    /// Per NRT simplification: getter outputs respect NRT (may return nullable),
-    /// but setter inputs are always strict (non-nullable).
+    /// Emit a property.
+    ///
+    /// If the property is nullable and has both a getter and setter, we emit split accessors
+    /// to preserve the nullable surface explicitly:
+    ///   get prop(): T | undefined;
+    ///   set prop(value: T | undefined);
+    ///
+    /// This matches CLR semantics for nullable properties (T?) and avoids forcing downstream
+    /// projects into casts/guards just to assign a nullable value to a nullable property.
     /// </summary>
     private static void EmitProperty(
         StringBuilder sb,
@@ -2385,26 +2415,24 @@ public static class ClassPrinter
         if (NeedsSplitAccessors(property))
         {
             // Emit split get/set accessors
-            // Getter: returns nullable type (as declared)
+            var resolvedType = overrideType ?? TypeRefPrinter.Print(propertyType, resolver, ctx);
+
+            // Getter: returns type (nullable when declared)
             sb.Append("    ");
             sb.Append(staticPrefix);
             sb.Append("get ");
             sb.Append(emitName);
             sb.Append("(): ");
-            if (overrideType != null)
-                sb.Append(overrideType);
-            else
-                sb.Append(TypeRefPrinter.Print(propertyType, resolver, ctx));
+            sb.Append(resolvedType);
             sb.AppendLine(";");
 
-            // Setter: takes non-nullable type (inputs are strict)
-            var nonNullableType = GetNonNullableType(propertyType);
+            // Setter: takes the same type (nullable when declared)
             sb.Append("    ");
             sb.Append(staticPrefix);
             sb.Append("set ");
             sb.Append(emitName);
             sb.Append("(value: ");
-            sb.Append(TypeRefPrinter.Print(nonNullableType, resolver, ctx));
+            sb.Append(resolvedType);
             sb.AppendLine(");");
         }
         else
@@ -2426,16 +2454,14 @@ public static class ClassPrinter
 
     /// <summary>
     /// Check if a property needs split get/set accessors due to NRT nullability.
-    /// Per NRT simplification: getter outputs respect NRT (may return nullable),
-    /// but setter inputs are always strict (non-nullable).
     ///
-    /// Returns true when:
+    /// We use split accessors when:
     /// 1. Property has both getter AND setter
-    /// 2. Property type is nullable (NrtState.Nullable) and NOT a value type
+    /// 2. Property type is nullable (NrtState.Nullable)
     ///
-    /// This allows us to emit:
+    /// This emits:
     ///   get propertyName(): Type | undefined;
-    ///   set propertyName(value: Type);
+    ///   set propertyName(value: Type | undefined);
     /// </summary>
     private static bool NeedsSplitAccessors(PropertySymbol property)
     {
@@ -2450,22 +2476,6 @@ public static class ClassPrinter
             ArrayTypeReference arr => arr.Nullability == NrtState.Nullable,
             // GenericParameterReference: never nullable per NRT simplification
             _ => false
-        };
-    }
-
-    /// <summary>
-    /// Get the non-nullable version of a type for setter input.
-    /// Per NRT simplification: inputs are always strict (non-nullable).
-    /// </summary>
-    private static TypeReference GetNonNullableType(TypeReference typeRef)
-    {
-        return typeRef switch
-        {
-            NamedTypeReference named when named.Nullability == NrtState.Nullable =>
-                named with { Nullability = NrtState.NotNull },
-            ArrayTypeReference arr when arr.Nullability == NrtState.Nullable =>
-                arr with { Nullability = NrtState.NotNull },
-            _ => typeRef
         };
     }
 }
