@@ -17,6 +17,10 @@ public class Base
     protected virtual int Prop { get; set; }
 
     protected internal virtual string Prop2 { get; } = "x";
+
+    public void Dispose() { }
+
+    protected virtual void Dispose(bool disposing) { }
 }
 
 public class Derived : Base
@@ -27,4 +31,3 @@ public class Derived : Base
 
     public override void PublicVirt() { }
 }
-
