@@ -721,6 +721,37 @@ export type StringBuilder = StringBuilder$instance & __StringBuilder$views;
 | Delegate | Callable + `interface $instance` + `type alias` |
 | Static class | `abstract class` (special case) |
 
+### Abstract/Protected Constructors (Extendable Bases)
+
+TypeScript requires the base expression in `class Derived extends Base {}` to be **constructable**
+(have a `new(...)` signature). This is a TypeScript rule, not a runtime rule.
+
+.NET has several base classes that are designed to be subclassed, but are **not directly constructible**
+from user code (e.g. abstract classes, or classes with only `protected`/`protected internal` constructors).
+If tsbindgen emitted these as a plain `export const Base: { ...statics... }` with no constructor typing,
+vanilla `tsc` would reject `extends Base`.
+
+To make inheritance typecheck while still preventing `new Base()` in TypeScript, tsbindgen attaches an
+**abstract constructor type** to the value export via intersection:
+
+```ts
+// Example: System.Attribute (abstract base, no public constructors)
+export const Attribute:
+  (abstract new() => Attribute) &
+  {
+    // ...static members...
+  };
+```
+
+Notes:
+
+- We **cannot** write `abstract new(...)` inside the `{ ... }` object type literal — TypeScript rejects
+  `abstract` as a type member. The intersection form is the valid representation.
+- This enables `class MyAttr extends Attribute {}` to typecheck, but `new Attribute()` remains invalid
+  at the TS type level.
+- We intentionally do **not** add constructor typing for CLR “magic” base types where `extends` should
+  fail (e.g. `System.Delegate`, `System.MulticastDelegate`, `System.Enum`).
+
 ### Universal $instance Naming
 
 All classes/structs use the `$instance` suffix—even those without views:
