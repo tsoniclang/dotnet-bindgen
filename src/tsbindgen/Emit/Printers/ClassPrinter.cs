@@ -113,10 +113,80 @@ public static class ClassPrinter
             genericArgs = "<" + string.Join(", ", type.GenericParameters.Select(gp => gp.Name)) + ">";
         }
 
-        // Start: export const TypeName: { ... }
+        var members = type.Members;
+
+        // Some CLR base classes are designed to be subclassed by user code but have no public constructors
+        // (e.g., abstract base classes with protected ctors). TypeScript still requires the base expression
+        // in `class D extends Base {}` to be constructable, otherwise `extends Base` fails to typecheck.
+        //
+        // To keep TS-valid inheritance WITHOUT introducing unstable renames (Dispose2) or requiring
+        // consumers to import internal symbols, we attach an *abstract constructor type* to the value
+        // export for eligible types. This enables `extends` while (in TS) still rejecting `new Base()`.
+        //
+        // NOTE: TypeScript does NOT allow `abstract new(...)` inside an object type literal, so we
+        // express the constructor surface as an intersection with a constructor type:
+        //   export const Base: (abstract new (...) => Base) & { ...static members... }
+        //
+        // We intentionally do NOT do this for CLR "magic" base types that cannot be subclassed via C#
+        // (Delegate/MulticastDelegate/Enum), where `extends` should fail.
+        string? abstractCtorType = null;
+        if (type.Kind == TypeKind.Class &&
+            type.Accessibility == Accessibility.Public &&
+            type.ClrFullName is not ("System.Delegate" or "System.MulticastDelegate" or "System.Enum"))
+        {
+            var accessibleCtors = members.Constructors
+                .Where(c =>
+                    !c.IsStatic &&
+                    (c.Visibility == Visibility.Public ||
+                     c.Visibility == Visibility.Protected ||
+                     c.Visibility == Visibility.ProtectedInternal))
+                .ToList();
+
+            var hasPublicCtor = accessibleCtors.Any(c => c.Visibility == Visibility.Public);
+            var hasProtectedCtor = accessibleCtors.Any(c =>
+                c.Visibility == Visibility.Protected ||
+                c.Visibility == Visibility.ProtectedInternal);
+
+            // Only attach abstract ctor typing when the type is NOT directly constructible from user code.
+            // - abstract types (even if they have public ctors)
+            // - non-abstract types with only protected/protected-internal ctors
+            var needsAbstractCtorTyping =
+                (type.IsAbstract && accessibleCtors.Count > 0) ||
+                (!type.IsAbstract && !hasPublicCtor && hasProtectedCtor);
+
+            if (needsAbstractCtorTyping)
+            {
+                var ctorSigs = new List<string>();
+                foreach (var ctor in accessibleCtors)
+                {
+                    var sig = new StringBuilder();
+                    sig.Append("abstract new");
+                    if (hasGenerics) sig.Append(genericParams);
+                    sig.Append("(");
+                    sig.Append(string.Join(", ", ctor.Parameters.Select(p => $"{p.Name}: {TypeRefPrinter.Print(p.Type, resolver, ctx)}")));
+                    sig.Append(") => ");
+                    sig.Append(finalName);
+                    if (hasGenerics) sig.Append(genericArgs);
+                    ctorSigs.Add("(" + sig + ")");
+                }
+
+                if (ctorSigs.Count > 0)
+                {
+                    abstractCtorType = string.Join(" & ", ctorSigs);
+                }
+            }
+        }
+
+        // Start: export const TypeName: [abstract ctor type] & { ... }
         sb.Append("export const ");
         sb.Append(finalName);
-        sb.AppendLine(": {");
+        sb.Append(": ");
+        if (!string.IsNullOrEmpty(abstractCtorType))
+        {
+            sb.Append(abstractCtorType);
+            sb.Append(" & ");
+        }
+        sb.AppendLine("{");
 
         // Create type scope for member name resolution
         var staticTypeScope = ScopeFactory.ClassStatic(type);
@@ -147,7 +217,6 @@ public static class ClassPrinter
         // The constructor must return the full intersection type (List_1<T>), not just the instance
         // interface (List_1$instance<T>), otherwise `const x: List<T> = new List<T>()` fails
         // because List_1$instance<T> is not assignable to List_1<T> (missing views intersection).
-        var members = type.Members;
         if (!type.IsAbstract)
         {
             foreach (var ctor in members.Constructors.Where(c => !c.IsStatic && c.Visibility == Visibility.Public))
@@ -161,18 +230,18 @@ public static class ClassPrinter
                 if (hasGenerics) sb.Append(genericArgs);
                 sb.AppendLine(";");
             }
+        }
 
-            // Structs always have an implicit public parameterless constructor.
-            // Some structs may not declare any public .ctor in metadata, so add one deterministically.
-            if (type.Kind == TypeKind.Struct && !members.Constructors.Any(c => !c.IsStatic && c.Visibility == Visibility.Public))
-            {
-                sb.Append("    new");
-                if (hasGenerics) sb.Append(genericParams);
-                sb.Append("(): ");
-                sb.Append(finalName);
-                if (hasGenerics) sb.Append(genericArgs);
-                sb.AppendLine(";");
-            }
+        // Structs always have an implicit public parameterless constructor.
+        // Some structs may not declare any public .ctor in metadata, so add one deterministically.
+        if (type.Kind == TypeKind.Struct && !members.Constructors.Any(c => !c.IsStatic && c.Visibility == Visibility.Public))
+        {
+            sb.Append("    new");
+            if (hasGenerics) sb.Append(genericParams);
+            sb.Append("(): ");
+            sb.Append(finalName);
+            if (hasGenerics) sb.Append(genericArgs);
+            sb.AppendLine(";");
         }
 
         // Static fields - only emit ClassSurface or StaticSurface members
