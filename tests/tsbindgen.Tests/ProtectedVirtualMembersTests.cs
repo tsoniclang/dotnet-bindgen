@@ -8,7 +8,7 @@ namespace tsbindgen.Tests;
 public sealed class ProtectedVirtualMembersTests
 {
     [Fact]
-    public void ProtectedVirtuals_EmitProtectedSurface_AndAreHiddenFromPublicInstance()
+    public void ProtectedVirtuals_AppearOnInstanceSurface_WithoutNumericRenames()
     {
         var repoRoot = FindRepoRoot();
 
@@ -47,37 +47,38 @@ public sealed class ProtectedVirtualMembersTests
 
         var dts = File.ReadAllText(internalIndex);
 
-        // Protected surface exists.
-        Assert.Contains("export abstract class Base$protected", dts);
+        // No separate $protected surface; we include protected virtual/abstract/override members
+        // directly on the instance surface to avoid unstable numeric renames (Dispose2, ...).
+        Assert.DoesNotContain("$protected", dts);
 
-        // Includes protected virtual members.
-        Assert.Contains("protected Foo", dts);
-        Assert.Contains("protected Bar", dts);
-        Assert.Contains("protected Prop", dts);
-
-        // Excludes non-virtual protected members.
-        Assert.DoesNotContain("ProtectedNonVirtual", dts);
-
-        // Excludes internal/private-protected members.
-        Assert.DoesNotContain("InternalVirt", dts);
-        Assert.DoesNotContain("PrivateProtectedVirt", dts);
-
-        // $instance extends $protected but does not re-declare protected members.
-        Assert.Contains("export interface Base$instance extends Base$protected", dts);
-
-        // Public instance surface should not expose protected members directly.
-        // (We only want these available for override typing, not for public consumption.)
+        // Instance surface should expose protected virtual/abstract/override members for override typing.
         var instanceStart = dts.IndexOf("export interface Base$instance", StringComparison.Ordinal);
         Assert.True(instanceStart >= 0, "Expected Base$instance interface in output.");
         var instanceEnd = dts.IndexOf("}\n", instanceStart, StringComparison.Ordinal);
         Assert.True(instanceEnd > instanceStart, "Failed to extract Base$instance interface block from output.");
         var instanceBlock = dts.Substring(instanceStart, instanceEnd - instanceStart);
 
-        // Allow `Base$protected` in extends clause, but never emit `protected` members on the public instance interface.
+        // Interfaces cannot encode access modifiers; the surface is callable, but C# enforces accessibility.
         Assert.DoesNotContain("\n    protected ", instanceBlock);
-        Assert.DoesNotContain("Foo(", instanceBlock);
-        Assert.DoesNotContain("Bar(", instanceBlock);
-        Assert.DoesNotContain("Prop", instanceBlock);
+
+        // Includes protected virtual members.
+        Assert.Contains("Foo(", instanceBlock);
+        Assert.Contains("Bar(", instanceBlock);
+        Assert.Contains("Prop", instanceBlock);
+        Assert.Contains("Prop2", instanceBlock);
+
+        // Includes overload family without unstable renames.
+        Assert.Contains("Dispose(", instanceBlock);
+        Assert.DoesNotContain("Dispose2", instanceBlock);
+        var disposeDeclCount = instanceBlock.Split("Dispose(", StringSplitOptions.None).Length - 1;
+        Assert.True(disposeDeclCount >= 2, $"Expected at least 2 Dispose overload declarations, found {disposeDeclCount}.");
+
+        // Excludes non-virtual protected members.
+        Assert.DoesNotContain("ProtectedNonVirtual", instanceBlock);
+
+        // Excludes internal/private-protected members.
+        Assert.DoesNotContain("InternalVirt", instanceBlock);
+        Assert.DoesNotContain("PrivateProtectedVirt", instanceBlock);
 
         // bindings.json includes visibility + base type and interface heritage.
         using var doc = JsonDocument.Parse(File.ReadAllText(bindingsJson));

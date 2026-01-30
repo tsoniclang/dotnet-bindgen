@@ -119,6 +119,26 @@ public sealed class TypeNameResolver
 
         if (!_graph.TypeIndex.TryGetValue(graphClrFullName, out var typeSymbol))
         {
+            // If a nested type is referenced but not present in the graph, it is usually a non-public
+            // nested type (e.g., PEBuilder+Section) that we intentionally do NOT emit. In type positions,
+            // degrade these to 'unknown' to keep the .d.ts surface TypeScript-valid (no TS2304).
+            //
+            // IMPORTANT: We only do this when the *enclosing* type is in the graph, which indicates
+            // this is an omitted nested type from the current emission set (not an external nested type
+            // from a library the consumer is expected to provide via --lib).
+            if (!forValuePosition)
+            {
+                var plusIndex = graphClrFullName.IndexOf('+');
+                if (plusIndex > 0)
+                {
+                    var outerFullName = graphClrFullName.Substring(0, plusIndex);
+                    if (_graph.TypeIndex.ContainsKey(outerFullName))
+                    {
+                        return "unknown";
+                    }
+                }
+            }
+
             // Type not in graph - this is an EXTERNAL type from another assembly
             // Use the CLR name as-is (it will be in imports if needed)
 
@@ -150,6 +170,15 @@ public sealed class TypeNameResolver
             var finalExternalName = result.Sanitized;
 
             return finalExternalName;
+        }
+
+        // IMPORTANT: We do not emit non-public types to TypeScript declarations.
+        // If a non-public type appears in a signature position, degrade it to 'unknown'
+        // to keep the .d.ts surface TypeScript-valid and prevent TS2304 missing symbol errors.
+        // This is especially common for nested/internal types used in protected/internal APIs.
+        if (!forValuePosition && typeSymbol.Accessibility != Model.Symbols.Accessibility.Public)
+        {
+            return "unknown";
         }
 
         // 5. Get final TypeScript name from Renamer (single source of truth)
