@@ -1060,7 +1060,49 @@ public static class ClassPrinter
             }
         }
 
+        // Task/ValueTask thenable shim (TypeScript async/await compatibility):
+        // Make System.Threading.Tasks.Task / Task<TResult> structurally PromiseLike so:
+        // - `await task` typechecks in vanilla tsc
+        // - `async function f(): Task<T>` is accepted by tsc
+        //
+        // This is TYPE-ONLY; Tsonic bans `.then/.catch/.finally` usage and lowers async/await to CLR Task.
+        EmitTaskThenableShimIfNeeded(sb, type);
+
         // NO STATIC MEMBERS - they go in the value export (const declaration)
+    }
+
+    private static void EmitTaskThenableShimIfNeeded(StringBuilder sb, TypeSymbol type)
+    {
+        // NOTE: Keep this logic deterministic and minimal; do not rely on external configuration.
+        // We intentionally do NOT emit catch/finally; a single `then` is sufficient for TS await/async checks.
+
+        var isTask =
+            type.ClrFullName == "System.Threading.Tasks.Task" ||
+            type.ClrFullName.StartsWith("System.Threading.Tasks.Task`", StringComparison.Ordinal) ||
+            type.ClrFullName.StartsWith("System.Threading.Tasks.Task\u0060", StringComparison.Ordinal);
+
+        var isValueTask =
+            type.ClrFullName == "System.Threading.Tasks.ValueTask" ||
+            type.ClrFullName.StartsWith("System.Threading.Tasks.ValueTask`", StringComparison.Ordinal) ||
+            type.ClrFullName.StartsWith("System.Threading.Tasks.ValueTask\u0060", StringComparison.Ordinal);
+
+        if (!isTask && !isValueTask)
+            return;
+
+        // Non-generic Task/ValueTask behaves like PromiseLike<void> for await purposes.
+        var awaitedType =
+            type.GenericParameters.Length == 1
+                ? type.GenericParameters[0].Name
+                : "void";
+
+        sb.Append("    then<TResult1 = ");
+        sb.Append(awaitedType);
+        sb.Append(", TResult2 = never>(");
+        sb.Append("onfulfilled?: ((value: ");
+        sb.Append(awaitedType);
+        sb.Append(") => TResult1 | PromiseLike<TResult1>) | undefined | null, ");
+        sb.Append("onrejected?: ((reason: any) => TResult2 | PromiseLike<TResult2>) | undefined | null");
+        sb.AppendLine("): PromiseLike<TResult1 | TResult2>;");
     }
 
     private static void EmitStaticMembers(StringBuilder sb, TypeSymbol type, TypeNameResolver resolver, BuildContext ctx, Shape.StaticConflictPlan? staticConflicts = null)
@@ -2386,6 +2428,55 @@ public static class ClassPrinter
         bool isStatic = false)
     {
         var staticPrefix = isStatic ? "static " : "";
+
+        // Indexers: emit TypeScript index signatures instead of bogus `Item: T` properties.
+        // This enables idiomatic `obj[key]` usage for CLR indexers like:
+        // - IQueryCollection.this[string] → obj["from"]
+        // - List<T>.this[int] → obj[0]
+        //
+        // TS limitation: index signature keys must be string | number | symbol, and only one is supported.
+        if (property.IsIndexer && !isStatic)
+        {
+            // Only single-parameter indexers are representable in TS.
+            if (property.IndexParameters.Length == 1)
+            {
+                var p0 = property.IndexParameters[0];
+                var rawKeyType = TypeRefPrinter.Print(p0.Type, resolver, ctx);
+
+                string? keyType = rawKeyType switch
+                {
+                    "string" => "string",
+                    "System_Internal.String" => "string",
+                    // All numeric CLR indexers surface as number in TypeScript.
+                    // Tsonic's proof system enforces the actual CLR numeric requirements.
+                    "number" => "number",
+                    "int" or "long" or "short" or "byte" or "sbyte" or "uint" or "ulong" or "ushort" or "nint" or "nuint" => "number",
+                    "float" or "double" or "decimal" or "half" => "number",
+                    _ => null
+                };
+
+                if (keyType != null)
+                {
+                    var resolvedType = overrideType ?? TypeRefPrinter.Print(propertyType, resolver, ctx);
+                    var keyName = string.IsNullOrWhiteSpace(p0.Name) ? "key" : p0.Name;
+
+                    sb.Append("    ");
+                    if (!property.HasSetter)
+                        sb.Append("readonly ");
+                    sb.Append('[');
+                    sb.Append(keyName);
+                    sb.Append(": ");
+                    sb.Append(keyType);
+                    sb.Append("]: ");
+                    sb.Append(resolvedType);
+                    sb.AppendLine(";");
+                    return;
+                }
+            }
+
+            // Unsupported indexer key shape: fall back to emitting `Item` as a normal property.
+            // This is not great, but it's safer than lying about a key type that TS can't represent.
+        }
 
         // Check if we need split accessors due to NRT nullability asymmetry
         if (NeedsSplitAccessors(property))
