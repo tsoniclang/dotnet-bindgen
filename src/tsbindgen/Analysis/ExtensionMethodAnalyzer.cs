@@ -1,5 +1,6 @@
 using System.Collections.Immutable;
 using System.Linq;
+using tsbindgen.Core;
 using tsbindgen.Emit;
 using tsbindgen.Emit.Printers;
 using tsbindgen.Model;
@@ -82,9 +83,13 @@ public static class ExtensionMethodAnalyzer
             var targetTypeSymbol = FindTypeByClrFullName(graph, namedRef.FullName);
             if (targetTypeSymbol == null)
             {
+                // Library mode (--lib) filters external types out of the graph, but extension methods
+                // can still target those external receivers (e.g., EFCore extensions on IQueryable<T>).
+                // Create a minimal stub so we can still emit a bucket interface and the per-namespace
+                // ExtensionMethods helper type.
+                targetTypeSymbol = CreateExternalTargetTypeStub(namedRef);
                 ctx.Log("ExtensionMethodAnalyzer",
-                    $"WARNING: Cannot find target type '{namedRef.FullName}' in graph for extension method {method.ClrName} - skipping");
-                continue;
+                    $"  Using external target stub for '{namedRef.FullName}' (extension method {method.ClrName})");
             }
 
             // STRICT MODE: Skip methods with unresolvable type signatures ('any' erasures)
@@ -150,6 +155,71 @@ public static class ExtensionMethodAnalyzer
             $"Extension method analysis complete: {finalPlan.Buckets.Length} buckets, {finalPlan.TotalMethodCount} total methods");
 
         return finalPlan;
+    }
+
+    private static TypeSymbol CreateExternalTargetTypeStub(NamedTypeReference typeRef)
+    {
+        // Sanitize CLR name into a TS emit name (no casing transforms; only arity + reserved words).
+        var sanitized = typeRef.Name.Replace('`', '_').Replace('+', '_');
+        var result = TypeScriptReservedWords.SanitizeTypeName(sanitized);
+
+        // Heuristic: treat "I*" as interface; otherwise class. This is only used for bucket naming,
+        // not for actual emission of the external type.
+        var kind = typeRef.Name.StartsWith("I", StringComparison.Ordinal) ? TypeKind.Interface : TypeKind.Class;
+
+        // Stub generic parameters (names are not observable to callers; they only affect bucket method signatures).
+        var genericParams = ImmutableArray<Model.Symbols.GenericParameterSymbol>.Empty;
+        if (typeRef.Arity > 0)
+        {
+            var list = new List<Model.Symbols.GenericParameterSymbol>(typeRef.Arity);
+            for (var i = 0; i < typeRef.Arity; i++)
+            {
+                var name = typeRef.Arity == 1 ? "T" : $"T{i + 1}";
+                list.Add(new Model.Symbols.GenericParameterSymbol
+                {
+                    Id = new GenericParameterId
+                    {
+                        DeclaringTypeName = typeRef.FullName,
+                        Position = i,
+                        IsMethodParameter = false
+                    },
+                    Name = name,
+                    Position = i,
+                    Constraints = ImmutableArray<Model.Types.TypeReference>.Empty,
+                    RawConstraintTypes = null,
+                    Variance = Variance.None,
+                    SpecialConstraints = GenericParameterConstraints.None
+                });
+            }
+            genericParams = list.ToImmutableArray();
+        }
+
+        return new TypeSymbol
+        {
+            StableId = new tsbindgen.Renaming.TypeStableId
+            {
+                AssemblyName = typeRef.AssemblyName,
+                ClrFullName = typeRef.FullName
+            },
+            ClrFullName = typeRef.FullName,
+            ClrName = typeRef.Name,
+            TsEmitName = result.Sanitized,
+            Accessibility = Accessibility.Public,
+            Namespace = typeRef.Namespace,
+            Kind = kind,
+            Arity = typeRef.Arity,
+            GenericParameters = genericParams,
+            BaseType = null,
+            Interfaces = ImmutableArray<Model.Types.TypeReference>.Empty,
+            Members = TypeMembers.Empty,
+            NestedTypes = ImmutableArray<TypeSymbol>.Empty,
+            IsValueType = typeRef.IsValueType,
+            IsAbstract = false,
+            IsSealed = false,
+            IsStatic = false,
+            DeclaringType = null,
+            Documentation = null
+        };
     }
 
     /// <summary>

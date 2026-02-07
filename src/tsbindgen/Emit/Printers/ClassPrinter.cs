@@ -407,6 +407,12 @@ public static class ClassPrinter
 
         sb.AppendLine(" {");
 
+        // NOMINAL CLR INTERFACES: Attach interface brands for all implemented CLR interfaces
+        // (including explicit views and inherited interfaces). This prevents structural matches
+        // (e.g., GetAsyncEnumerator pattern) from incorrectly making a type appear to implement
+        // an interface like IAsyncEnumerable<T> when it does not in CLR metadata.
+        EmitNominalClrInterfaceBrands(sb, type, graph);
+
         // STATIC-SIDE FIX: Emit only INSTANCE members for the interface
         // Static members and constructors will be emitted separately in PrintValueExport
         EmitInstanceMembersOnly(sb, type, resolver, ctx, graph, bindingsProvider, overrideConflicts, propertyOverrides);
@@ -452,6 +458,12 @@ public static class ClassPrinter
         }
 
         sb.AppendLine(" {");
+
+        // NOMINAL CLR INTERFACES: Attach interface brands for all implemented CLR interfaces
+        // (including explicit views and inherited interfaces). This prevents structural matches
+        // (e.g., GetAsyncEnumerator pattern) from incorrectly making a type appear to implement
+        // an interface like IAsyncEnumerable<T> when it does not in CLR metadata.
+        EmitNominalClrInterfaceBrands(sb, type, graph);
 
         // STATIC-SIDE FIX: Emit only instance members (no constructors, no statics)
         // Constructors and static members go in PrintValueExport
@@ -604,6 +616,16 @@ public static class ClassPrinter
 
         sb.AppendLine(" {");
 
+        // NOMINAL CLR INTERFACES: Prevent TypeScript structural typing ("duck typing") from
+        // treating any structurally compatible object as a CLR interface.
+        //
+        // This brand is a phantom field. It is populated on CLR types that implement this
+        // interface (including via base types) during emission (see EmitNominalClrInterfaceBrands).
+        sb.Append("    readonly ");
+        sb.Append(NameUtilities.GetClrInterfaceBrandPropertyName(type.ClrFullName));
+        sb.AppendLine(": never;");
+        sb.AppendLine();
+
         // Emit members (interfaces only have instance members)
         // Pass graph to collect inherited method overloads for TS2430 fix
         EmitInterfaceMembers(sb, type, resolver, ctx, graph);
@@ -611,6 +633,95 @@ public static class ClassPrinter
         sb.AppendLine("}");
 
         return sb.ToString();
+    }
+
+    private static void EmitNominalClrInterfaceBrands(StringBuilder sb, TypeSymbol type, SymbolGraph graph)
+    {
+        // Only class-like types can "implement" interfaces (classes/structs). Interfaces emit
+        // their own brand directly in PrintInterface.
+        if (type.Kind != TypeKind.Class && type.Kind != TypeKind.Struct)
+            return;
+
+        var interfaceFullNames = CollectInterfaceBrandFullNames(type, graph);
+        if (interfaceFullNames.Count == 0)
+            return;
+
+        foreach (var fullName in interfaceFullNames.OrderBy(n => n, StringComparer.Ordinal))
+        {
+            sb.Append("    readonly ");
+            sb.Append(NameUtilities.GetClrInterfaceBrandPropertyName(fullName));
+            sb.AppendLine(": never;");
+        }
+
+        sb.AppendLine();
+    }
+
+    private static HashSet<string> CollectInterfaceBrandFullNames(TypeSymbol type, SymbolGraph graph)
+    {
+        var result = new HashSet<string>(StringComparer.Ordinal);
+        var visitedTypes = new HashSet<string>(StringComparer.Ordinal);
+
+        void AddInterface(TypeReference ifaceRef)
+        {
+            var fullName = ifaceRef switch
+            {
+                NamedTypeReference named => named.FullName,
+                NestedTypeReference nested => nested.FullReference.FullName,
+                _ => null
+            };
+            if (string.IsNullOrEmpty(fullName))
+                return;
+
+            // NOTE: We intentionally do NOT consult the symbol graph here.
+            //
+            // In --lib mode, external BCL types are filtered out of the graph, but we still
+            // need nominal interface brands for their interface identities so extension method
+            // selection and assignability stay CLR-faithful.
+            //
+            // TypeSymbol.Interfaces is sourced from CLR metadata and represents implemented
+            // interfaces (typically including inherited interfaces as well), so the FullName
+            // is the correct stable key for branding.
+            result.Add(fullName);
+        }
+
+        void AddTypeInterfacesRecursive(TypeReference? typeRef)
+        {
+            if (typeRef == null)
+                return;
+
+            var fullName = typeRef switch
+            {
+                NamedTypeReference named => named.FullName,
+                NestedTypeReference nested => nested.FullReference.FullName,
+                _ => null
+            };
+            if (string.IsNullOrEmpty(fullName))
+                return;
+
+            if (!visitedTypes.Add(fullName))
+                return;
+
+            if (!graph.TypeIndex.TryGetValue(fullName, out var typeSymbol))
+                return;
+
+            foreach (var iface in typeSymbol.Interfaces)
+                AddInterface(iface);
+
+            foreach (var view in typeSymbol.ExplicitViews)
+                AddInterface(view.InterfaceReference);
+
+            AddTypeInterfacesRecursive(typeSymbol.BaseType);
+        }
+
+        foreach (var iface in type.Interfaces)
+            AddInterface(iface);
+
+        foreach (var view in type.ExplicitViews)
+            AddInterface(view.InterfaceReference);
+
+        AddTypeInterfacesRecursive(type.BaseType);
+
+        return result;
     }
 
     private static void EmitMembers(StringBuilder sb, TypeSymbol type, TypeNameResolver resolver, BuildContext ctx, Model.SymbolGraph graph, BindingsProvider? bindingsProvider = null, Shape.StaticConflictPlan? staticConflicts = null, Shape.OverrideConflictPlan? overrideConflicts = null, Plan.PropertyOverridePlan? propertyOverrides = null)

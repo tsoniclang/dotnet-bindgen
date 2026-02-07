@@ -70,4 +70,51 @@ public static class NameUtilities
         // If we found digits at the end
         return i < name.Length - 1;
     }
+
+    /// <summary>
+    /// Generate the nominal branding property name for a CLR interface type.
+    ///
+    /// This is intentionally derived from the CLR full name (not the TS emit name) so the
+    /// brand is deterministic and stable across renaming transforms and conflict suffixes.
+    ///
+    /// Example:
+    ///   "System.Collections.Generic.IAsyncEnumerable`1"
+    ///     → "__tsonic_iface_System_Collections_Generic_IAsyncEnumerable_1"
+    /// </summary>
+    public static string GetClrInterfaceBrandPropertyName(string clrFullName)
+    {
+        if (string.IsNullOrWhiteSpace(clrFullName))
+            return "__tsonic_iface_";
+
+        // Strip any assembly qualification if present (some callers may pass it through).
+        var commaIndex = clrFullName.IndexOf(',');
+        if (commaIndex >= 0)
+            clrFullName = clrFullName.Substring(0, commaIndex).Trim();
+
+        // CLR naming quirks:
+        // - Namespace/type separators: "."
+        // - Nested types: "+"
+        // - Generic arity: "`N" (e.g., IEnumerable`1)
+        // Convert all of these into a stable TS identifier component.
+        var sb = new System.Text.StringBuilder(clrFullName.Length);
+        foreach (var ch in clrFullName)
+        {
+            if (char.IsLetterOrDigit(ch))
+            {
+                sb.Append(ch);
+                continue;
+            }
+
+            if (ch is '.' or '+' or '`')
+            {
+                sb.Append('_');
+                continue;
+            }
+
+            // Fallback for any unexpected character.
+            sb.Append('_');
+        }
+
+        return "__tsonic_iface_" + sb;
+    }
 }

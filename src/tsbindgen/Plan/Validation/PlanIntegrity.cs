@@ -324,8 +324,12 @@ internal static class PlanIntegrity
         foreach (var bucket in plan.Buckets)
         {
             // Check target type exists (either in graph or is built-in)
-            var targetExists = graph.TypeIndex.Values.Any(t => t.ClrFullName == bucket.Key.FullName)
-                || builtInTypes.Contains(bucket.Key.FullName);
+            var targetExists =
+                graph.TypeIndex.ContainsKey(bucket.Key.FullName)
+                || builtInTypes.Contains(bucket.Key.FullName)
+                // Library mode: target types can be external (filtered) but still valid.
+                || (ctx.LibraryNamespaceIndex?.ContainsKey(bucket.Key.FullName) ?? false)
+                || (ctx.LibraryContract?.AllowedClrFullNames.Contains(bucket.Key.FullName) ?? false);
 
             if (!targetExists)
             {

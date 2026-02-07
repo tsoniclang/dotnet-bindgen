@@ -169,6 +169,21 @@ public sealed class TypeNameResolver
             var result = TypeScriptReservedWords.SanitizeTypeName(sanitized);
             var finalExternalName = result.Sanitized;
 
+            // TS2304 FIX (Facade): In facade mode, qualify cross-namespace EXTERNAL types too.
+            // Without this, facade/extension helper files that import namespace modules
+            // would reference external types unqualified (e.g., "CancellationToken") which
+            // is not in scope unless declared globally.
+            if (_facadeMode && _currentNamespace != null)
+            {
+                if (!string.IsNullOrEmpty(externalNamespace) &&
+                    externalNamespace != _currentNamespace &&
+                    !finalExternalName.Contains('.'))
+                {
+                    var namespaceAlias = GetNamespaceAlias(externalNamespace);
+                    return $"{namespaceAlias}.{finalExternalName}";
+                }
+            }
+
             return finalExternalName;
         }
 
