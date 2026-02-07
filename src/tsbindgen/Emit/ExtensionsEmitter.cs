@@ -391,7 +391,22 @@ public static class ExtensionsEmitter
         {
             var paramType = PrintTypeWithSubstitution(param.Type, resolver, ctx, allowedTypeParams, genericSubstitution);
             var paramName = TypeScriptReservedWords.SanitizeParameterName(param.Name);
-            paramStrings.Add($"{paramName}: {paramType}");
+
+            // Preserve optional/default parameters and params arrays.
+            // EF Core async extensions commonly use optional CancellationToken parameters which should be
+            // callable without arguments (matches C# default-parameter semantics).
+            if (param.IsParams)
+            {
+                paramStrings.Add($"...{paramName}: {paramType}");
+            }
+            else if (param.HasDefaultValue)
+            {
+                paramStrings.Add($"{paramName}?: {paramType}");
+            }
+            else
+            {
+                paramStrings.Add($"{paramName}: {paramType}");
+            }
         }
         sb.Append(string.Join(", ", paramStrings));
         sb.Append(')');
