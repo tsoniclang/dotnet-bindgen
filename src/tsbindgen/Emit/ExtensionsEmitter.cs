@@ -116,17 +116,38 @@ public static class ExtensionsEmitter
 
         // Generate namespace imports
         // Extension methods file is at __internal/extensions/index.d.ts
-        // Namespaces are at ../../{Namespace}/internal/index.js
+        // Local namespaces are at ../../{Namespace}/internal/index.js
+        // External namespaces (from --lib contracts) are imported via package specifiers
+        // (e.g., @tsonic/dotnet/System.Linq/internal/index.js).
         if (namespacesUsed.Count > 0)
         {
+            var localNamespaces = graph.Namespaces.Select(n => n.Name).ToHashSet();
+
+            string GetNamespaceModuleImportPath(string ns)
+            {
+                if (string.IsNullOrEmpty(ns))
+                {
+                    return "../../_root/index.js";
+                }
+
+                var outputName = NamespacePathMapper.GetOutputName(ns, ctx);
+
+                // Local namespace: relative import within this output package.
+                if (localNamespaces.Contains(ns) || ctx.LibraryContract == null)
+                {
+                    return $"../../{outputName}/internal/index.js";
+                }
+
+                // External namespace: import from owning library package.
+                var pkg = ctx.LibraryContract.GetPackageForNamespace(ns);
+                return $"{pkg}/{outputName}/internal/index.js";
+            }
+
             sb.AppendLine("// Import namespace modules for cross-namespace type references");
             foreach (var ns in namespacesUsed.OrderBy(n => n))
             {
                 var namespaceAlias = GetNamespaceAlias(ns);
-                var outputName = NamespacePathMapper.GetOutputName(ns, ctx);
-                var importPath = string.IsNullOrEmpty(ns)
-                    ? "../../_root/index.js"
-                    : $"../../{outputName}/internal/index.js";
+                var importPath = GetNamespaceModuleImportPath(ns);
                 sb.AppendLine($"import * as {namespaceAlias} from \"{importPath}\";");
             }
             sb.AppendLine();
@@ -138,9 +159,27 @@ public static class ExtensionsEmitter
         sb.AppendLine();
 
         // Import CLR primitive type aliases from System namespace
-        // These are needed for generic type arguments (e.g., Span_1<Char> instead of Span_1<char>)
+        // TypeRefPrinter's generic primitive lifting emits System_Internal.Int32/Char/etc.
+        // This import must work in both normal mode (System emitted locally) and library mode (--lib @tsonic/dotnet).
         sb.AppendLine("// Import CLR type aliases for generic type arguments");
-        sb.AppendLine("import * as System_Internal from \"../../System/internal/index.js\";");
+        {
+            var localNamespaces = graph.Namespaces.Select(n => n.Name).ToHashSet();
+            var systemNs = "System";
+            var outputName = NamespacePathMapper.GetOutputName(systemNs, ctx);
+
+            string systemImportPath;
+            if (localNamespaces.Contains(systemNs) || ctx.LibraryContract == null)
+            {
+                systemImportPath = $"../../{outputName}/internal/index.js";
+            }
+            else
+            {
+                var pkg = ctx.LibraryContract.GetPackageForNamespace(systemNs);
+                systemImportPath = $"{pkg}/{outputName}/internal/index.js";
+            }
+
+            sb.AppendLine($"import * as System_Internal from \"{systemImportPath}\";");
+        }
         sb.AppendLine();
 
         // Import ptr from @tsonic/core (needed for pointer types)
@@ -183,12 +222,9 @@ public static class ExtensionsEmitter
         switch (typeRef)
         {
             case Model.Types.NamedTypeReference named:
-                // Look up the type in the graph
-                if (graph.TypeIndex.TryGetValue(named.FullName, out var typeSymbol))
-                {
-                    // Add the namespace
-                    namespaces.Add(typeSymbol.Namespace);
-                }
+                // Always add the declared namespace, even if the type is external (filtered out in --lib mode).
+                // Relying on graph lookup causes us to miss external namespaces, producing missing imports.
+                namespaces.Add(named.Namespace);
 
                 // Collect from type arguments
                 foreach (var arg in named.TypeArguments)

@@ -90,9 +90,17 @@ public static class SafeToExtendAnalyzer
 
         // Step 2: Filter to interfaces that exist in the graph
         var candidateInterfaces = type.Interfaces
-            .Where(i => IsInterfaceInGraph(i, graph))
+            .Where(i => IsInterfaceAvailable(ctx, i, graph))
+            // Filter known conflicting non-generic System.Collections interfaces.
+            // These are almost always explicitly implemented in CLR and cannot be modeled
+            // as merged extends in TS without TS2320/TS2430.
+            .Where(i => !IsConflictingNonGenericInterface(i))
             .OrderBy(i => GetTypeFullName(i)) // Deterministic ordering
             .ToList();
+
+        // Prefer generic variants when both generic and non-generic versions exist.
+        // Example: IQueryable`1 extends IQueryable; extending both is redundant and can conflict.
+        candidateInterfaces = PreferGenericInterfaceVariants(candidateInterfaces);
 
         // Step 2.5: Build transitive extends set - interfaces that are already covered
         // by other interfaces in our candidate list (to avoid redundant extends)
@@ -119,7 +127,11 @@ public static class SafeToExtendAnalyzer
 
             if (ifaceSymbol == null)
             {
-                // External interface - skip (can't analyze)
+                // External interface (filtered out by --lib):
+                // We cannot analyze member conflicts, but we still want assignability for common CLR interfaces
+                // like IQueryable<T>/IEnumerable<T>. We apply conservative filtering above to avoid known
+                // TS2320/TS2430 hazards (non-generic System.Collections interfaces, redundant non-generic variants).
+                assignable.Add(ifaceRef);
                 continue;
             }
 
@@ -773,6 +785,73 @@ public static class SafeToExtendAnalyzer
         return graph.Namespaces
             .SelectMany(ns => ns.Types)
             .Any(t => t.ClrFullName == fullName && t.Kind == TypeKind.Interface);
+    }
+
+    private static bool IsInterfaceAvailable(BuildContext ctx, TypeReference ifaceRef, SymbolGraph graph)
+    {
+        // Present in the filtered graph
+        if (IsInterfaceInGraph(ifaceRef, graph))
+            return true;
+
+        // Present in the pre-filter library namespace index (external type)
+        var fullName = GetTypeFullName(ifaceRef);
+        return ctx.LibraryNamespaceIndex?.ContainsKey(fullName) ?? false;
+    }
+
+    private static bool IsConflictingNonGenericInterface(TypeReference ifaceRef)
+    {
+        if (ifaceRef is not NamedTypeReference named)
+            return false;
+
+        // Non-generic System.Collections interfaces conflict with generic ones (IEnumerator vs IEnumerator<T> etc.)
+        // C# solves this via explicit interface implementation; TS cannot.
+        return named.FullName switch
+        {
+            "System.Collections.IEnumerable" => true,
+            "System.Collections.IEnumerator" => true,
+            "System.Collections.ICollection" => true,
+            "System.Collections.IList" => true,
+            "System.Collections.IDictionary" => true,
+            "System.Collections.IDictionaryEnumerator" => true,
+            "System.Collections.IComparer" => true,
+            "System.Collections.IEqualityComparer" => true,
+            "System.Collections.IStructuralComparable" => true,
+            "System.Collections.IStructuralEquatable" => true,
+            _ => false
+        };
+    }
+
+    private static List<TypeReference> PreferGenericInterfaceVariants(List<TypeReference> interfaces)
+    {
+        // If we have both Foo and Foo`1, drop Foo. (and similarly for other arities)
+        // This is a purely syntactic filter based on CLR full names.
+        var fullNames = interfaces
+            .Select(GetTypeFullName)
+            .ToHashSet(StringComparer.Ordinal);
+
+        static string StripArity(string fullName)
+        {
+            var tick = fullName.IndexOf('`');
+            return tick >= 0 ? fullName.Substring(0, tick) : fullName;
+        }
+
+        var genericBases = new HashSet<string>(StringComparer.Ordinal);
+        foreach (var name in fullNames)
+        {
+            if (name.Contains('`'))
+            {
+                genericBases.Add(StripArity(name));
+            }
+        }
+
+        return interfaces
+            .Where(i =>
+            {
+                var name = GetTypeFullName(i);
+                if (name.Contains('`')) return true;
+                return !genericBases.Contains(name);
+            })
+            .ToList();
     }
 
     private static TypeSymbol? FindInterface(SymbolGraph graph, TypeReference ifaceRef)
