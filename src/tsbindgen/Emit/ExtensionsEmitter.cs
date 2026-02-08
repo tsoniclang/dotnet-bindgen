@@ -840,10 +840,10 @@ public static class ExtensionsEmitter
 
             // Combine matches using intersection (&). We only use __TsonicPreferExt within
             // EffectiveBucketTypeExpr for specific inheritance-overlap chains, keeping instantiation depth low.
-            if (conditionals.Count == 0)
-                sb.AppendLine("    {}");
-            else
-                sb.AppendLine($"    {string.Join(\" & \", conditionals)}");
+	            if (conditionals.Count == 0)
+	                sb.AppendLine("    {}");
+	            else
+	                sb.AppendLine($"    {string.Join(" & ", conditionals)}");
 
             sb.AppendLine("  );");
             sb.AppendLine();
