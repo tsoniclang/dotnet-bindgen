@@ -640,6 +640,112 @@ public static class ExtensionsEmitter
             sb.AppendLine($"type {extSurfaceTypeName}<TShape> =");
             sb.AppendLine("  (");
 
+            // Determine which buckets should "override" which others.
+            // We only apply override-wins when:
+            //   - receiver type A is a strict subtype of receiver type B, and
+            //   - the buckets share at least one member name (otherwise merging is pointless),
+            //   - and the generic arity matches (so we can reuse inferred type args).
+            //
+            // This avoids the previous O(N) nested __TsonicPreferExt fold over all buckets, which
+            // caused TS2589 "excessively deep" instantiation for large namespaces like System.Linq.
+            var bucketMemberNames = buckets.ToDictionary(
+                b => b,
+                b => b.Methods.Select(m => m.TsEmitName).ToHashSet(StringComparer.Ordinal));
+
+            bool BucketsOverlap(ExtensionBucketPlan a, ExtensionBucketPlan b)
+            {
+                var aNames = bucketMemberNames[a];
+                var bNames = bucketMemberNames[b];
+                // Iterate smaller set for speed.
+                if (aNames.Count > bNames.Count) (aNames, bNames) = (bNames, aNames);
+                foreach (var n in aNames)
+                {
+                    if (bNames.Contains(n)) return true;
+                }
+                return false;
+            }
+
+            ExtensionBucketPlan? FindNearestOverlappingBase(ExtensionBucketPlan derived)
+            {
+                // Candidates are strict supertypes with overlapping members and same arity.
+                var candidates = buckets
+                    .Where(b =>
+                        b != derived &&
+                        b.Key.Arity == derived.Key.Arity &&
+                        IsStrictSubtypeOf(derived.TargetType, b.TargetType) &&
+                        BucketsOverlap(derived, b))
+                    .ToList();
+
+                if (candidates.Count == 0)
+                    return null;
+
+                // Prefer the "nearest" base: a candidate that is not a strict supertype of any other candidate.
+                // (i.e., most specific among the bases)
+                ExtensionBucketPlan? best = null;
+                foreach (var c in candidates)
+                {
+                    var isMoreSpecificThanAllOthers = candidates.All(o => o == c || !IsStrictSubtypeOf(o.TargetType, c.TargetType));
+                    if (!isMoreSpecificThanAllOthers) continue;
+
+                    if (best == null)
+                    {
+                        best = c;
+                        continue;
+                    }
+
+                    // Deterministic tie-breaker if multiple "nearest" candidates exist (e.g., diamonds).
+                    var cmp = string.Compare(c.TargetType.Namespace, best.TargetType.Namespace, StringComparison.Ordinal);
+                    if (cmp != 0)
+                    {
+                        if (cmp < 0) best = c;
+                        continue;
+                    }
+                    cmp = string.Compare(c.TargetType.TsEmitName, best.TargetType.TsEmitName, StringComparison.Ordinal);
+                    if (cmp != 0)
+                    {
+                        if (cmp < 0) best = c;
+                        continue;
+                    }
+                    if (c.Key.Arity < best.Key.Arity)
+                        best = c;
+                }
+
+                return best;
+            }
+
+            var preferredBase = buckets.ToDictionary(b => b, FindNearestOverlappingBase);
+
+            bool HasOverrideAncestor(ExtensionBucketPlan derived, ExtensionBucketPlan ancestor)
+            {
+                var cur = preferredBase[derived];
+                while (cur != null)
+                {
+                    if (cur == ancestor) return true;
+                    cur = preferredBase[cur];
+                }
+                return false;
+            }
+
+            string MarkerTestForBucket(ExtensionBucketPlan bucket, string targetNamespaceAlias)
+            {
+                if (bucket.TargetType.GenericParameters.Length == 0)
+                    return $"{targetNamespaceAlias}.{bucket.TargetType.TsEmitName}";
+
+                var inferClause = string.Join(", ", Enumerable.Range(0, bucket.TargetType.GenericParameters.Length).Select(i => $"infer _{i}"));
+                return $"{targetNamespaceAlias}.{bucket.TargetType.TsEmitName}<{inferClause}>";
+            }
+
+            string EffectiveBucketTypeExpr(ExtensionBucketPlan bucket, string bucketArgs)
+            {
+                var baseBucket = preferredBase[bucket];
+                if (baseBucket == null)
+                    return bucketArgs.Length == 0 ? bucket.BucketInterfaceName : $"{bucket.BucketInterfaceName}<{bucketArgs}>";
+
+                var baseExpr = EffectiveBucketTypeExpr(baseBucket, bucketArgs);
+                var selfExpr = bucketArgs.Length == 0 ? bucket.BucketInterfaceName : $"{bucket.BucketInterfaceName}<{bucketArgs}>";
+                return $"__TsonicPreferExt<{baseExpr}, {selfExpr}>";
+            }
+
             var conditionals = new List<string>();
 
             foreach (var bucket in buckets)
@@ -670,14 +776,54 @@ public static class ExtensionsEmitter
                     var inferClause = string.Join(", ", inferParams);
                     var bucketArgs = string.Join(", ", Enumerable.Range(0, targetType.GenericParameters.Length).Select(i => $"T{i}"));
 
+                    // If this bucket is an override-ancestor for any derived bucket, suppress it when the
+                    // receiver matches a derived bucket (C# "more specific receiver wins").
+                    var derivedMarkers = buckets
+                        .Where(d => d != bucket && HasOverrideAncestor(d, bucket))
+                        .Select(d => MarkerTestForBucket(d, GetNamespaceAlias(d.TargetType.Namespace)))
+                        .Distinct()
+                        .ToList();
+
+                    var trueExpr = EffectiveBucketTypeExpr(bucket, bucketArgs);
+
+                    if (derivedMarkers.Count > 0)
+                    {
+                        // Wrap base bucket with nested derived guards:
+                        //   TShape extends Base<infer ...> ? (TShape extends Derived ? {} : BaseBucket<...>) : {}
+                        var guarded = trueExpr;
+                        for (var i = derivedMarkers.Count - 1; i >= 0; i--)
+                        {
+                            guarded = $"(TShape extends {derivedMarkers[i]} ? {{}} : {guarded})";
+                        }
+                        trueExpr = guarded;
+                    }
+
                     conditionals.Add(
-                        $"(TShape extends {targetNamespaceAlias}.{targetType.TsEmitName}<{inferClause}> ? {bucket.BucketInterfaceName}<{bucketArgs}> : {{}})");
+                        $"(TShape extends {targetNamespaceAlias}.{targetType.TsEmitName}<{inferClause}> ? {trueExpr} : {{}})");
                 }
                 else
                 {
                     var shapeTypeExpression = GetShapeTypeExpressionForConditional(bucket, targetNamespaceAlias);
+
+                    var derivedMarkers = buckets
+                        .Where(d => d != bucket && HasOverrideAncestor(d, bucket))
+                        .Select(d => MarkerTestForBucket(d, GetNamespaceAlias(d.TargetType.Namespace)))
+                        .Distinct()
+                        .ToList();
+
+                    var trueExpr = EffectiveBucketTypeExpr(bucket, "");
+                    if (derivedMarkers.Count > 0)
+                    {
+                        var guarded = trueExpr;
+                        for (var i = derivedMarkers.Count - 1; i >= 0; i--)
+                        {
+                            guarded = $"(TShape extends {derivedMarkers[i]} ? {{}} : {guarded})";
+                        }
+                        trueExpr = guarded;
+                    }
+
                     conditionals.Add(
-                        $"(TShape extends {shapeTypeExpression} ? {bucket.BucketInterfaceName} : {{}})");
+                        $"(TShape extends {shapeTypeExpression} ? {trueExpr} : {{}})");
                 }
             }
 
@@ -692,22 +838,12 @@ public static class ExtensionsEmitter
                 conditionals.Add($"(TShape extends (infer T)[] ? {ienumerableBucket.BucketInterfaceName}<T> : {{}})");
             }
 
-            // Combine matches using __TsonicPreferExt so more specific buckets override overlapping names.
-            // This prevents TypeScript from picking a less-specific overload in fluent chains.
+            // Combine matches using intersection (&). We only use __TsonicPreferExt within
+            // EffectiveBucketTypeExpr for specific inheritance-overlap chains, keeping instantiation depth low.
             if (conditionals.Count == 0)
-            {
                 sb.AppendLine("    {}");
-            }
             else
-            {
-                var expr = conditionals[0];
-                for (var i = 1; i < conditionals.Count; i++)
-                {
-                    expr = $"__TsonicPreferExt<{expr}, {conditionals[i]}>";
-                }
-
-                sb.AppendLine($"    {expr}");
-            }
+                sb.AppendLine($"    {string.Join(\" & \", conditionals)}");
 
             sb.AppendLine("  );");
             sb.AppendLine();
