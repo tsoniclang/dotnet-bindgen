@@ -145,7 +145,13 @@ public static class FacadeEmitter
             // TS2304 FIX: Create TypeNameResolver in facade mode to qualify cross-namespace types
             // This ensures constraints like "T extends IEquatable_1<T>" become "T extends System.IEquatable_1<T>"
             // Use ImportPlan so type-only imports can be referenced without qualification
-            var resolver = new TypeNameResolver(ctx, plan.Graph, importPlan: plan.Imports, currentNamespace: ns.Name, facadeMode: false);
+            var resolver = new TypeNameResolver(
+                ctx,
+                plan.Graph,
+                importPlan: plan.Imports,
+                currentNamespace: ns.Name,
+                facadeMode: false,
+                libraryImportStyle: Plan.LibraryImportStyle.Facade);
 
             // Track friendly aliases (arityless) to avoid duplicates
             var friendlyAliases = new HashSet<string>();
@@ -462,7 +468,13 @@ public static class FacadeEmitter
         sb.AppendLine("// Flattened exports from static classes");
 
         // Create resolver for type references
-        var resolver = new TypeNameResolver(ctx, plan.Graph, importPlan: plan.Imports, currentNamespace: ns.Name, facadeMode: false);
+        var resolver = new TypeNameResolver(
+            ctx,
+            plan.Graph,
+            importPlan: plan.Imports,
+            currentNamespace: ns.Name,
+            facadeMode: false,
+            libraryImportStyle: Plan.LibraryImportStyle.Facade);
 
         foreach (var type in typesToFlatten)
         {

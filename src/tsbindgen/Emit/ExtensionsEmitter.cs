@@ -158,6 +158,11 @@ public static class ExtensionsEmitter
         sb.AppendLine("import type { sbyte, byte, short, ushort, int, uint, long, ulong, int128, uint128, half, float, double, decimal, nint, nuint, char } from '@tsonic/core/types.js';");
         sb.AppendLine();
 
+        // Import Rewrap helper from @tsonic/core (sticky extension scopes across fluent chains)
+        sb.AppendLine("// Import sticky extension scope helper");
+        sb.AppendLine("import type { Rewrap } from '@tsonic/core/lang.js';");
+        sb.AppendLine();
+
         // Import CLR primitive type aliases from System namespace
         // TypeRefPrinter's generic primitive lifting emits System_Internal.Int32/Char/etc.
         // This import must work in both normal mode (System emitted locally) and library mode (--lib @tsonic/dotnet).
@@ -197,8 +202,7 @@ public static class ExtensionsEmitter
         // Emit each bucket interface
         foreach (var bucket in plan.Buckets)
         {
-            var extensionMethodsType = GetExtensionMethodsTypeName(bucket.DeclaringNamespace);
-            EmitBucketInterface(sb, ctx, bucket, resolver, extensionMethodsType);
+            EmitBucketInterface(sb, ctx, bucket, resolver);
             sb.AppendLine();
         }
 
@@ -290,8 +294,7 @@ public static class ExtensionsEmitter
         StringBuilder sb,
         BuildContext ctx,
         ExtensionBucketPlan bucket,
-        TypeNameResolver resolver,
-        string extensionMethodsTypeName)
+        TypeNameResolver resolver)
     {
         var targetType = bucket.TargetType;
 
@@ -329,7 +332,7 @@ public static class ExtensionsEmitter
         // Group by base CLR name and emit multiple signatures with same name
         foreach (var method in bucket.Methods)
         {
-            EmitExtensionMethod(sb, ctx, method, resolver, targetType.GenericParameters, extensionMethodsTypeName);
+            EmitExtensionMethod(sb, ctx, method, resolver, targetType.GenericParameters);
         }
 
         sb.AppendLine("}");
@@ -346,8 +349,7 @@ public static class ExtensionsEmitter
         BuildContext ctx,
         MethodSymbol method,
         TypeNameResolver resolver,
-        IReadOnlyList<Model.Symbols.GenericParameterSymbol> targetGenericParameters,
-        string extensionMethodsTypeName)
+        IReadOnlyList<Model.Symbols.GenericParameterSymbol> targetGenericParameters)
     {
         // Skip the first parameter (the 'this' parameter) for extension methods
         var instanceParams = method.Parameters.Skip(1).ToArray();
@@ -413,7 +415,7 @@ public static class ExtensionsEmitter
 
         // Return type - apply generic substitution
         var returnType = PrintTypeWithSubstitution(method.ReturnType, resolver, ctx, allowedTypeParams, genericSubstitution);
-        sb.Append($": {extensionMethodsTypeName}<{returnType}>");
+        sb.Append($": Rewrap<this, {returnType}>");
 
         sb.AppendLine(";");
     }
@@ -540,6 +542,15 @@ public static class ExtensionsEmitter
             return;
         }
 
+        // Internal helper types for "sticky" extension scopes across fluent chains.
+        // Each ExtensionMethods_<Namespace><TShape> helper attaches an applier into __tsonic_ext so
+        // extension methods can preserve all active namespaces via Rewrap<this, ReturnShape>.
+        sb.AppendLine("// Internal helper types for sticky extension scopes");
+        sb.AppendLine("type __TsonicExtMapOf<T> = T extends { __tsonic_ext?: infer M } ? M : {};");
+        sb.AppendLine("type __TsonicMergeExtMaps<A, B> = Omit<A, keyof B> & B;");
+        sb.AppendLine("type __TsonicWithExt<TShape, K extends string, TApplier> = { __tsonic_ext?: __TsonicMergeExtMaps<__TsonicExtMapOf<TShape>, { [P in K]: TApplier }> };");
+        sb.AppendLine();
+
         // One helper per declaring namespace (C# using semantics)
         foreach (var group in plan.Buckets
                      .GroupBy(b => b.DeclaringNamespace)
@@ -547,11 +558,15 @@ public static class ExtensionsEmitter
         {
             var declaringNamespace = group.Key;
             var extensionMethodsTypeName = GetExtensionMethodsTypeName(declaringNamespace);
+            var nsAlias = GetNamespaceAlias(declaringNamespace);
+            var extSurfaceTypeName = $"__TsonicExtSurface_{nsAlias}";
+            var extApplierTypeName = $"__TsonicExtApplier_{nsAlias}";
+            var extKey = string.IsNullOrEmpty(declaringNamespace) ? "_root" : declaringNamespace;
 
             sb.AppendLine($"// Generic helper type for extension methods in namespace: {declaringNamespace}");
 
             var buckets = group
-                .OrderBy(b => b.TargetType.Namespace, StringComparer.Ordinal)
+                 .OrderBy(b => b.TargetType.Namespace, StringComparer.Ordinal)
                 .ThenBy(b => b.TargetType.TsEmitName, StringComparer.Ordinal)
                 .ThenBy(b => b.Key.Arity)
                 .ToList();
@@ -578,10 +593,8 @@ public static class ExtensionsEmitter
                 sb.AppendLine("type __TsonicPreferExt<A, B> = Omit<A, keyof B> & B;");
             }
 
-            sb.AppendLine($"export type {extensionMethodsTypeName}<TShape> =");
-            sb.AppendLine("  TShape extends null | undefined ? TShape");
-            sb.AppendLine("  : TShape extends void ? void");
-            sb.AppendLine("  : TShape & (");
+            sb.AppendLine($"type {extSurfaceTypeName}<TShape> =");
+            sb.AppendLine("  (");
 
             var conditionals = new List<string>();
 
@@ -657,6 +670,17 @@ public static class ExtensionsEmitter
             }
 
             sb.AppendLine("  );");
+            sb.AppendLine();
+
+            // Applier function type stored in __tsonic_ext (used by Rewrap<this, ReturnShape>)
+            sb.AppendLine($"type {extApplierTypeName} = <TShape>(shape: TShape) => {extSurfaceTypeName}<TShape>;");
+            sb.AppendLine();
+
+            // Public wrapper type: attach this namespace's applier and apply its surface.
+            sb.AppendLine($"export type {extensionMethodsTypeName}<TShape> =");
+            sb.AppendLine("  TShape extends null | undefined ? TShape");
+            sb.AppendLine("  : TShape extends void ? void");
+            sb.AppendLine($"  : TShape & __TsonicWithExt<TShape, \"{extKey}\", {extApplierTypeName}> & {extSurfaceTypeName}<TShape>;");
             sb.AppendLine();
         }
     }

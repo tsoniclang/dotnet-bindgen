@@ -348,7 +348,10 @@ public static class Builder
         }
 
         // Plan imports and aliases
-        var imports = ImportPlanner.PlanImports(ctx, graph, importGraph);
+        // - Facade imports: use library public facade modules and facade export names (nice TS surface).
+        // - Internal imports: use library internal index modules and arity-stable names (airplane-grade type relationships).
+        var importsFacade = ImportPlanner.PlanImports(ctx, graph, importGraph, LibraryImportStyle.Facade);
+        var importsInternal = ImportPlanner.PlanImports(ctx, graph, importGraph, LibraryImportStyle.InternalIndex);
 
         // Determine stable emission order
         var orderPlanner = new EmitOrderPlanner(ctx);
@@ -386,7 +389,7 @@ public static class Builder
 
         // PR B: Compute SCC buckets to eliminate circular namespace dependencies
         ctx.Log("Build", "\n--- Phase 4.12: SCC Bucketing ---");
-        var sccPlan = Plan.SCCPlanner.PlanSCCBuckets(ctx, imports);
+        var sccPlan = Plan.SCCPlanner.PlanSCCBuckets(ctx, importsFacade);
         ctx.Log("Build", $"Computed {sccPlan.Buckets.Count} SCC buckets ({sccPlan.Buckets.Count(b => b.IsMultiNamespace)} multi-namespace)");
 
         // PR C: Analyze interface conformance and plan honest emission
@@ -405,7 +408,8 @@ public static class Builder
         var emissionPlan = new EmissionPlan
         {
             Graph = graph,
-            Imports = imports,
+            Imports = importsFacade,
+            ImportsInternal = importsInternal,
             EmissionOrder = order,
             StaticFlattening = staticFlattening,
             StaticConflicts = staticConflicts,
@@ -560,6 +564,7 @@ public sealed record EmissionPlan
 {
     public required SymbolGraph Graph { get; init; }
     public required ImportPlan Imports { get; init; }
+    public required ImportPlan ImportsInternal { get; init; }
     public required EmitOrder EmissionOrder { get; init; }
 
     /// <summary>

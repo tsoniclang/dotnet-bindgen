@@ -100,6 +100,30 @@ public static class TypeRefPrinter
             return "unknown";
         }
 
+        // LIBRARY MODE (InternalIndex): Multi-arity family base names must be lowered to arity-stable internal names.
+        //
+        // Example:
+        //   NamedTypeReference.FullName = "System.Linq.IQueryable" (family base), TypeArguments = [TEntity]
+        //   Facade surface uses: IQueryable<TEntity> (conditional alias)
+        //   But internal/index.d.ts must use: IQueryable_1<TEntity> (real interface) so members propagate.
+        //
+        // Without this, interfaces can claim branded membership (via __tsonic_iface_*) but still fail
+        // structural assignability (missing Expression/Provider/etc.), which breaks extension methods.
+        if (resolver.LibraryImportStyle == Plan.LibraryImportStyle.InternalIndex &&
+            ctx.LibraryContract != null &&
+            named.TypeArguments.Count > 0)
+        {
+            var fullName = named.FullName;
+            var commaIndex = fullName.IndexOf(',');
+            if (commaIndex >= 0)
+                fullName = fullName.Substring(0, commaIndex).Trim();
+
+            if (ctx.LibraryContract.FacadeFamilies.ContainsKey(fullName))
+            {
+                baseName = $"{baseName}_{named.TypeArguments.Count}";
+            }
+        }
+
         string result;
 
         // Handle generic type arguments

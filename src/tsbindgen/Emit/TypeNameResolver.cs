@@ -19,17 +19,26 @@ public sealed class TypeNameResolver
     private readonly ImportPlan? _importPlan;
     private readonly string? _currentNamespace;
     private readonly bool _facadeMode;
+    private readonly Plan.LibraryImportStyle _libraryImportStyle;
 
-    public TypeNameResolver(BuildContext ctx, SymbolGraph graph, ImportPlan? importPlan = null, string? currentNamespace = null, bool facadeMode = false)
+    public TypeNameResolver(
+        BuildContext ctx,
+        SymbolGraph graph,
+        ImportPlan? importPlan = null,
+        string? currentNamespace = null,
+        bool facadeMode = false,
+        Plan.LibraryImportStyle libraryImportStyle = Plan.LibraryImportStyle.Facade)
     {
         _ctx = ctx;
         _graph = graph;
         _importPlan = importPlan;
         _currentNamespace = currentNamespace;
         _facadeMode = facadeMode;
+        _libraryImportStyle = libraryImportStyle;
     }
 
     public bool IsFacadeMode => _facadeMode;
+    public Plan.LibraryImportStyle LibraryImportStyle => _libraryImportStyle;
 
     /// <summary>
     /// The current namespace being emitted (if known).

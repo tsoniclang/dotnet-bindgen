@@ -24,7 +24,8 @@ public static class PhaseGate
     public static void Validate(BuildContext ctx, EmissionPlan plan, InterfaceConstraintFindings constraintFindings)
     {
         var graph = plan.Graph;
-        var imports = plan.Imports;
+        var importsFacade = plan.Imports;
+        var importsInternal = plan.ImportsInternal;
 
         ctx.Log("PhaseGate", "Validating symbol graph before emission...");
 
@@ -44,13 +45,13 @@ public static class PhaseGate
         ValidationCore.ValidateInterfaceConformance(ctx, graph, plan.HonestEmission, validationContext);
         ValidationCore.ValidateInheritance(ctx, graph, validationContext);
         ValidationCore.ValidateEmitScopes(ctx, graph, validationContext);
-        ValidationCore.ValidateImports(ctx, graph, imports, plan.SCCBuckets, validationContext);
+        ValidationCore.ValidateImports(ctx, graph, importsFacade, plan.SCCBuckets, validationContext);
         ValidationCore.ValidatePolicyCompliance(ctx, graph, validationContext);
 
         // Step 9: PhaseGate Hardening - Additional validation checks
         Views.Validate(ctx, graph, validationContext);
         Names.ValidateFinalNames(ctx, graph, validationContext);
-        Names.ValidateAliases(ctx, graph, imports, validationContext);
+        Names.ValidateAliases(ctx, graph, importsFacade, validationContext);
 
         // PhaseGate Hardening - M1: Identifier sanitization verification
         Names.ValidateIdentifiers(ctx, graph, validationContext);
@@ -111,37 +112,45 @@ public static class PhaseGate
         // PhaseGate Hardening - M7c: Type reference resolution (PG_REF_001)
         // Validates all type references can be resolved via import/local/built-in
         // Catches TS2304 "Cannot find name" at planning time
-        Types.ValidateTypeReferenceResolution(ctx, graph, imports, validationContext);
+        Types.ValidateTypeReferenceResolution(ctx, graph, importsFacade, validationContext);
 
         // PhaseGate Hardening - M7d: Generic arity consistency (PG_ARITY_001)
         // Validates generic type arity matches across aliases and type references
         // Catches TS2315 "Type is not generic" at planning time
-        Types.ValidateGenericArityConsistency(ctx, graph, imports, validationContext);
+        Types.ValidateGenericArityConsistency(ctx, graph, importsFacade, validationContext);
+
+        // Validate internal import plan too (airplane-grade internal/index.d.ts correctness).
+        // This catches library-mode issues where facade imports are type-correct but internal imports
+        // (used by InternalIndexEmitter) would be missing or mismatched.
+        ValidationCore.ValidateImports(ctx, graph, importsInternal, plan.SCCBuckets, validationContext);
+        Names.ValidateAliases(ctx, graph, importsInternal, validationContext);
+        Types.ValidateTypeReferenceResolution(ctx, graph, importsInternal, validationContext);
+        Types.ValidateGenericArityConsistency(ctx, graph, importsInternal, validationContext);
 
         // PhaseGate Hardening - M8: Public API surface validation (PG_API_001, PG_API_002)
         // Validates public APIs don't reference non-emitted/internal types
         // THIS MUST RUN BEFORE PG_IMPORT_001 - it's more fundamental
-        ImportExport.ValidatePublicApiSurface(ctx, graph, imports, validationContext);
+        ImportExport.ValidatePublicApiSurface(ctx, graph, importsFacade, validationContext);
 
         // PhaseGate Hardening - M9: Import completeness (PG_IMPORT_001)
         // Validates every foreign type used in signatures has a corresponding import
-        ImportExport.ValidateImportCompleteness(ctx, graph, imports, validationContext);
+        ImportExport.ValidateImportCompleteness(ctx, graph, importsFacade, validationContext);
 
         // PhaseGate Hardening - M10: Export completeness (PG_EXPORT_001)
         // Validates imported types are actually exported by source namespaces
-        ImportExport.ValidateExportCompleteness(ctx, graph, imports, validationContext);
+        ImportExport.ValidateExportCompleteness(ctx, graph, importsFacade, validationContext);
 
         // PhaseGate Hardening - M11: Extension import completeness (PG_EXT_IMPORT_001)
         // Validates extension bucket imports are resolvable
-        ImportExport.ValidateExtensionImportCompleteness(ctx, graph, plan.ExtensionMethods, imports, validationContext);
+        ImportExport.ValidateExtensionImportCompleteness(ctx, graph, plan.ExtensionMethods, importsFacade, validationContext);
 
         // PhaseGate Hardening - M17: Heritage value imports (PG_IMPORT_002)
         // Validates base classes and interfaces in heritage clauses use value imports (not type-only)
-        ImportExport.ValidateHeritageValueImports(ctx, graph, imports, validationContext);
+        ImportExport.ValidateHeritageValueImports(ctx, graph, importsFacade, validationContext);
 
         // PhaseGate Hardening - M18: Qualified export paths (PG_EXPORT_002)
         // Validates qualified names like 'System_Internal.System.Exception$instance' have valid export paths
-        ImportExport.ValidateQualifiedExportPaths(ctx, graph, imports, validationContext);
+        ImportExport.ValidateQualifiedExportPaths(ctx, graph, importsFacade, validationContext);
 
         // PhaseGate Hardening - M19: Plan integrity (PG_PLAN_001 through PG_PLAN_005)
         // Validates all Shape plans reference valid types/members and are consistent with graph
@@ -149,7 +158,7 @@ public static class PhaseGate
 
         // PhaseGate Hardening - M20: Extension method conformance (PG_EXT_001, PG_EXT_002)
         // Validates extension method buckets have correct arity and no erased 'any' types
-        Validation.Extensions.Validate(ctx, graph, plan.ExtensionMethods, imports, validationContext);
+        Validation.Extensions.Validate(ctx, graph, plan.ExtensionMethods, importsFacade, validationContext);
 
         // Library Mode Validation (LIB001-003)
         // Only run when in library mode (BuildContext.LibraryContract is non-null)

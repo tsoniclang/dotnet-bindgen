@@ -114,20 +114,11 @@ public static class PropertyOverrideUnifier
         if (typeStringCounts.Count <= 1)
             return;
 
-        // E: SAFETY: Skip unification if any type string contains generic parameters
-        // Generic unions like "T | KeyValuePair_2<TKey, TValue>" cause TS2304 errors
-        // because generic parameters come from different scopes
-        foreach (var tsType in typeStringCounts.Keys)
-        {
-            // Check if type contains common type parameter patterns:
-            // - Single capital letter: T, E, K, V
-            // - Common patterns: TKey, TValue, TResult, TSource, etc.
-            if (System.Text.RegularExpressions.Regex.IsMatch(tsType, @"\b(T|E|K|V|TKey|TValue|TResult|TSource|TElement|TItem)\b"))
-            {
-                // Skip this property group - contains generic type parameters
-                return;
-            }
-        }
+        // SAFETY: Skip unification if any override type references generic parameters.
+        // Generic unions like "DbContextOptions | DbContextOptions_1<TContext>" are invalid
+        // because the generic parameters come from different declaring scopes.
+        if (group.Any((it) => ContainsGenericParameters(it.Property.PropertyType)))
+            return;
 
         // Create union type from all distinct TypeScript types
         // Sort for deterministic output
@@ -143,6 +134,21 @@ public static class PropertyOverrideUnifier
             var key = (declType.StableId.ToString(), prop.StableId.ToString());
             plan.PropertyTypeOverrides[key] = unionType;
         }
+    }
+
+    private static bool ContainsGenericParameters(TypeReference typeRef)
+    {
+        return typeRef.Kind switch
+        {
+            TypeReferenceKind.GenericParameter => true,
+            TypeReferenceKind.Array => ContainsGenericParameters(((ArrayTypeReference)typeRef).ElementType),
+            TypeReferenceKind.Pointer => ContainsGenericParameters(((PointerTypeReference)typeRef).PointeeType),
+            TypeReferenceKind.ByRef => ContainsGenericParameters(((ByRefTypeReference)typeRef).ReferencedType),
+            TypeReferenceKind.Nested => ContainsGenericParameters(((NestedTypeReference)typeRef).FullReference),
+            TypeReferenceKind.Named => ((NamedTypeReference)typeRef).TypeArguments.Any(ContainsGenericParameters),
+            TypeReferenceKind.Placeholder => false,
+            _ => false
+        };
     }
 
     /// <summary>
