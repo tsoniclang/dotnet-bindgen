@@ -848,8 +848,18 @@ public static class ExtensionsEmitter
             sb.AppendLine("  );");
             sb.AppendLine();
 
-            // Applier function type stored in __tsonic_ext (used by Rewrap<this, ReturnShape>)
-            sb.AppendLine($"type {extApplierTypeName} = <TShape>(shape: TShape) => {extSurfaceTypeName}<TShape>;");
+            // Applier interface stored in __tsonic_ext (used by Rewrap<this, ReturnShape>).
+            //
+            // IMPORTANT: This MUST be an HKT-style "applier" (not a generic function type).
+            // Generic function appliers cannot be reliably re-applied to a new shape in TS,
+            // because inference may instantiate the generic with a structural supertype.
+            //
+            // The HKT encoding forces exact substitution via intersection:
+            //   __TsonicApplyApplier<A, Shape> = (A & { __tsonic_shape: Shape })["__tsonic_type"]
+            sb.AppendLine($"interface {extApplierTypeName} {{");
+            sb.AppendLine("  __tsonic_shape: unknown;");
+            sb.AppendLine($"  __tsonic_type: {extSurfaceTypeName}<this[\"__tsonic_shape\"]>;");
+            sb.AppendLine("}");
             sb.AppendLine();
 
             // Public wrapper type: attach this namespace's applier and apply its surface.
