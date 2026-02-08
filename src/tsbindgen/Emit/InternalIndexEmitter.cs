@@ -456,7 +456,7 @@ public static class InternalIndexEmitter
 
 	        void AddItems(string list)
 	        {
-	            foreach (var raw in list.Split(','))
+	            foreach (var raw in SplitTopLevelCommaSeparated(list))
 	            {
 	                var item = raw.Trim();
 	                if (item.Length == 0)
@@ -470,6 +470,63 @@ public static class InternalIndexEmitter
 	        AddItems(additionalList);
 	
 	        return string.Join(", ", items);
+	    }
+
+	    private static IEnumerable<string> SplitTopLevelCommaSeparated(string list)
+	    {
+	        // Split a comma-separated list while respecting nested generic argument lists.
+	        //
+	        // Example:
+	        //   IAdd_3<Foo<T>, Foo<T>, Foo<T>>, IBit_3<Foo<T>, Foo<T>, Foo<T>>
+	        //
+	        // We must NOT split on commas inside `<...>`.
+	        var start = 0;
+	        var angleDepth = 0;
+	        var parenDepth = 0;
+	        var bracketDepth = 0;
+	        var braceDepth = 0;
+
+	        for (var i = 0; i < list.Length; i++)
+	        {
+	            var c = list[i];
+	            switch (c)
+	            {
+	                case '<':
+	                    angleDepth++;
+	                    break;
+	                case '>':
+	                    if (angleDepth > 0) angleDepth--;
+	                    break;
+	                case '(':
+	                    parenDepth++;
+	                    break;
+	                case ')':
+	                    if (parenDepth > 0) parenDepth--;
+	                    break;
+	                case '[':
+	                    bracketDepth++;
+	                    break;
+	                case ']':
+	                    if (bracketDepth > 0) bracketDepth--;
+	                    break;
+	                case '{':
+	                    braceDepth++;
+	                    break;
+	                case '}':
+	                    if (braceDepth > 0) braceDepth--;
+	                    break;
+	                case ',':
+	                    if (angleDepth == 0 && parenDepth == 0 && bracketDepth == 0 && braceDepth == 0)
+	                    {
+	                        yield return list.Substring(start, i - start);
+	                        start = i + 1;
+	                    }
+	                    break;
+	            }
+	        }
+
+	        if (start <= list.Length)
+	            yield return list.Substring(start);
 	    }
 
     /// <summary>
