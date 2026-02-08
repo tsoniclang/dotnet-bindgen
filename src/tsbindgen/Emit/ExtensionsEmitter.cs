@@ -207,7 +207,7 @@ public static class ExtensionsEmitter
         }
 
         // Emit per-namespace ExtensionMethods_<Namespace><TShape> helper types
-        EmitExtensionMethodsHelpers(sb, plan);
+        EmitExtensionMethodsHelpers(sb, plan, graph);
 
         return sb.ToString();
     }
@@ -535,7 +535,7 @@ public static class ExtensionsEmitter
         };
     }
 
-    private static void EmitExtensionMethodsHelpers(StringBuilder sb, ExtensionMethodsPlan plan)
+    private static void EmitExtensionMethodsHelpers(StringBuilder sb, ExtensionMethodsPlan plan, SymbolGraph graph)
     {
         if (plan.Buckets.Length == 0)
         {
@@ -549,7 +549,56 @@ public static class ExtensionsEmitter
         sb.AppendLine("type __TsonicExtMapOf<T> = T extends { __tsonic_ext?: infer M } ? M : {};");
         sb.AppendLine("type __TsonicMergeExtMaps<A, B> = Omit<A, keyof B> & B;");
         sb.AppendLine("type __TsonicWithExt<TShape, K extends string, TApplier> = { __tsonic_ext?: __TsonicMergeExtMaps<__TsonicExtMapOf<TShape>, { [P in K]: TApplier }> };");
+        sb.AppendLine("type __TsonicPreferExt<A, B> = Omit<A, keyof B> & B;");
         sb.AppendLine();
+
+        // Build a fast lookup for inheritance traversal (ClrFullName -> first TypeSymbol)
+        var typeByClrFullName = new Dictionary<string, Model.Symbols.TypeSymbol>();
+        foreach (var t in graph.TypeIndex.Values)
+        {
+            if (!typeByClrFullName.ContainsKey(t.ClrFullName))
+                typeByClrFullName[t.ClrFullName] = t;
+        }
+
+        bool IsStrictSubtypeOf(Model.Symbols.TypeSymbol derived, Model.Symbols.TypeSymbol @base)
+        {
+            if (derived.ClrFullName == @base.ClrFullName)
+                return false;
+
+            var visited = new HashSet<string>();
+            return IsSubtypeOfFullName(derived, @base.ClrFullName, visited);
+        }
+
+        bool IsSubtypeOfFullName(Model.Symbols.TypeSymbol type, string baseClrFullName, HashSet<string> visited)
+        {
+            if (!visited.Add(type.ClrFullName))
+                return false;
+
+            if (type.BaseType is Model.Types.NamedTypeReference namedBase)
+            {
+                if (namedBase.FullName == baseClrFullName)
+                    return true;
+
+                if (typeByClrFullName.TryGetValue(namedBase.FullName, out var baseSym) &&
+                    IsSubtypeOfFullName(baseSym, baseClrFullName, visited))
+                    return true;
+            }
+
+            foreach (var ifaceRef in type.Interfaces)
+            {
+                if (ifaceRef is not Model.Types.NamedTypeReference namedIface)
+                    continue;
+
+                if (namedIface.FullName == baseClrFullName)
+                    return true;
+
+                if (typeByClrFullName.TryGetValue(namedIface.FullName, out var ifaceSym) &&
+                    IsSubtypeOfFullName(ifaceSym, baseClrFullName, visited))
+                    return true;
+            }
+
+            return false;
+        }
 
         // One helper per declaring namespace (C# using semantics)
         foreach (var group in plan.Buckets
@@ -566,32 +615,27 @@ public static class ExtensionsEmitter
             sb.AppendLine($"// Generic helper type for extension methods in namespace: {declaringNamespace}");
 
             var buckets = group
-                 .OrderBy(b => b.TargetType.Namespace, StringComparer.Ordinal)
+                .OrderBy(b => b.TargetType.Namespace, StringComparer.Ordinal)
                 .ThenBy(b => b.TargetType.TsEmitName, StringComparer.Ordinal)
                 .ThenBy(b => b.Key.Arity)
                 .ToList();
 
-            // System.Linq has overlapping extension methods for IEnumerable<T> and IQueryable<T>.
-            // In C#, Queryable.* should win for IQueryable<T> receivers (more specific match).
-            // Model this by including Enumerable extensions but letting Queryable members override
-            // on overlapping method names (where/select/etc).
-            ExtensionBucketPlan? ienumerable1Bucket = null;
-            ExtensionBucketPlan? iqueryable1Bucket = null;
-            if (declaringNamespace == "System.Linq")
+            // Sort buckets by inheritance specificity so more specific receiver types override
+            // overlapping method/property names from less specific buckets.
+            // This is generic (no IQueryable special-casing) and matches C# "more specific receiver wins" intuition.
+            buckets.Sort((a, b) =>
             {
-                ienumerable1Bucket = buckets.FirstOrDefault(b =>
-                    b.TargetType.Namespace == "System.Collections.Generic" &&
-                    b.TargetType.TsEmitName == "IEnumerable_1");
-                iqueryable1Bucket = buckets.FirstOrDefault(b =>
-                    b.TargetType.Namespace == "System.Linq" &&
-                    b.TargetType.TsEmitName == "IQueryable_1");
-            }
-            var preferQueryableOverEnumerable = ienumerable1Bucket != null && iqueryable1Bucket != null;
-
-            if (preferQueryableOverEnumerable)
-            {
-                sb.AppendLine("type __TsonicPreferExt<A, B> = Omit<A, keyof B> & B;");
-            }
+                var aSubB = IsStrictSubtypeOf(a.TargetType, b.TargetType);
+                var bSubA = IsStrictSubtypeOf(b.TargetType, a.TargetType);
+                if (aSubB && !bSubA) return 1;   // a is more specific -> after b
+                if (bSubA && !aSubB) return -1;  // b is more specific -> after a
+                // Stable deterministic fallback
+                var c = string.Compare(a.TargetType.Namespace, b.TargetType.Namespace, StringComparison.Ordinal);
+                if (c != 0) return c;
+                c = string.Compare(a.TargetType.TsEmitName, b.TargetType.TsEmitName, StringComparison.Ordinal);
+                if (c != 0) return c;
+                return a.Key.Arity.CompareTo(b.Key.Arity);
+            });
 
             sb.AppendLine($"type {extSurfaceTypeName}<TShape> =");
             sb.AppendLine("  (");
@@ -626,21 +670,6 @@ public static class ExtensionsEmitter
                     var inferClause = string.Join(", ", inferParams);
                     var bucketArgs = string.Join(", ", Enumerable.Range(0, targetType.GenericParameters.Length).Select(i => $"T{i}"));
 
-                    if (preferQueryableOverEnumerable && bucket == ienumerable1Bucket)
-                    {
-                        var systemLinqAlias = GetNamespaceAlias("System.Linq");
-                        conditionals.Add(
-                            $"(TShape extends {targetNamespaceAlias}.{targetType.TsEmitName}<{inferClause}> ? (TShape extends {systemLinqAlias}.IQueryable ? {{}} : {bucket.BucketInterfaceName}<{bucketArgs}>) : {{}})");
-                        continue;
-                    }
-
-                    if (preferQueryableOverEnumerable && bucket == iqueryable1Bucket)
-                    {
-                        conditionals.Add(
-                            $"(TShape extends {targetNamespaceAlias}.{targetType.TsEmitName}<{inferClause}> ? __TsonicPreferExt<{ienumerable1Bucket!.BucketInterfaceName}<{bucketArgs}>, {bucket.BucketInterfaceName}<{bucketArgs}>> : {{}})");
-                        continue;
-                    }
-
                     conditionals.Add(
                         $"(TShape extends {targetNamespaceAlias}.{targetType.TsEmitName}<{inferClause}> ? {bucket.BucketInterfaceName}<{bucketArgs}> : {{}})");
                 }
@@ -663,10 +692,21 @@ public static class ExtensionsEmitter
                 conditionals.Add($"(TShape extends (infer T)[] ? {ienumerableBucket.BucketInterfaceName}<T> : {{}})");
             }
 
-            for (var i = 0; i < conditionals.Count; i++)
+            // Combine matches using __TsonicPreferExt so more specific buckets override overlapping names.
+            // This prevents TypeScript from picking a less-specific overload in fluent chains.
+            if (conditionals.Count == 0)
             {
-                var suffix = i == conditionals.Count - 1 ? string.Empty : " &";
-                sb.AppendLine($"    {conditionals[i]}{suffix}");
+                sb.AppendLine("    {}");
+            }
+            else
+            {
+                var expr = conditionals[0];
+                for (var i = 1; i < conditionals.Count; i++)
+                {
+                    expr = $"__TsonicPreferExt<{expr}, {conditionals[i]}>";
+                }
+
+                sb.AppendLine($"    {expr}");
             }
 
             sb.AppendLine("  );");
