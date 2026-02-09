@@ -15,7 +15,11 @@ namespace tsbindgen.Plan;
 /// </summary>
 public static class ImportPlanner
 {
-    public static ImportPlan PlanImports(BuildContext ctx, SymbolGraph graph, ImportGraphData importGraph)
+    public static ImportPlan PlanImports(
+        BuildContext ctx,
+        SymbolGraph graph,
+        ImportGraphData importGraph,
+        LibraryImportStyle libraryImportStyle = LibraryImportStyle.Facade)
     {
         ctx.Log("ImportPlanner", "Planning import statements...");
 
@@ -29,7 +33,7 @@ public static class ImportPlanner
         // Plan imports for each namespace
         foreach (var ns in graph.Namespaces)
         {
-            PlanNamespaceImports(ctx, ns, graph, importGraph, plan);
+            PlanNamespaceImports(ctx, ns, graph, importGraph, plan, libraryImportStyle);
             PlanNamespaceExports(ctx, ns, plan);
         }
 
@@ -43,7 +47,8 @@ public static class ImportPlanner
         NamespaceSymbol ns,
         SymbolGraph graph,
         ImportGraphData importGraph,
-        ImportPlan plan)
+        ImportPlan plan,
+        LibraryImportStyle libraryImportStyle)
     {
         if (!importGraph.NamespaceDependencies.TryGetValue(ns.Name, out var dependencies))
         {
@@ -92,7 +97,11 @@ public static class ImportPlanner
                 if (libraryClrNames.Count > 0)
                 {
                     var targetPackage = ctx.LibraryContract.GetPackageForNamespace(targetNamespace);
-                    importGroups.Add(($"{targetPackage}/{targetNamespace}.js", true, libraryClrNames));
+                    var libraryImportPath = libraryImportStyle == LibraryImportStyle.InternalIndex
+                        ? $"{targetPackage}/{targetNamespace}/internal/index.js"
+                        : $"{targetPackage}/{targetNamespace}.js";
+
+                    importGroups.Add((libraryImportPath, true, libraryClrNames));
                 }
 
                 if (localClrNames.Count > 0)
@@ -148,8 +157,14 @@ public static class ImportPlanner
                 // Non-generic types with generic siblings get _0 suffix: Task → Task_0
                 if (isLibraryImport)
                 {
-                    tsName = GetFacadeExportName(tsName, clrName, ctx.LibraryContract!);
-                    ctx.Log("ImportPlanner", $"Library facade name: {clrName} → {tsName}");
+                    // Library facade fix:
+                    // - Facade style imports map internal names to facade export names (drop arity).
+                    // - InternalIndex style imports keep internal arity-stable names.
+                    if (libraryImportStyle == LibraryImportStyle.Facade)
+                    {
+                        tsName = GetFacadeExportName(tsName, clrName, ctx.LibraryContract!);
+                        ctx.Log("ImportPlanner", $"Library facade name: {clrName} → {tsName}");
+                    }
                 }
 
                 // PRE-EMIT GUARD: Detect assembly-qualified garbage before it reaches output
@@ -239,8 +254,9 @@ public static class ImportPlanner
                         var tsNameForClr = graph.TryGetType(c, out var ts) && ts != null
                             ? ctx.Renamer.GetFinalTypeName(ts)
                             : GetTypeScriptNameForExternalType(c);
-                        // LIBRARY FACADE FIX: Apply facade transform for matching if this is a library import
-                        if (isLibraryImport)
+                        // LIBRARY IMPORT: In facade style, apply facade transform for matching.
+                        // In internal-index style, keep arity-stable internal names.
+                        if (isLibraryImport && libraryImportStyle == LibraryImportStyle.Facade)
                             tsNameForClr = GetFacadeExportName(tsNameForClr, c, ctx.LibraryContract!);
                         return tsNameForClr == ti.TypeName;
                     })
@@ -291,8 +307,8 @@ public static class ImportPlanner
                     tsName = GetTypeScriptNameForExternalType(clrName);
                 }
 
-                // Apply facade transform if this is a library import
-                if (isLibraryImport)
+                // Apply facade transform if this is a library import (facade style only)
+                if (isLibraryImport && libraryImportStyle == LibraryImportStyle.Facade)
                 {
                     tsName = GetFacadeExportName(tsName, clrName, ctx.LibraryContract!);
                 }

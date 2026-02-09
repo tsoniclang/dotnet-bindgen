@@ -65,7 +65,10 @@ public static class InternalIndexEmitter
     {
         // Extract plan components
         var graph = plan.Graph;
-        var importPlan = plan.Imports;
+        // IMPORTANT: internal/index.d.ts must use the "internal" import plan.
+        // In library mode, this imports from <pkg>/<Namespace>/internal/index.js and keeps arity-stable names.
+        // This is required for assignability checks (e.g. DbSet<T> should satisfy IQueryable_1<T>).
+        var importPlan = plan.ImportsInternal;
         var staticFlattening = plan.StaticFlattening;
         var staticConflicts = plan.StaticConflicts;
         var overrideConflicts = plan.OverrideConflicts;
@@ -75,7 +78,13 @@ public static class InternalIndexEmitter
 
         // Create TypeNameResolver - single source of truth for type names
         // TS2693 FIX: Pass ImportPlan and current namespace for qualified name resolution
-        var resolver = new TypeNameResolver(ctx, graph, importPlan, nsOrder.Namespace.Name);
+        var resolver = new TypeNameResolver(
+            ctx,
+            graph,
+            importPlan,
+            nsOrder.Namespace.Name,
+            facadeMode: false,
+            libraryImportStyle: Plan.LibraryImportStyle.InternalIndex);
 
         // V2 FIX: Create BindingsProvider for inherited member exposure (TS2416 fix)
         var bindingsProvider = new BindingsProvider(ctx, graph);
@@ -197,22 +206,33 @@ public static class InternalIndexEmitter
         var typesWithoutGenerics = new HashSet<string>();
 
         // Emit types in order (PUBLIC ONLY - internal types should not appear in .d.ts)
-        foreach (var typeOrder in nsOrder.OrderedTypes.Where(to => ShouldEmit(to.Type)))
-        {
-            // Check if type has explicit views (attached by ViewPlanner)
-            var views = typeOrder.Type.ExplicitViews;
-            var hasViews = views.Length > 0 && (typeOrder.Type.Kind == Model.Symbols.TypeKind.Class || typeOrder.Type.Kind == Model.Symbols.TypeKind.Struct || typeOrder.Type.Kind == Model.Symbols.TypeKind.Delegate);
+	        foreach (var typeOrder in nsOrder.OrderedTypes.Where(to => ShouldEmit(to.Type)))
+	        {
+	            // Check if type has explicit views (attached by ViewPlanner)
+	            var views = typeOrder.Type.ExplicitViews;
+	            var hasViews = views.Length > 0 && (typeOrder.Type.Kind == Model.Symbols.TypeKind.Class || typeOrder.Type.Kind == Model.Symbols.TypeKind.Struct || typeOrder.Type.Kind == Model.Symbols.TypeKind.Delegate);
 
-            if (hasViews)
-            {
-                // Emit class with $instance suffix - PUBLIC TYPES GET export KEYWORD
-                var instanceClass = ClassPrinter.PrintInstance(typeOrder.Type, resolver, ctx, graph, bindingsProvider, staticFlattening, staticConflicts, overrideConflicts, propertyOverrides, honestEmission);
-                var indentedInstance = Indent(instanceClass, indent);
+	            if (hasViews)
+	            {
+	                // LINQ ASSIGNABILITY: Determine safe interfaces to extend.
+	                // IMPORTANT: For some generic types (e.g. DbSet<TEntity>), TypeScript does NOT reliably
+	                // apply heritage clauses added via declaration merging *after* the primary interface.
+	                // To ensure members propagate (Expression/Provider/etc.), we inline the safe extends list
+	                // into the primary $instance interface declaration instead of emitting a second declaration.
+	                var mergedInterface = EmitMergedInterfaceExtends(typeOrder.Type, resolver, ctx, graph, safeToExtend);
 
-                // PUBLIC TYPES: Always export (both root and namespaces)
-                sb.Append("export ");
-                sb.AppendLine(indentedInstance);
-                sb.AppendLine();
+	                // Emit class with $instance suffix - PUBLIC TYPES GET export KEYWORD
+	                var instanceClass = ClassPrinter.PrintInstance(typeOrder.Type, resolver, ctx, graph, bindingsProvider, staticFlattening, staticConflicts, overrideConflicts, propertyOverrides, honestEmission);
+	                if (!string.IsNullOrEmpty(mergedInterface))
+	                {
+	                    instanceClass = InlineMergedInterfaceExtendsIntoInstance(instanceClass, mergedInterface);
+	                }
+	                var indentedInstance = Indent(instanceClass, indent);
+
+	                // PUBLIC TYPES: Always export (both root and namespaces)
+	                sb.Append("export ");
+	                sb.AppendLine(indentedInstance);
+	                sb.AppendLine();
 
                 // STATIC-SIDE FIX: Emit value export for constructors and static members
                 // This is a const declaration that replaces the static side of the class
@@ -237,26 +257,13 @@ public static class InternalIndexEmitter
                 var typeAlias = EmitIntersectionTypeAlias(typeOrder.Type, resolver, ctx);
                 var indentedAlias = Indent(typeAlias, indent);
 
-                // LINQ ASSIGNABILITY: Emit merged interface extends for type-level assignability
-                // This allows List_1$instance<T> to be assignable to IEnumerable_1$instance<T>
-                // without requiring "implements" (which would trigger TS2420 compliance)
-                // Uses SafeToExtend analysis to only extend interfaces that won't cause TS2430/TS2320
-                var mergedInterface = EmitMergedInterfaceExtends(typeOrder.Type, resolver, ctx, graph, safeToExtend);
-                if (!string.IsNullOrEmpty(mergedInterface))
-                {
-                    var indentedMerged = Indent(mergedInterface, indent);
-                    sb.Append("export ");
-                    sb.AppendLine(indentedMerged);
-                    sb.AppendLine();
-                }
+	                // Type alias already includes "export" keyword
+	                sb.AppendLine(indentedAlias);
+	                sb.AppendLine();
 
-                // Type alias already includes "export" keyword
-                sb.AppendLine(indentedAlias);
-                sb.AppendLine();
-
-            }
-            else
-            {
+	            }
+	            else
+	            {
                 // Normal emission (no views) - PUBLIC TYPES GET export KEYWORD
                 var typeDecl = ClassPrinter.Print(typeOrder.Type, resolver, ctx, graph, typesWithoutGenerics, bindingsProvider, staticFlattening, staticConflicts, overrideConflicts, propertyOverrides, honestEmission);
                 var indented = Indent(typeDecl, indent);
@@ -273,7 +280,7 @@ public static class InternalIndexEmitter
                     var indentedValue = Indent(valueExport, indent);
                     sb.AppendLine(indentedValue);
                     sb.AppendLine();
-                }
+	        }
 
                 // C.5.2 FIX: For interfaces without views, emit alias pointing to $instance
                 // This allows cross-namespace references like System.Collections.IEnumerable to work
@@ -355,8 +362,172 @@ public static class InternalIndexEmitter
             }
         }
 
-        return sb.ToString();
-    }
+	        return sb.ToString();
+	    }
+
+	    private static string InlineMergedInterfaceExtendsIntoInstance(string instanceDecl, string mergedInterfaceDecl)
+	    {
+	        // mergedInterfaceDecl format (no export keyword):
+	        //   interface Foo$instance<T> extends A, B {}
+	        // instanceDecl format:
+	        //   interface Foo$instance<T> { ... }
+	        // or
+	        //   interface Foo$instance<T> extends X { ... }
+
+	        const string extendsToken = " extends ";
+	        var mergedTrimmed = mergedInterfaceDecl.Trim();
+	        if (mergedTrimmed.EndsWith(" {}", StringComparison.Ordinal))
+	            mergedTrimmed = mergedTrimmed.Substring(0, mergedTrimmed.Length - 3).TrimEnd();
+
+	        var extendsIndex = FindHeritageExtendsIndex(mergedTrimmed, extendsToken);
+	        if (extendsIndex < 0)
+	            return instanceDecl;
+
+	        var extendsList = mergedTrimmed.Substring(extendsIndex + extendsToken.Length).Trim();
+	
+	        // Update only the first line containing the interface header.
+	        var lines = instanceDecl.Split('\n');
+	        for (var i = 0; i < lines.Length; i++)
+	        {
+	            var line = lines[i];
+	            var braceIndex = line.IndexOf('{');
+	            if (braceIndex < 0)
+	                continue;
+
+	            var header = line.Substring(0, braceIndex);
+
+	            // If header already has extends, merge lists deterministically.
+	            var existingExtendsIndex = FindHeritageExtendsIndex(header, extendsToken);
+	            if (existingExtendsIndex >= 0)
+	            {
+	                var existingList = header.Substring(existingExtendsIndex + extendsToken.Length).Trim();
+	                var merged = MergeExtendsLists(existingList, extendsList);
+	                lines[i] = header.Substring(0, existingExtendsIndex) + extendsToken + merged + " " + line.Substring(braceIndex);
+	                return string.Join("\n", lines);
+	            }
+
+	            // Insert extends list right before the opening brace.
+	            lines[i] = header.TrimEnd() + extendsToken + extendsList + " " + line.Substring(braceIndex);
+	            return string.Join("\n", lines);
+	        }
+
+	        return instanceDecl;
+	    }
+
+	    private static int FindHeritageExtendsIndex(string header, string extendsToken)
+	    {
+	        // Header may include `extends` inside generic parameter constraints (e.g. `<T extends IFoo>`).
+	        // We only consider the heritage clause, which (if present) appears after the generic parameter list.
+	        var searchStart = 0;
+	        var ltIndex = header.IndexOf('<');
+	        if (ltIndex >= 0)
+	        {
+	            var gtIndex = FindMatchingAngleBracketEnd(header, ltIndex);
+	            if (gtIndex >= 0)
+	                searchStart = gtIndex + 1;
+	        }
+
+	        return header.IndexOf(extendsToken, searchStart, StringComparison.Ordinal);
+	    }
+
+	    private static int FindMatchingAngleBracketEnd(string text, int ltIndex)
+	    {
+	        var depth = 0;
+	        for (var i = ltIndex; i < text.Length; i++)
+	        {
+	            var c = text[i];
+	            if (c == '<') depth++;
+	            else if (c == '>')
+	            {
+	                depth--;
+	                if (depth == 0) return i;
+	            }
+	        }
+
+	        return -1;
+	    }
+
+	    private static string MergeExtendsLists(string existingList, string additionalList)
+	    {
+	        // Merge and de-duplicate while preserving deterministic order.
+	        // We keep existing entries first, then append new unique entries.
+	        var items = new List<string>();
+	        var seen = new HashSet<string>(StringComparer.Ordinal);
+
+	        void AddItems(string list)
+	        {
+	            foreach (var raw in SplitTopLevelCommaSeparated(list))
+	            {
+	                var item = raw.Trim();
+	                if (item.Length == 0)
+	                    continue;
+	                if (seen.Add(item))
+	                    items.Add(item);
+	            }
+	        }
+
+	        AddItems(existingList);
+	        AddItems(additionalList);
+	
+	        return string.Join(", ", items);
+	    }
+
+	    private static IEnumerable<string> SplitTopLevelCommaSeparated(string list)
+	    {
+	        // Split a comma-separated list while respecting nested generic argument lists.
+	        //
+	        // Example:
+	        //   IAdd_3<Foo<T>, Foo<T>, Foo<T>>, IBit_3<Foo<T>, Foo<T>, Foo<T>>
+	        //
+	        // We must NOT split on commas inside `<...>`.
+	        var start = 0;
+	        var angleDepth = 0;
+	        var parenDepth = 0;
+	        var bracketDepth = 0;
+	        var braceDepth = 0;
+
+	        for (var i = 0; i < list.Length; i++)
+	        {
+	            var c = list[i];
+	            switch (c)
+	            {
+	                case '<':
+	                    angleDepth++;
+	                    break;
+	                case '>':
+	                    if (angleDepth > 0) angleDepth--;
+	                    break;
+	                case '(':
+	                    parenDepth++;
+	                    break;
+	                case ')':
+	                    if (parenDepth > 0) parenDepth--;
+	                    break;
+	                case '[':
+	                    bracketDepth++;
+	                    break;
+	                case ']':
+	                    if (bracketDepth > 0) bracketDepth--;
+	                    break;
+	                case '{':
+	                    braceDepth++;
+	                    break;
+	                case '}':
+	                    if (braceDepth > 0) braceDepth--;
+	                    break;
+	                case ',':
+	                    if (angleDepth == 0 && parenDepth == 0 && bracketDepth == 0 && braceDepth == 0)
+	                    {
+	                        yield return list.Substring(start, i - start);
+	                        start = i + 1;
+	                    }
+	                    break;
+	            }
+	        }
+
+	        if (start <= list.Length)
+	            yield return list.Substring(start);
+	    }
 
     /// <summary>
     /// INTERNAL CONSTRAINTS: Generates generic type parameters WITH constraints for internal convenience exports.
