@@ -407,6 +407,11 @@ public static class ClassPrinter
 
         sb.AppendLine(" {");
 
+        // NOMINAL CLR TYPES: Attach a per-type brand for all class/struct types.
+        // This prevents structural false positives between unrelated CLR types that
+        // happen to share members (e.g., List<T> structurally matching ParallelQuery<T>).
+        EmitNominalClrTypeBrand(sb, type);
+
         // NOMINAL CLR INTERFACES: Attach interface brands for all implemented CLR interfaces
         // (including explicit views and inherited interfaces). This prevents structural matches
         // (e.g., GetAsyncEnumerator pattern) from incorrectly making a type appear to implement
@@ -458,6 +463,11 @@ public static class ClassPrinter
         }
 
         sb.AppendLine(" {");
+
+        // NOMINAL CLR TYPES: Attach a per-type brand for all class/struct types.
+        // This prevents structural false positives between unrelated CLR types that
+        // happen to share members (e.g., List<T> structurally matching ParallelQuery<T>).
+        EmitNominalClrTypeBrand(sb, type);
 
         // NOMINAL CLR INTERFACES: Attach interface brands for all implemented CLR interfaces
         // (including explicit views and inherited interfaces). This prevents structural matches
@@ -653,6 +663,17 @@ public static class ClassPrinter
             sb.AppendLine(": never;");
         }
 
+        sb.AppendLine();
+    }
+
+    private static void EmitNominalClrTypeBrand(StringBuilder sb, TypeSymbol type)
+    {
+        if (type.Kind != TypeKind.Class && type.Kind != TypeKind.Struct)
+            return;
+
+        sb.Append("    readonly ");
+        sb.Append(NameUtilities.GetClrTypeBrandPropertyName(type.ClrFullName));
+        sb.AppendLine(": never;");
         sb.AppendLine();
     }
 

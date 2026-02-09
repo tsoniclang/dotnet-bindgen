@@ -671,7 +671,13 @@ public static class ExtensionsEmitter
                 var candidates = buckets
                     .Where(b =>
                         b != derived &&
-                        b.Key.Arity == derived.Key.Arity &&
+                        // Prefer same-arity bases (we can reuse inferred type args) but also allow
+                        // arity-0 supertypes to participate. This is needed for pairs like:
+                        //   IEnumerable_1<T> : IEnumerable
+                        // so generic receivers prefer the generic extension bucket for overlapping names
+                        // (e.g. AsParallel/AsQueryable) while still retaining non-generic-only members
+                        // (e.g. Cast/OfType).
+                        (b.Key.Arity == derived.Key.Arity || b.Key.Arity == 0) &&
                         IsStrictSubtypeOf(derived.TargetType, b.TargetType) &&
                         BucketsOverlap(derived, b))
                     .ToList();
@@ -741,8 +747,10 @@ public static class ExtensionsEmitter
                 if (baseBucket == null)
                     return bucketArgs.Length == 0 ? bucket.BucketInterfaceName : $"{bucket.BucketInterfaceName}<{bucketArgs}>";
 
-                var baseExpr = EffectiveBucketTypeExpr(baseBucket, bucketArgs);
-                var selfExpr = bucketArgs.Length == 0 ? bucket.BucketInterfaceName : $"{bucket.BucketInterfaceName}<{bucketArgs}>";
+                var baseArgs = baseBucket.TargetType.GenericParameters.Length == 0 ? "" : bucketArgs;
+                var baseExpr = EffectiveBucketTypeExpr(baseBucket, baseArgs);
+                var selfArgs = bucket.TargetType.GenericParameters.Length == 0 ? "" : bucketArgs;
+                var selfExpr = selfArgs.Length == 0 ? bucket.BucketInterfaceName : $"{bucket.BucketInterfaceName}<{selfArgs}>";
                 return $"__TsonicPreferExt<{baseExpr}, {selfExpr}>";
             }
 
