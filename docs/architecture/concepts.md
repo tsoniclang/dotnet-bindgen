@@ -1086,14 +1086,16 @@ Extension methods are emitted into `__internal/extensions/index.d.ts` in two lay
 ```typescript
 // __internal/extensions/index.d.ts (excerpt)
 
+import type { Rewrap } from "@tsonic/core/lang.js";
+
 // Bucket for IEnumerable<T> extension methods in System.Linq
 export interface __Ext_System_Linq_IEnumerable_1<T> {
   where(
     predicate: System.Func_2<T, boolean>
-  ): ExtensionMethods_System_Linq<System_Collections_Generic.IEnumerable_1<T>>;
+  ): Rewrap<this, System_Collections_Generic.IEnumerable_1<T>>;
   select<TResult>(
     selector: System.Func_2<T, TResult>
-  ): ExtensionMethods_System_Linq<System_Collections_Generic.IEnumerable_1<TResult>>;
+  ): Rewrap<this, System_Collections_Generic.IEnumerable_1<TResult>>;
   // ...
 }
 
@@ -1123,6 +1125,36 @@ type LinqSeq<T> = Linq<IEnumerable<T>>;
 declare const xs: LinqSeq<number>;
 xs.where((x) => x > 0).select((x) => x * 2);
 ```
+
+### Sticky Extension Scopes (Rewrap)
+
+In C#, extension methods remain “in scope” across fluent chains as long as the relevant
+namespaces are imported via `using`. The receiver type does not need to be re-wrapped at
+each hop:
+
+```csharp
+using System.Linq;
+using Microsoft.EntityFrameworkCore;
+
+var ids = await db.Events
+  .Where(e => e.IsActive)
+  .Select(e => e.Id)
+  .ToListAsync();
+```
+
+In TypeScript, the naive `ExtensionMethods<TShape>` model can lose scopes when you compose
+multiple extension namespaces (for example LINQ + EF Core): a method in one scope returns
+`TNewShape`, but the other scope’s methods are no longer present on the returned type.
+
+To make extension scopes **sticky** across fluent chains, tsbindgen emits bucket methods with:
+
+- `Rewrap<this, ReturnShape>` instead of just `ReturnShape`
+
+`Rewrap` is a type-level helper in `@tsonic/core/lang.js` that preserves the “extension scopes”
+carried by the receiver type and re-applies them to the return shape.
+
+Result: users can wrap the root once and then write idiomatic fluent code without re-wrapping
+after each call.
 
 ### Implementation
 
@@ -1462,6 +1494,35 @@ The type system has three distinct layers:
 | **tsbindgen** | Emits CLR-true surface names | `Span_1<Char>`, `IEquatable_1<Int32>` |
 | **@tsonic/core** | Primitive aliases + unsafe markers | `type int = number`, `type char = string & { __brand: "char" }`, `type ptr<T> = ...` |
 | **Tsonic compiler** | Enforces numeric correctness | `42 as int` validates bounds |
+
+### Implementing CLR Interfaces (Nominal Brands + `Interface<T>`)
+
+tsbindgen must preserve **CLR identity** for interfaces and classes. A plain TypeScript
+structural interface is not CLR-faithful: unrelated shapes can accidentally satisfy it,
+and “duck typing” can cause ambiguous member/extension-method binding.
+
+To prevent this, generated CLR interface types carry internal nominal brand members
+(for example `__tsonic_iface_*`). These members are not intended to be implemented
+by end users.
+
+When you want to author a TypeScript class that implements a CLR interface, wrap the
+interface with `Interface<T>` from `@tsonic/core/lang.js` in the `implements` clause:
+
+```ts
+import type { Interface } from "@tsonic/core/lang.js";
+import type { IDesignTimeDbContextFactory } from "@tsonic/efcore/Microsoft.EntityFrameworkCore.Design.js";
+
+export class MyFactory
+  implements Interface<IDesignTimeDbContextFactory<MyDbContext>>
+{
+  CreateDbContext(_args: string[]): MyDbContext {
+    return new MyDbContext();
+  }
+}
+```
+
+`Interface<T>` strips internal `__tsonic_iface_*` members at the TypeScript layer only.
+It does **not** change the CLR interface that gets emitted in C#.
 
 ### How It Works
 

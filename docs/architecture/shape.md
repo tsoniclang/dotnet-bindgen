@@ -202,12 +202,15 @@ Buckets extension methods for C#-style "using" semantics.
 ```typescript
 // __internal/extensions/index.d.ts (excerpt)
 export interface __Ext_System_Linq_IEnumerable_1<T> {
-    where(predicate: System.Func_2<T, boolean>): ExtensionMethods_System_Linq<System_Collections_Generic.IEnumerable_1<T>>;
+    where(predicate: System.Func_2<T, boolean>): Rewrap<this, System_Collections_Generic.IEnumerable_1<T>>;
 }
 
 export type ExtensionMethods_System_Linq<TShape> =
     TShape & (TShape extends System_Collections_Generic.IEnumerable_1<infer T0> ? __Ext_System_Linq_IEnumerable_1<T0> : {});
 ```
+
+Bucket method return types use `Rewrap<this, ReturnShape>` so extension scopes stay “sticky”
+across fluent chains (similar to C# `using` semantics).
 
 ### SafeToExtendAnalyzer
 
