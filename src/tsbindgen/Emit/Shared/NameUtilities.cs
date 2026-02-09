@@ -117,4 +117,45 @@ public static class NameUtilities
 
         return "__tsonic_iface_" + sb;
     }
+
+    /// <summary>
+    /// Generate the nominal branding property name for a CLR class/struct type.
+    ///
+    /// This is intentionally derived from the CLR full name (not the TS emit name) so the
+    /// brand is deterministic and stable across renaming transforms and conflict suffixes.
+    ///
+    /// Example:
+    ///   "System.Linq.ParallelQuery`1"
+    ///     → "__tsonic_type_System_Linq_ParallelQuery_1"
+    /// </summary>
+    public static string GetClrTypeBrandPropertyName(string clrFullName)
+    {
+        if (string.IsNullOrWhiteSpace(clrFullName))
+            return "__tsonic_type_";
+
+        // Strip any assembly qualification if present (some callers may pass it through).
+        var commaIndex = clrFullName.IndexOf(',');
+        if (commaIndex >= 0)
+            clrFullName = clrFullName.Substring(0, commaIndex).Trim();
+
+        var sb = new System.Text.StringBuilder(clrFullName.Length);
+        foreach (var ch in clrFullName)
+        {
+            if (char.IsLetterOrDigit(ch))
+            {
+                sb.Append(ch);
+                continue;
+            }
+
+            if (ch is '.' or '+' or '`')
+            {
+                sb.Append('_');
+                continue;
+            }
+
+            sb.Append('_');
+        }
+
+        return "__tsonic_type_" + sb;
+    }
 }
