@@ -1,6 +1,6 @@
 {
   "dotnetVersion": "10.0.1",
-  "capturedAt": "2026-02-10T18:11:26Z",
+  "capturedAt": "2026-02-10T19:17:49Z",
   "generation": {
     "namespaces": 130,
     "types": 4296,
@@ -351,7 +351,7 @@
     "System.Threading.Tasks.Sources/internal/index.d.ts": "sha256:73977e8ce5f22e1f76c4234046a7e52b01b526e6776f22d640135acb72afbc75",
     "System.Threading.Tasks.d.ts": "sha256:71f506aec9b5055167031cdbc266daecb7b9244c7ae37d784f992dbc41d043b5",
     "System.Threading.Tasks/bindings.json": "sha256:60b2ef4eba44d76bc3cff63da951d4ede36fd2290fdf11ab3af0ddc5d8023382",
-    "System.Threading.Tasks/internal/index.d.ts": "sha256:3160a46c167ce5a33347ec508099754dc38607bbf445050579e61e37062fe7dc",
+    "System.Threading.Tasks/internal/index.d.ts": "sha256:11556610931e5968a648ac65a90f649de55e3787a37ac2d1af409796c03ce567",
     "System.Threading.d.ts": "sha256:4dfa3900aaa7e89d2baa414ee10da93bd5c77ae3078701e982f2d5c78222850c",
     "System.Threading/bindings.json": "sha256:724422e11a76ec30163e390f124e8a9b4685f1a45848d6b6bc0b1422cdd0f6fc",
     "System.Threading/internal/index.d.ts": "sha256:7587d1bbc2274cb17781edef5eaa06d9c016cdc8df5f51e8f76ec7834613efee",

@@ -1277,10 +1277,14 @@ public static class InternalIndexEmitter
         // Instead, we represent thenability at the type-alias level via intersection with an
         // object type containing `then` overloads.
         //
-        // We include three overload shapes for generic Task<TResult>/ValueTask<TResult>:
+        // For generic Task<TResult>/ValueTask<TResult>, we include:
         // - awaited (TResult): so Awaited<Task<TResult>> infers TResult
-        // - void: so Task<TResult> is assignable to Task (CLR-faithful)
-        // - unknown: a broad overload used by various TS inference paths
+        // - unknown: a broad overload used by various TS inference paths, and to keep
+        //   Task<TResult> assignable to Task at the surface level.
+        //
+        // IMPORTANT: We do NOT add a `void` overload for generic forms, because it causes
+        // TS's Awaited<> helper to infer `never` (contravariant intersection of overload
+        // parameter types like TResult & void & unknown).
         //
         // For non-generic Task/ValueTask, we include:
         // - void (Awaited<Task> is void)
@@ -1322,7 +1326,6 @@ public static class InternalIndexEmitter
         if (type.GenericParameters.Length == 1)
         {
             EmitThenOverload(awaitedType, awaitedType);
-            EmitThenOverload("void", "void");
             EmitThenOverload("unknown", "unknown");
         }
         else
