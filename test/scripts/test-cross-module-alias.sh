@@ -32,16 +32,24 @@ if [ -z "$LATEST_VERSION_DIR" ]; then
     exit 1
 fi
 
-# Check that the internal file has the aliased import
+# Internal files import from @tsonic/dotnet/*/internal which uses arity-suffixed names
+# (e.g. IEnumerable_1) and therefore should NOT require cross-module aliasing for
+# IEnumerable vs IEnumerable_1.
+#
 # Note: nodejs uses --namespace-map "nodejs=index" so path is versions/<ver>/index/internal/index.d.ts
 INTERNAL_FILE="$LATEST_VERSION_DIR/index/internal/index.d.ts"
-if ! grep -q "IEnumerable as IEnumerable__System_Collections" "$INTERNAL_FILE"; then
-    echo -e "${RED}❌ FAILED: Missing cross-module alias in $INTERNAL_FILE${NC}"
-    echo "Expected: import type { ..., IEnumerable as IEnumerable__System_Collections_Generic, ... }"
+if ! grep -q "from \"@tsonic/dotnet/System.Collections.Generic/internal/index.js\";" "$INTERNAL_FILE"; then
+    echo -e "${RED}❌ FAILED: Missing System.Collections.Generic/internal import in $INTERNAL_FILE${NC}"
     exit 1
 fi
 
-echo -e "${GREEN}✓ Found cross-module alias: IEnumerable__System_Collections_Generic${NC}"
+if ! grep -q "IEnumerable_1" "$INTERNAL_FILE"; then
+    echo -e "${RED}❌ FAILED: Missing IEnumerable_1 in $INTERNAL_FILE${NC}"
+    echo "Expected internal imports to use arity-suffixed generic names (IEnumerable_1)"
+    exit 1
+fi
+
+echo -e "${GREEN}✓ Internal uses arity-suffixed generic names (IEnumerable_1)${NC}"
 
 # Check facade file too
 # Note: nodejs uses --namespace-map "nodejs=index" so facade is versions/<ver>/index.d.ts
@@ -77,15 +85,21 @@ fi
 echo -e "${GREEN}✓ No TS2300 duplicate identifier errors${NC}"
 
 echo ""
-echo "[3/3] Verifying aliased name is used in type positions..."
+echo "[3/3] Verifying disambiguated names are used correctly..."
 
-# Check that the aliased name is used (not the original)
-if ! grep -q "IEnumerable__System_Collections_Generic<" "$INTERNAL_FILE"; then
-    echo -e "${RED}❌ FAILED: Aliased type name not used in type positions${NC}"
+# Internal should use IEnumerable_1 in type positions
+if ! grep -q "IEnumerable_1<" "$INTERNAL_FILE"; then
+    echo -e "${RED}❌ FAILED: Internal generic IEnumerable_1 not used in type positions${NC}"
     exit 1
 fi
 
-echo -e "${GREEN}✓ Aliased type name used correctly in type positions${NC}"
+# Facade should use aliased IEnumerable__System_Collections_Generic in type positions
+if ! grep -q "IEnumerable__System_Collections_Generic<" "$FACADE_FILE"; then
+    echo -e "${RED}❌ FAILED: Facade aliased type name not used in type positions${NC}"
+    exit 1
+fi
+
+echo -e "${GREEN}✓ Disambiguated names used correctly in type positions${NC}"
 
 echo ""
 echo "================================================"
