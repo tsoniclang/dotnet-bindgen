@@ -62,7 +62,7 @@ fi
 
 # Test 3: CharEnumerator SHOULD extend ICloneable (safe interface)
 # This verifies SafeToExtend allows safe interfaces
-if ! grep -E "interface CharEnumerator\\\$instance extends ICloneable" "$SYSTEM_INDEX" > /dev/null 2>&1; then
+if ! grep -E "interface CharEnumerator\\\$instance extends .*ICloneable" "$SYSTEM_INDEX" > /dev/null 2>&1; then
     echo -e "  ${RED}[FAIL]${NC} CharEnumerator should extend ICloneable (it's safe)"
     echo ""
     grep -A3 "interface CharEnumerator\\\$instance" "$SYSTEM_INDEX" || true

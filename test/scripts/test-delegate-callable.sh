@@ -111,15 +111,25 @@ fi
 # (PRIMITIVE TYPE EMISSION: Primitives now emit with their BCL methods while
 # maintaining LINQ assignability via carrier type in intersection)
 echo -n "  Test 8: Boolean has methods and accepts raw boolean... "
+BOOLEAN_SHAPE=$(grep "^export type Boolean\\\$shape = " "$INDEX_FILE" 2>/dev/null || true)
 BOOLEAN_TYPE=$(grep "^export type Boolean = " "$INDEX_FILE" 2>/dev/null || true)
-# Expected: export type Boolean = boolean | (boolean & Boolean$instance & __Boolean$views);
-if echo "$BOOLEAN_TYPE" | grep -q "Boolean\$instance" && echo "$BOOLEAN_TYPE" | grep -q "boolean |"; then
+# Expected:
+#   export type Boolean$shape = boolean & Boolean$instance & __Boolean$views;
+#   export type Boolean = boolean | Boolean$shape;
+if echo "$BOOLEAN_SHAPE" | grep -q "Boolean\\\$instance" \
+  && echo "$BOOLEAN_SHAPE" | grep -q "__Boolean\\\$views" \
+  && echo "$BOOLEAN_TYPE" | grep -q "boolean | Boolean\\\$shape"; then
     echo -e "${GREEN}PASS${NC}"
+    echo "    $BOOLEAN_SHAPE" | head -1 | sed 's/^/      /'
     echo "    $BOOLEAN_TYPE" | head -1 | sed 's/^/      /'
 else
     echo -e "${RED}FAIL${NC}"
-    echo "    Expected: export type Boolean = boolean | (boolean & Boolean\$instance & __Boolean\$views);"
-    echo "    Got: $BOOLEAN_TYPE"
+    echo "    Expected:"
+    echo "      export type Boolean\\$shape = boolean & Boolean\\$instance & __Boolean\\$views;"
+    echo "      export type Boolean = boolean | Boolean\\$shape;"
+    echo "    Got:"
+    echo "      $BOOLEAN_SHAPE"
+    echo "      $BOOLEAN_TYPE"
     FAILED=1
 fi
 
