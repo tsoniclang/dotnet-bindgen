@@ -495,7 +495,8 @@ public static class FacadeEmitter
             importPlan: plan.Imports,
             currentNamespace: ns.Name,
             facadeMode: false,
-            libraryImportStyle: Plan.LibraryImportStyle.Facade);
+            libraryImportStyle: Plan.LibraryImportStyle.Facade,
+            qualifyCurrentNamespaceWithInternal: true);
 
         var seenExportNames = new HashSet<string>();
 
