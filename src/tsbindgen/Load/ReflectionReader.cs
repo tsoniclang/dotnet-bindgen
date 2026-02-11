@@ -128,6 +128,11 @@ public sealed class ReflectionReader
             .Select(ReadType)
             .ToImmutableArray();
 
+        // Tsonic module container marker (emitted by Tsonic for module-level static containers).
+        // Detect by full attribute name to remain robust under MetadataLoadContext.
+        var isTsonicModuleContainer = type.GetCustomAttributesData().Any(a =>
+            a.AttributeType.FullName == "Tsonic.Internal.ModuleContainerAttribute");
+
         return new TypeSymbol
         {
             StableId = stableId,
@@ -145,7 +150,8 @@ public sealed class ReflectionReader
             IsValueType = type.IsValueType,
             IsAbstract = type.IsAbstract,
             IsSealed = type.IsSealed,
-            IsStatic = type.IsAbstract && type.IsSealed && !type.IsValueType
+            IsStatic = type.IsAbstract && type.IsSealed && !type.IsValueType,
+            IsTsonicModuleContainer = isTsonicModuleContainer
         };
     }
 
