@@ -15,6 +15,11 @@ echo "TypeScript Error Baseline Test"
 echo "================================================"
 echo ""
 
+# Needed for installing the correct @tsonic/core major in this test.
+# Note: ensure_bcl is invoked via command substitution, so its init_runtime side-effects
+# do not propagate to this script's environment.
+init_runtime
+
 # Use existing BCL cache if available
 BCL_DIR=$(ensure_bcl default)
 
@@ -28,7 +33,12 @@ echo "[1/4] Running TypeScript validation..."
 cd "$BCL_DIR"
 
 # Install @tsonic/core for primitive type imports
-echo '{ "dependencies": { "@tsonic/core": "^0.1.1" } }' > package.json
+# Determine .NET major from the detected runtime path so we install the matching core major.
+# Example DOTNET_RUNTIME: /usr/share/dotnet/shared/Microsoft.NETCore.App/10.0.1 → 10
+DOTNET_MAJOR="$(basename "$DOTNET_RUNTIME" | cut -d. -f1)"
+cat > package.json <<EOF
+{ "dependencies": { "@tsonic/core": "^${DOTNET_MAJOR}.0.0" } }
+EOF
 npm install --silent 2>/dev/null || npm install
 
 # Create tsconfig with skipLibCheck: false to actually check .d.ts files

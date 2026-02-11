@@ -309,6 +309,8 @@ public static class InternalIndexEmitter
                 // Only emit alias for interfaces that aren't static classes
                 if (isInterface && finalName != instanceName && !isStaticClass)
                 {
+                    var indexerIntersection = BuildIndexerIntersection(typeOrder.Type, resolver, ctx);
+
                     sb.Append(indent);
                     sb.Append("export type ");
                     sb.Append(finalName);
@@ -321,6 +323,7 @@ public static class InternalIndexEmitter
                     sb.Append(" = ");
                     sb.Append(instanceName);
                     sb.Append(typeArgs);
+                    sb.Append(indexerIntersection);
                     sb.AppendLine(";");
                     sb.AppendLine();
                 }
@@ -348,14 +351,42 @@ public static class InternalIndexEmitter
                         rhsExpression = $"{typeOrder.Type.GenericParameters[0].Name} | {instanceName}";
                     }
 
-                    AliasEmit.EmitGenericAlias(
-                        sb,
-                        aliasName: finalName,
-                        sourceType: typeOrder.Type,
-                        rhsExpression: rhsExpression,
-                        resolver,
-                        ctx,
-                        withConstraints: true);
+                    var indexerIntersection = BuildIndexerIntersection(typeOrder.Type, resolver, ctx);
+                    if (string.IsNullOrEmpty(indexerIntersection))
+                    {
+                        // Fast path: simple alias emission
+                        AliasEmit.EmitGenericAlias(
+                            sb,
+                            aliasName: finalName,
+                            sourceType: typeOrder.Type,
+                            rhsExpression: rhsExpression,
+                            resolver,
+                            ctx,
+                            withConstraints: true);
+                    }
+                    else
+                    {
+                        // Indexers must be represented via intersection at the alias level.
+                        // We must emit manually (not AliasEmit.EmitGenericAlias) because that helper appends
+                        // generic type arguments after the full RHS expression, which would incorrectly
+                        // bind `<T>` to the intersection literal instead of the `$instance` identifier.
+                        sb.Append(indent);
+                        sb.Append("export type ");
+                        sb.Append(finalName);
+
+                        var typeParamsLHS = AliasEmit.GenerateTypeParametersWithConstraints(typeOrder.Type, resolver, ctx);
+                        sb.Append(typeParamsLHS);
+
+                        sb.Append(" = ");
+
+                        // Append type args to the RHS so they bind to the trailing identifier (typically `$instance`).
+                        // This preserves the Expression_1 special-case union shape too.
+                        var typeArgs = AliasEmit.GenerateTypeArguments(typeOrder.Type);
+                        sb.Append(rhsExpression);
+                        sb.Append(typeArgs);
+                        sb.Append(indexerIntersection);
+                        sb.AppendLine(";");
+                    }
                     sb.AppendLine();
                 }
 
@@ -416,18 +447,23 @@ public static class InternalIndexEmitter
 
 	    private static int FindHeritageExtendsIndex(string header, string extendsToken)
 	    {
-	        // Header may include `extends` inside generic parameter constraints (e.g. `<T extends IFoo>`).
-	        // We only consider the heritage clause, which (if present) appears after the generic parameter list.
-	        var searchStart = 0;
-	        var ltIndex = header.IndexOf('<');
-	        if (ltIndex >= 0)
+	        // Header may include `extends` inside generic parameter constraints (e.g. `<T extends IFoo>`),
+	        // and may also include generic type arguments in the base list (e.g. `extends Foo_1<Bar>`).
+	        //
+	        // We must find the *heritage* `extends` clause, not the `extends` keyword inside `<...>`.
+	        // The simplest robust approach: scan for the token at top-level (angleDepth == 0).
+	        var angleDepth = 0;
+	        for (var i = 0; i <= header.Length - extendsToken.Length; i++)
 	        {
-	            var gtIndex = FindMatchingAngleBracketEnd(header, ltIndex);
-	            if (gtIndex >= 0)
-	                searchStart = gtIndex + 1;
+	            var c = header[i];
+	            if (c == '<') angleDepth++;
+	            else if (c == '>' && angleDepth > 0) angleDepth--;
+
+	            if (angleDepth == 0 && header.AsSpan(i).StartsWith(extendsToken, StringComparison.Ordinal))
+	                return i;
 	        }
 
-	        return header.IndexOf(extendsToken, searchStart, StringComparison.Ordinal);
+	        return -1;
 	    }
 
 	    private static int FindMatchingAngleBracketEnd(string text, int ltIndex)
@@ -1159,6 +1195,7 @@ public static class InternalIndexEmitter
 
         // Get final type name
         var finalName = ctx.Renamer.GetFinalTypeName(type);
+        var shapeName = $"{finalName}$shape";
 
         // VIEW COMPOSITION CONSTRAINTS: Type alias with constraints on LHS, plain args on RHS
         // export type TypeName<T extends IFoo> = TypeName$instance<T> & __TypeName$views<T>
@@ -1186,21 +1223,33 @@ public static class InternalIndexEmitter
         var primitiveCarrier = PrimitiveLift.GetTsCarrier(type.ClrFullName);
         var carrierPrefix = primitiveCarrier != null ? $"{primitiveCarrier} & " : "";
 
-        // BOOLEAN UNION FIX: System.Boolean must accept native TS boolean for predicate ergonomics
-        // Arrow functions like (x => x % 2 === 0) return native boolean, but Func_2<T, Boolean> expects CLR Boolean.
-        // Making Boolean a union allows both to work: export type Boolean = boolean | (Boolean$instance & __Boolean$views);
-        // NOTE: For Boolean, we already have carrierPrefix = "boolean & ", so we need to add the union for assignability
-        var nativePrimitivePrefix = "";
-        var nativePrimitiveSuffix = "";
+        var indexerIntersection = BuildIndexerIntersection(type, resolver, ctx);
+        var thenableIntersection = BuildThenableIntersection(type);
+
+        // BOOLEAN UNION: keep the ergonomic `boolean | Boolean$shape` surface, but avoid TS2344
+        // self-constraint failures by providing a non-union shape alias that can be used in
+        // recursive generic constraints (e.g. IParsable_1<TSelf extends IParsable_1<TSelf>>).
         if (type.ClrFullName == "System.Boolean")
         {
-            // Boolean is special: we want `boolean | (boolean & Boolean$instance & ...)` for ergonomics
-            // The first `boolean` allows raw boolean values, the intersection allows BCL methods
-            nativePrimitivePrefix = "boolean | (";
-            nativePrimitiveSuffix = ")";
+            // Shape: the branded/CLR-backed carrier (no union)
+            var shapeRhs = $"{carrierPrefix}{callSignature}{finalName}$instance{typeArgs} & __{finalName}$views{typeArgs}{indexerIntersection}{thenableIntersection}";
+
+            sb.Append("export type ");
+            sb.Append(shapeName);
+            sb.Append(" = ");
+            sb.Append(shapeRhs);
+            sb.AppendLine(";");
+
+            sb.Append("export type ");
+            sb.Append(finalName);
+            sb.Append(" = boolean | ");
+            sb.Append(shapeName);
+            sb.AppendLine(";");
+
+            return sb.ToString();
         }
 
-        var rhsExpression = $"{nativePrimitivePrefix}{carrierPrefix}{callSignature}{finalName}$instance{typeArgs} & __{finalName}$views{typeArgs}{nativePrimitiveSuffix}";
+        var rhsExpression = $"{carrierPrefix}{callSignature}{finalName}$instance{typeArgs} & __{finalName}$views{typeArgs}{indexerIntersection}{thenableIntersection}";
 
         // Emit the alias with constraints on LHS
         // Note: We pass the complete RHS (including type args), so we use the manual emission
@@ -1215,6 +1264,144 @@ public static class InternalIndexEmitter
         sb.AppendLine(";");
 
         return sb.ToString();
+    }
+
+    private static string BuildThenableIntersection(TypeSymbol type)
+    {
+        // Model Task/ValueTask as thenables for TypeScript await/async typing.
+        //
+        // CRITICAL: Do NOT emit `then` on the $instance interface, because Task<TResult> : Task
+        // would require an override-compatible `then` signature. TS rejects that (TS2430) when
+        // the awaited type differs (void vs TResult).
+        //
+        // Instead, we represent thenability at the type-alias level via intersection with an
+        // object type containing `then` overloads.
+        //
+        // For generic Task<TResult>/ValueTask<TResult>, we include:
+        // - awaited (TResult): so Awaited<Task<TResult>> infers TResult
+        // - unknown: a broad overload used by various TS inference paths, and to keep
+        //   Task<TResult> assignable to Task at the surface level.
+        //
+        // IMPORTANT: We do NOT add a `void` overload for generic forms, because it causes
+        // TS's Awaited<> helper to infer `never` (contravariant intersection of overload
+        // parameter types like TResult & void & unknown).
+        //
+        // For non-generic Task/ValueTask, we include:
+        // - void (Awaited<Task> is void)
+        // - unknown (broad overload)
+        var isTask =
+            type.ClrFullName == "System.Threading.Tasks.Task" ||
+            type.ClrFullName.StartsWith("System.Threading.Tasks.Task`", StringComparison.Ordinal) ||
+            type.ClrFullName.StartsWith("System.Threading.Tasks.Task\u0060", StringComparison.Ordinal);
+
+        var isValueTask =
+            type.ClrFullName == "System.Threading.Tasks.ValueTask" ||
+            type.ClrFullName.StartsWith("System.Threading.Tasks.ValueTask`", StringComparison.Ordinal) ||
+            type.ClrFullName.StartsWith("System.Threading.Tasks.ValueTask\u0060", StringComparison.Ordinal);
+
+        if (!isTask && !isValueTask)
+            return "";
+
+        var awaitedType =
+            type.GenericParameters.Length == 1
+                ? type.GenericParameters[0].Name
+                : "void";
+
+        var sb = new StringBuilder();
+        sb.Append(" & {");
+        sb.AppendLine();
+
+        void EmitThenOverload(string valueType, string defaultResultType)
+        {
+            sb.Append("    then<TResult1 = ");
+            sb.Append(defaultResultType);
+            sb.Append(", TResult2 = never>(");
+            sb.Append("onfulfilled?: ((value: ");
+            sb.Append(valueType);
+            sb.Append(") => TResult1 | PromiseLike<TResult1>) | undefined | null, ");
+            sb.Append("onrejected?: ((reason: any) => TResult2 | PromiseLike<TResult2>) | undefined | null");
+            sb.AppendLine("): PromiseLike<TResult1 | TResult2>;");
+        }
+
+        if (type.GenericParameters.Length == 1)
+        {
+            EmitThenOverload(awaitedType, awaitedType);
+            EmitThenOverload("unknown", "unknown");
+        }
+        else
+        {
+            EmitThenOverload("void", "void");
+            EmitThenOverload("unknown", "unknown");
+        }
+
+        sb.Append("}");
+        return sb.ToString();
+    }
+
+    private static string BuildIndexerIntersection(TypeSymbol type, TypeNameResolver resolver, BuildContext ctx)
+    {
+        // Indexers are represented via type-alias intersections:
+        //   export type Foo = Foo$instance & __Foo$views & { [key: string]: T };
+        //
+        // Rationale: emitting index signatures directly inside $instance interfaces triggers TS2411
+        // (all properties must be assignable to the index signature) for common BCL shapes like
+        // StringDictionary, NameValueCollection, etc.
+        //
+        // We keep this conservative and deterministic:
+        // - only instance indexers
+        // - only single-parameter indexers
+        // - only string/number keys
+        // - if multiple representable indexers exist, prefer string over number
+        var candidates = type.Members.Properties
+            .Where(p => p.EmitScope == EmitScope.ClassSurface && p.IsIndexer && !p.IsStatic && p.IndexParameters.Length == 1)
+            .Select(p =>
+            {
+                var p0 = p.IndexParameters[0];
+                var rawKeyType = TypeRefPrinter.Print(p0.Type, resolver, ctx);
+
+                string? keyType = rawKeyType switch
+                {
+                    "string" => "string",
+                    "System_Internal.String" => "string",
+                    "String" => "string",
+                    "System.String" => "string",
+                    // All numeric CLR indexers surface as number in TypeScript.
+                    // Tsonic's proof system enforces the actual CLR numeric requirements.
+                    "number" => "number",
+                    "int" or "long" or "short" or "byte" or "sbyte" or "uint" or "ulong" or "ushort" or "nint" or "nuint" => "number",
+                    "float" or "double" or "decimal" or "half" => "number",
+                    _ => null
+                };
+
+                if (keyType == null)
+                    return null;
+
+                var valueType = TypeRefPrinter.Print(p.PropertyType, resolver, ctx);
+                var keyName = string.IsNullOrWhiteSpace(p0.Name) ? "key" : p0.Name;
+                var readonlyPrefix = p.HasSetter ? "" : "readonly ";
+                var signature = $"{readonlyPrefix}[{keyName}: {keyType}]: {valueType};";
+
+                return new
+                {
+                    KeyType = keyType,
+                    Signature = signature,
+                    StableId = p.StableId
+                };
+            })
+            .Where(x => x != null)
+            .Select(x => x!)
+            .ToList();
+
+        if (candidates.Count == 0)
+            return "";
+
+        // Prefer string indexers, then number. Within a key type, choose deterministically by StableId.
+        var selected = candidates
+            .OrderByDescending(c => c.KeyType == "string")
+            .ThenBy(c => c.StableId.ToString(), StringComparer.Ordinal)
+            .First();
+
+        return $" & {{ {selected.Signature} }}";
     }
 
     private static string Indent(string text, string indentation)

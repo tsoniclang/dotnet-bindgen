@@ -133,6 +133,21 @@ public static class TypeRefPrinter
         }
         else
         {
+            // Special-case: some self-constrained parsing interfaces (IParsable/ISpanParsable/...) use
+            // `TSelf extends IFoo<TSelf>` patterns. When a primitive like Boolean is modeled as a union
+            // (`Boolean = boolean | Boolean$shape`), instantiating these interfaces with `Boolean`
+            // triggers TS2344 (union includes raw boolean, which cannot satisfy the recursive constraint).
+            //
+            // To keep the ergonomic `Boolean` surface while remaining TypeScript-semantic-error-free,
+            // we instantiate these parsing interfaces with the non-union shape alias `Boolean$shape`.
+            var outerFullName = named.FullName;
+            var outerCommaIndex = outerFullName.IndexOf(',');
+            if (outerCommaIndex >= 0)
+                outerFullName = outerFullName.Substring(0, outerCommaIndex).Trim();
+
+            var useBooleanShapeInArgs =
+                outerFullName is "System.IParsable`1" or "System.ISpanParsable`1" or "System.IUtf8SpanParsable`1";
+
             // Print generic type with arguments: Foo<T, U>
             // CRITICAL: Emit CLR type names directly for primitives in generic type arguments
             // This ensures generic constraints are satisfied with direct CLR type names
@@ -146,6 +161,11 @@ public static class TypeRefPrinter
                 var clrName = PrimitiveLift.GetClrSimpleName(printed);
                 if (clrName != null)
                 {
+                    if (useBooleanShapeInArgs && clrName == "Boolean")
+                    {
+                        clrName = "Boolean$shape";
+                    }
+
                     // CLR primitive types are defined in System namespace
                     // Qualify when not in System namespace
                     var currentNs = resolver.CurrentNamespace;

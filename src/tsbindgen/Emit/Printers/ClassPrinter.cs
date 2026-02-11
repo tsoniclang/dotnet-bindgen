@@ -1197,44 +1197,7 @@ public static class ClassPrinter
         // - `await task` typechecks in vanilla tsc
         // - `async function f(): Task<T>` is accepted by tsc
         //
-        // This is TYPE-ONLY; Tsonic bans `.then/.catch/.finally` usage and lowers async/await to CLR Task.
-        EmitTaskThenableShimIfNeeded(sb, type);
-
         // NO STATIC MEMBERS - they go in the value export (const declaration)
-    }
-
-    private static void EmitTaskThenableShimIfNeeded(StringBuilder sb, TypeSymbol type)
-    {
-        // NOTE: Keep this logic deterministic and minimal; do not rely on external configuration.
-        // We intentionally do NOT emit catch/finally; a single `then` is sufficient for TS await/async checks.
-
-        var isTask =
-            type.ClrFullName == "System.Threading.Tasks.Task" ||
-            type.ClrFullName.StartsWith("System.Threading.Tasks.Task`", StringComparison.Ordinal) ||
-            type.ClrFullName.StartsWith("System.Threading.Tasks.Task\u0060", StringComparison.Ordinal);
-
-        var isValueTask =
-            type.ClrFullName == "System.Threading.Tasks.ValueTask" ||
-            type.ClrFullName.StartsWith("System.Threading.Tasks.ValueTask`", StringComparison.Ordinal) ||
-            type.ClrFullName.StartsWith("System.Threading.Tasks.ValueTask\u0060", StringComparison.Ordinal);
-
-        if (!isTask && !isValueTask)
-            return;
-
-        // Non-generic Task/ValueTask behaves like PromiseLike<void> for await purposes.
-        var awaitedType =
-            type.GenericParameters.Length == 1
-                ? type.GenericParameters[0].Name
-                : "void";
-
-        sb.Append("    then<TResult1 = ");
-        sb.Append(awaitedType);
-        sb.Append(", TResult2 = never>(");
-        sb.Append("onfulfilled?: ((value: ");
-        sb.Append(awaitedType);
-        sb.Append(") => TResult1 | PromiseLike<TResult1>) | undefined | null, ");
-        sb.Append("onrejected?: ((reason: any) => TResult2 | PromiseLike<TResult2>) | undefined | null");
-        sb.AppendLine("): PromiseLike<TResult1 | TResult2>;");
     }
 
     private static void EmitStaticMembers(StringBuilder sb, TypeSymbol type, TypeNameResolver resolver, BuildContext ctx, Shape.StaticConflictPlan? staticConflicts = null)
@@ -2561,10 +2524,16 @@ public static class ClassPrinter
     {
         var staticPrefix = isStatic ? "static " : "";
 
-        // Indexers: emit TypeScript index signatures instead of bogus `Item: T` properties.
-        // This enables idiomatic `obj[key]` usage for CLR indexers like:
-        // - IQueryCollection.this[string] → obj["from"]
-        // - List<T>.this[int] → obj[0]
+        // Indexers: DO NOT emit TypeScript index signatures inside the $instance interface.
+        //
+        // Putting an index signature directly in an interface that also declares normal
+        // members triggers TS2411 (all properties must be assignable to the index signature).
+        //
+        // Instead, indexers are represented at the type-alias level via intersection:
+        //   export type Foo = Foo$instance & __Foo$views & { [key: string]: T };
+        //
+        // This preserves idiomatic `obj[key]` usage while keeping the generated output
+        // TypeScript-semantic-error-free (airplane-grade).
         //
         // TS limitation: index signature keys must be string | number | symbol, and only one is supported.
         if (property.IsIndexer && !isStatic)
@@ -2589,19 +2558,8 @@ public static class ClassPrinter
 
                 if (keyType != null)
                 {
-                    var resolvedType = overrideType ?? TypeRefPrinter.Print(propertyType, resolver, ctx);
-                    var keyName = string.IsNullOrWhiteSpace(p0.Name) ? "key" : p0.Name;
-
-                    sb.Append("    ");
-                    if (!property.HasSetter)
-                        sb.Append("readonly ");
-                    sb.Append('[');
-                    sb.Append(keyName);
-                    sb.Append(": ");
-                    sb.Append(keyType);
-                    sb.Append("]: ");
-                    sb.Append(resolvedType);
-                    sb.AppendLine(";");
+                    // Indexer is emitted via type-alias intersection (see InternalIndexEmitter).
+                    // Skip emitting any member here to avoid TS2411.
                     return;
                 }
             }
