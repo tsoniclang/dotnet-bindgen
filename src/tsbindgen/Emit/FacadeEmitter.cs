@@ -281,7 +281,9 @@ public static class FacadeEmitter
             sb.AppendLine();
         }
 
-        // Emit flattened exports from static classes (--flatten-class)
+        // Emit flattened named exports from static classes:
+        // - Tsonic module containers (marker attribute), and
+        // - Explicit --flatten-class targets.
         EmitFlattenedExports(sb, ctx, plan, ns);
 
         return sb.ToString();
@@ -299,12 +301,10 @@ public static class FacadeEmitter
         Model.Symbols.NamespaceSymbol ns)
     {
         var flattenedClasses = ctx.Policy.Emission.FlattenedClasses;
-        if (flattenedClasses.Count == 0)
-            return;
-
-        // Find types in this namespace that are marked for flattening
         var typesToFlatten = ns.Types
-            .Where(t => flattenedClasses.Contains(t.ClrFullName) && t.IsStatic)
+            .Where(t =>
+                t.IsStatic &&
+                (t.IsTsonicModuleContainer || flattenedClasses.Contains(t.ClrFullName)))
             .ToList();
 
         if (typesToFlatten.Count == 0)
@@ -317,7 +317,10 @@ public static class FacadeEmitter
         foreach (var type in typesToFlatten)
         {
             var staticMethods = type.Members.Methods
-                .Where(m => m.IsStatic && m.EmitScope != Model.Symbols.MemberSymbols.EmitScope.Omitted);
+                .Where(m =>
+                    m.IsStatic &&
+                    m.Visibility == Model.Symbols.MemberSymbols.Visibility.Public &&
+                    m.EmitScope != Model.Symbols.MemberSymbols.EmitScope.Omitted);
 
             foreach (var method in staticMethods)
             {
@@ -329,6 +332,25 @@ public static class FacadeEmitter
                 {
                     CollectTypeReferencesForImports(param.Type, ns.Name, referencedNamespaces, ref usesPrimitives, plan.Graph, ctx);
                 }
+            }
+
+            // Static fields
+            foreach (var field in type.Members.Fields.Where(f =>
+                         f.IsStatic &&
+                         f.Visibility == Model.Symbols.MemberSymbols.Visibility.Public &&
+                         f.EmitScope != Model.Symbols.MemberSymbols.EmitScope.Omitted))
+            {
+                CollectTypeReferencesForImports(field.FieldType, ns.Name, referencedNamespaces, ref usesPrimitives, plan.Graph, ctx);
+            }
+
+            // Static properties (non-indexers)
+            foreach (var prop in type.Members.Properties.Where(p =>
+                         p.IsStatic &&
+                         p.Visibility == Model.Symbols.MemberSymbols.Visibility.Public &&
+                         p.EmitScope != Model.Symbols.MemberSymbols.EmitScope.Omitted &&
+                         !p.IsIndexer))
+            {
+                CollectTypeReferencesForImports(prop.PropertyType, ns.Name, referencedNamespaces, ref usesPrimitives, plan.Graph, ctx);
             }
         }
 
@@ -453,12 +475,11 @@ public static class FacadeEmitter
         Model.Symbols.NamespaceSymbol ns)
     {
         var flattenedClasses = ctx.Policy.Emission.FlattenedClasses;
-        if (flattenedClasses.Count == 0)
-            return;
-
-        // Find types in this namespace that are marked for flattening
+        // Find types in this namespace that should contribute flattened named exports.
         var typesToFlatten = ns.Types
-            .Where(t => flattenedClasses.Contains(t.ClrFullName) && t.IsStatic)
+            .Where(t =>
+                t.IsStatic &&
+                (t.IsTsonicModuleContainer || flattenedClasses.Contains(t.ClrFullName)))
             .ToList();
 
         if (typesToFlatten.Count == 0)
@@ -476,13 +497,18 @@ public static class FacadeEmitter
             facadeMode: false,
             libraryImportStyle: Plan.LibraryImportStyle.Facade);
 
+        var seenExportNames = new HashSet<string>();
+
         foreach (var type in typesToFlatten)
         {
             sb.AppendLine($"// From {type.ClrFullName}");
 
             // Get static methods (excluding omitted ones)
             var staticMethods = type.Members.Methods
-                .Where(m => m.IsStatic && m.EmitScope != Model.Symbols.MemberSymbols.EmitScope.Omitted)
+                .Where(m =>
+                    m.IsStatic &&
+                    m.Visibility == Model.Symbols.MemberSymbols.Visibility.Public &&
+                    m.EmitScope != Model.Symbols.MemberSymbols.EmitScope.Omitted)
                 .OrderBy(m => m.ClrName)
                 .ThenBy(m => m.Parameters.Length)
                 .ToList();
@@ -498,6 +524,65 @@ public static class FacadeEmitter
 
                 // Emit as exported function declaration
                 sb.AppendLine($"export declare function {signature};");
+
+                // Track collisions at the export-name level (overloads share the same name).
+                // Only record the first time we see a name for a given member group.
+                seenExportNames.Add(methodName);
+            }
+
+            // Emit static fields as exported const declarations.
+            var staticFields = type.Members.Fields
+                .Where(f =>
+                    f.IsStatic &&
+                    f.Visibility == Model.Symbols.MemberSymbols.Visibility.Public &&
+                    f.EmitScope != Model.Symbols.MemberSymbols.EmitScope.Omitted)
+                .OrderBy(f => f.ClrName)
+                .ToList();
+
+            foreach (var field in staticFields)
+            {
+                var scope = Renaming.ScopeFactory.ClassSurface(type, isStatic: true);
+                var fieldName = ctx.Renamer.GetFinalMemberName(field.StableId, scope);
+
+                if (!seenExportNames.Add(fieldName))
+                {
+                    ctx.Diagnostics.Error(
+                        Core.Diagnostics.DiagnosticCodes.NameConflictUnresolved,
+                        $"Flattened export name collision '{fieldName}' in namespace '{ns.Name}'. " +
+                        $"Multiple static members map to the same TS export name.");
+                    continue;
+                }
+
+                var typeStr = Printers.TypeRefPrinter.Print(field.FieldType, resolver, ctx);
+                sb.AppendLine($"export declare const {fieldName}: {typeStr};");
+            }
+
+            // Emit static properties (non-indexers) as exported const declarations.
+            var staticProps = type.Members.Properties
+                .Where(p =>
+                    p.IsStatic &&
+                    p.Visibility == Model.Symbols.MemberSymbols.Visibility.Public &&
+                    p.EmitScope != Model.Symbols.MemberSymbols.EmitScope.Omitted &&
+                    !p.IsIndexer)
+                .OrderBy(p => p.ClrName)
+                .ToList();
+
+            foreach (var prop in staticProps)
+            {
+                var scope = Renaming.ScopeFactory.ClassSurface(type, isStatic: true);
+                var propName = ctx.Renamer.GetFinalMemberName(prop.StableId, scope);
+
+                if (!seenExportNames.Add(propName))
+                {
+                    ctx.Diagnostics.Error(
+                        Core.Diagnostics.DiagnosticCodes.NameConflictUnresolved,
+                        $"Flattened export name collision '{propName}' in namespace '{ns.Name}'. " +
+                        $"Multiple static members map to the same TS export name.");
+                    continue;
+                }
+
+                var typeStr = Printers.TypeRefPrinter.Print(prop.PropertyType, resolver, ctx);
+                sb.AppendLine($"export declare const {propName}: {typeStr};");
             }
         }
     }

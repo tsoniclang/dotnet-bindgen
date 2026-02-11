@@ -99,6 +99,19 @@ public sealed record TypeSymbol
     public bool IsStatic { get; init; }
 
     /// <summary>
+    /// True if this type is a Tsonic-emitted module container.
+    ///
+    /// Module containers are static classes that represent TS module-level values.
+    /// tsbindgen uses this marker to generate flattened named exports so users can do:
+    ///   import { foo } from "@pkg/Namespace.js";
+    ///   foo(...);
+    /// instead of:
+    ///   import { ModuleFile } from "@pkg/Namespace.js";
+    ///   ModuleFile.foo(...);
+    /// </summary>
+    public bool IsTsonicModuleContainer { get; init; }
+
+    /// <summary>
     /// Declaring type (for nested types).
     /// </summary>
     public TypeSymbol? DeclaringType { get; init; }
