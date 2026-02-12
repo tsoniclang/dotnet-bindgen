@@ -4,6 +4,7 @@ using tsbindgen.Core;
 using tsbindgen.Library;
 using tsbindgen.Model;
 using tsbindgen.Model.Symbols;
+using tsbindgen.Plan.Validation;
 using tsbindgen.Renaming;
 
 namespace tsbindgen.Plan;
@@ -189,27 +190,73 @@ public static class ImportPlanner
 
                 // TS2300 FIX: Check for cross-module name collisions (global across all imports)
                 // If this name was already imported from a DIFFERENT module, we need an alias
-                string? crossModuleAlias = null;
-                if (globalImportedNames.TryGetValue(tsName, out var existingModulePath))
+                // Prefer friendly aliases for generic imports (Dictionary_2 → Dictionary) deterministically from CLR metadata.
+                // CRITICAL: This MUST NOT assume "_N" means arity; only apply when CLR name is generic (has backtick).
+                string? preferredFriendlyAlias = null;
+                if (isLibraryImport && libraryImportStyle == LibraryImportStyle.InternalIndex)
+                {
+                    preferredFriendlyAlias = GetPreferredFriendlyAliasForGenericInternalImport(ctx, clrName, tsName);
+                }
+
+                var candidateLocalName = preferredFriendlyAlias ?? tsName;
+
+                // Avoid shadowing TypeScript built-ins (Array, String, Boolean, Object, Symbol, BigInt)
+                // when importing CLR types with matching names.
+                if (IsTypeScriptBuiltinIdentifier(candidateLocalName))
+                {
+                    candidateLocalName = $"Clr{candidateLocalName}";
+                }
+
+                // If localName collides with a local type declaration, disambiguate deterministically.
+                // Example: System.Reflection imports AssemblyHashAlgorithm but also has local enum AssemblyHashAlgorithm
+                var hasLocalCollision = ns.Types.Any(localType =>
+                {
+                    var localTypeName = ctx.Renamer.GetFinalTypeName(localType);
+                    return localTypeName == candidateLocalName;
+                });
+                if (hasLocalCollision)
+                {
+                    var targetNsShort = GetNamespaceShortName(targetNamespace);
+                    candidateLocalName = $"{candidateLocalName}_{targetNsShort}";
+                }
+
+                // TS2300 FIX: Track imported LOCAL names across all modules in this file.
+                // If this local name was already claimed by a different module, alias deterministically.
+                if (globalImportedNames.TryGetValue(candidateLocalName, out var existingModulePath))
                 {
                     if (existingModulePath != importPath)
                     {
-                        // Same name from different module - need deterministic alias
-                        // Scheme: {name}__{SanitizedNamespace} e.g., IEnumerable__System_Collections
-                        crossModuleAlias = $"{tsName}__{SanitizeNamespaceForAlias(targetNamespace)}";
-                        ctx.Log("ImportPlanner", $"Cross-module collision: {tsName} (from {existingModulePath}) " +
+                        var crossModuleAlias = $"{candidateLocalName}__{SanitizeNamespaceForAlias(targetNamespace)}";
+                        ctx.Log("ImportPlanner", $"Cross-module collision: {candidateLocalName} (from {existingModulePath}) " +
                             $"vs {importPath} → aliasing to {crossModuleAlias}");
+                        candidateLocalName = crossModuleAlias;
+                    }
+                    else
+                    {
+                        // Same local name already used from the same module.
+                        // This usually indicates a preferred-friendly alias collision (e.g. Task + Task_1 both want "Task").
+                        // Fall back to the canonical name for this symbol (no friendly alias) to preserve determinism.
+                        if (preferredFriendlyAlias != null)
+                        {
+                            candidateLocalName = tsName;
+                        }
                     }
                 }
-                else
+
+                // Policy: always alias imports (stable, deterministic) - apply after other disambiguation.
+                // NOTE: This is based on the canonical imported symbol name (tsName) to keep behavior consistent.
+                if (ctx.Policy.Modules.AlwaysAliasImports && candidateLocalName == tsName)
                 {
-                    // First time seeing this name - claim it for this module
-                    globalImportedNames[tsName] = importPath;
+                    var targetNsShort = GetNamespaceShortName(targetNamespace);
+                    candidateLocalName = $"{tsName}_{targetNsShort}";
                 }
 
-                // C.5.3 FIX: Pass namespace symbol to detect collisions with local types
-                // Use cross-module alias if we detected a collision, otherwise normal alias detection
-                var alias = crossModuleAlias ?? DetermineAlias(ctx, ns, targetNamespace, tsName, aliases);
+                // Claim final local name for this module.
+                // If it is already claimed from a different module, we already disambiguated above.
+                globalImportedNames[candidateLocalName] = importPath;
+
+                // Final alias: only emit `as` when local name differs from exported symbol name.
+                var alias = candidateLocalName == tsName ? null : candidateLocalName;
 
                 // TS2693 FIX: Determine if this type needs a value import (not just type import)
                 // Base classes and interfaces used in extends/implements need to be imported as values
@@ -585,6 +632,49 @@ public static class ImportPlanner
 
         // Use canonical family index - no recomputation, no drift
         return libraryContract.FacadeFamilies.ContainsKey(baseName);
+    }
+
+    /// <summary>
+    /// Prefer a "friendly" local alias for generic library imports when importing from internal index.
+    ///
+    /// Example:
+    ///   System.Collections.Generic.Dictionary`2 (tsName: Dictionary_2) → local alias "Dictionary"
+    ///
+    /// Deterministic + safe:
+    /// - Only applies when CLR type is generic (contains backtick)
+    /// - Alias is derived from CLR base name (no arity) and sanitized using the same rules as external types
+    /// - Does NOT assume "_N" means arity for non-generic types (e.g., Database_1 is preserved)
+    /// </summary>
+    private static string? GetPreferredFriendlyAliasForGenericInternalImport(
+        BuildContext ctx,
+        string clrFullName,
+        string tsName)
+    {
+        if (!clrFullName.Contains('`'))
+            return null;
+
+        // Compute the TypeScript identifier for the CLR base name (strip backtick-arity)
+        // and apply reserved-word sanitization.
+        var baseClrFullName = Emit.MultiArityFamilyDetect.ExtractClrBaseName(clrFullName);
+        var baseTsName = GetTypeScriptNameForExternalType(baseClrFullName);
+
+        // No-op if it doesn't actually change anything.
+        if (baseTsName == tsName)
+            return null;
+
+        // Must be a valid identifier and not a reserved word.
+        // (GetTypeScriptNameForExternalType already sanitizes reserved words, but keep guard for safety.)
+        if (!Shared.IsValidTypeScriptIdentifier(baseTsName))
+            return null;
+
+        if (Shared.IsTypeScriptReservedWord(baseTsName))
+            return null;
+
+        // Respect policy: never alias to an identifier that would shadow TS built-ins.
+        if (IsTypeScriptBuiltinIdentifier(baseTsName))
+            return null;
+
+        return baseTsName;
     }
 }
 
