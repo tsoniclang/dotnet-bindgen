@@ -127,7 +127,14 @@ public sealed class TypeNameResolver
         }
 
         // 4. Look up TypeSymbol in graph using CLR full name (TypeIndex key)
+        // Normalize assembly-qualified names ("Foo.Bar, Baz") to the CLR full name ("Foo.Bar")
+        // because TypeIndex keys never include assembly/version metadata.
         var graphClrFullName = named.FullName;
+        var graphCommaIndex = graphClrFullName.IndexOf(',');
+        if (graphCommaIndex >= 0)
+        {
+            graphClrFullName = graphClrFullName.Substring(0, graphCommaIndex).Trim();
+        }
 
         if (!_graph.TypeIndex.TryGetValue(graphClrFullName, out var typeSymbol))
         {
