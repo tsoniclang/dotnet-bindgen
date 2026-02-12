@@ -6,10 +6,22 @@ namespace Tsonic.Internal
 
 namespace ModuleContainerExportsFixture
 {
+    public sealed class BuildRequest
+    {
+        public BuildRequest(int x) => X = x;
+        public int X { get; }
+    }
+
+    public sealed class BuildResult
+    {
+        public BuildResult(int y) => Y = y;
+        public int Y { get; }
+    }
+
     [global::Tsonic.Internal.ModuleContainerAttribute]
     public static class BuildSite
     {
-        public static int buildSite(int x) => x + 1;
+        public static BuildResult buildSite(BuildRequest req) => new(req.X + 1);
 
         public static string Version => "1";
 

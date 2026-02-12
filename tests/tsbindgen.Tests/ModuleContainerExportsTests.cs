@@ -57,7 +57,7 @@ public sealed class ModuleContainerExportsTests
         Assert.True(File.Exists(facadePath), $"Missing facade file: {facadePath}");
 
         var dts = File.ReadAllText(facadePath);
-        Assert.Contains("export declare function buildSite", dts);
+        Assert.Contains("export declare function buildSite(req: Internal.BuildRequest): Internal.BuildResult;", dts);
         Assert.Contains("export declare const Version", dts);
         Assert.Contains("export declare const Count", dts);
 
@@ -164,4 +164,3 @@ public sealed class ModuleContainerExportsTests
         Assert.True(proc.ExitCode == 0, $"dotnet build failed (exit {proc.ExitCode}).\nSTDOUT:\n{stdout}\nSTDERR:\n{stderr}");
     }
 }
-

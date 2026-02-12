@@ -19,6 +19,7 @@ public sealed class TypeNameResolver
     private readonly ImportPlan? _importPlan;
     private readonly string? _currentNamespace;
     private readonly bool _facadeMode;
+    private readonly bool _qualifyCurrentNamespaceWithInternal;
     private readonly Plan.LibraryImportStyle _libraryImportStyle;
 
     public TypeNameResolver(
@@ -27,7 +28,8 @@ public sealed class TypeNameResolver
         ImportPlan? importPlan = null,
         string? currentNamespace = null,
         bool facadeMode = false,
-        Plan.LibraryImportStyle libraryImportStyle = Plan.LibraryImportStyle.Facade)
+        Plan.LibraryImportStyle libraryImportStyle = Plan.LibraryImportStyle.Facade,
+        bool qualifyCurrentNamespaceWithInternal = false)
     {
         _ctx = ctx;
         _graph = graph;
@@ -35,6 +37,7 @@ public sealed class TypeNameResolver
         _currentNamespace = currentNamespace;
         _facadeMode = facadeMode;
         _libraryImportStyle = libraryImportStyle;
+        _qualifyCurrentNamespaceWithInternal = qualifyCurrentNamespaceWithInternal;
     }
 
     public bool IsFacadeMode => _facadeMode;
@@ -124,7 +127,14 @@ public sealed class TypeNameResolver
         }
 
         // 4. Look up TypeSymbol in graph using CLR full name (TypeIndex key)
+        // Normalize assembly-qualified names ("Foo.Bar, Baz") to the CLR full name ("Foo.Bar")
+        // because TypeIndex keys never include assembly/version metadata.
         var graphClrFullName = named.FullName;
+        var graphCommaIndex = graphClrFullName.IndexOf(',');
+        if (graphCommaIndex >= 0)
+        {
+            graphClrFullName = graphClrFullName.Substring(0, graphCommaIndex).Trim();
+        }
 
         if (!_graph.TypeIndex.TryGetValue(graphClrFullName, out var typeSymbol))
         {
@@ -223,6 +233,20 @@ public sealed class TypeNameResolver
             // The alias includes the views union: Module_ = Module_$instance | __Module_$views
             // This ensures derived class properties match base class property types
             finalName = typeSymbol.TsEmitName;
+        }
+
+        // Facade-only local binding fix:
+        // Facade files re-export types via `export { X } from ...`, which does NOT create a local
+        // binding usable by other declarations within the same module. When emitting flattened
+        // exports inside a facade, always qualify same-namespace type references via the existing
+        // `import * as Internal from './<Ns>/internal/index.js'` binding.
+        if (_qualifyCurrentNamespaceWithInternal &&
+            !forValuePosition &&
+            _currentNamespace != null &&
+            finalName != "unknown" &&
+            typeSymbol.Namespace == _currentNamespace)
+        {
+            return $"Internal.{finalName}";
         }
 
         // 6. TS2304 FIX (Facade): In facade mode, qualify cross-namespace types with namespace alias
