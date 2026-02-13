@@ -13,8 +13,12 @@ namespace tsbindgen.Shape;
 /// When a derived class has an instance member with the same name as a base class
 /// member but with an incompatible signature/type, TypeScript reports TS2416.
 ///
-/// Solution: Suppress the conflicting member in the derived class.
-/// The base class's member will be inherited automatically.
+/// Airplane-grade policy:
+/// - Never silently omit CLR members from the class surface.
+/// - Prefer fixing the root cause (e.g., overload family emission) over suppression.
+///
+/// This pass is intentionally conservative and currently only suppresses instance
+/// properties (rare, TS limitation) when required for TypeScript validity.
 /// </summary>
 public static class OverrideConflictDetector
 {
@@ -58,19 +62,6 @@ public static class OverrideConflictDetector
                             $"  Conflict: {type.ClrFullName}.{prop.ClrName} (property type mismatch)");
                     }
                 }
-
-                // Check for instance method conflicts
-                foreach (var method in type.Members.Methods.Where(m => !m.IsStatic && m.EmitScope == EmitScope.ClassSurface))
-                {
-                    var baseMethods = FindInstanceMethods(baseType, method.ClrName);
-                    if (baseMethods.Count > 0 && HasMethodConflict(method, baseMethods))
-                    {
-                        plan.AddSuppression(type, method.StableId.ToString(), $"Instance method '{method.ClrName}' conflicts with base class");
-                        conflictCount++;
-                        ctx.Log("OverrideConflictDetector",
-                            $"  Conflict: {type.ClrFullName}.{method.ClrName} (signature mismatch)");
-                    }
-                }
             }
         }
 
@@ -87,14 +78,6 @@ public static class OverrideConflictDetector
     }
 
     /// <summary>
-    /// Find all instance methods in a type with a given CLR name (handles overloads).
-    /// </summary>
-    private static List<MethodSymbol> FindInstanceMethods(TypeSymbol type, string clrName)
-    {
-        return type.Members.Methods.Where(m => !m.IsStatic && m.ClrName == clrName).ToList();
-    }
-
-    /// <summary>
     /// Check if a property conflicts with a base property.
     /// Conflict occurs when types are different (incompatible).
     /// </summary>
@@ -106,23 +89,6 @@ public static class OverrideConflictDetector
 
         // Different types = conflict
         // (TypeScript requires exact match for properties in inheritance)
-        return true;
-    }
-
-    /// <summary>
-    /// Check if a method conflicts with base methods.
-    /// Conflict occurs when signature is different (not an exact override).
-    /// </summary>
-    private static bool HasMethodConflict(MethodSymbol derived, List<MethodSymbol> baseMethods)
-    {
-        // If any base method has exact same signature, no conflict
-        foreach (var baseMethod in baseMethods)
-        {
-            if (MethodSignaturesEqual(derived, baseMethod))
-                return false;  // Exact match = valid override, no conflict
-        }
-
-        // No matching signature found = conflict
         return true;
     }
 
@@ -153,33 +119,6 @@ public static class OverrideConflictDetector
             PlaceholderTypeReference placeholder => $"Placeholder:{placeholder.DebugName}",
             _ => typeRef.ToString() ?? "unknown"
         };
-    }
-
-    /// <summary>
-    /// Check if two method signatures are equal (same parameters and return type).
-    /// </summary>
-    private static bool MethodSignaturesEqual(MethodSymbol a, MethodSymbol b)
-    {
-        // Check return type
-        if (!TypeReferencesEqual(a.ReturnType, b.ReturnType))
-            return false;
-
-        // Check parameter count
-        if (a.Parameters.Length != b.Parameters.Length)
-            return false;
-
-        // Check each parameter type
-        for (int i = 0; i < a.Parameters.Length; i++)
-        {
-            if (!TypeReferencesEqual(a.Parameters[i].Type, b.Parameters[i].Type))
-                return false;
-        }
-
-        // Check generic parameters count
-        if (a.GenericParameters.Length != b.GenericParameters.Length)
-            return false;
-
-        return true;
     }
 
     /// <summary>

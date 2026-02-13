@@ -1287,8 +1287,14 @@ public static class InternalIndexEmitter
         // parameter types like TResult & void & unknown).
         //
         // For non-generic Task/ValueTask, we include:
-        // - void (Awaited<Task> is void)
         // - unknown (broad overload)
+        //
+        // NOTE: We intentionally do NOT include a `void` overload here. If Task has
+        // `then(value: void)` and Task<TResult> has `then(value: TResult)`, TS rejects
+        // Task<TResult> : Task at the type-alias level (TS2322/TS2430) because the
+        // `then` overload sets are incompatible. Using only `unknown` keeps
+        // Task<TResult> assignable to Task (CLR-faithful inheritance) at the cost of
+        // Awaited<Task> being `unknown` in TS.
         var isTask =
             type.ClrFullName == "System.Threading.Tasks.Task" ||
             type.ClrFullName.StartsWith("System.Threading.Tasks.Task`", StringComparison.Ordinal) ||
@@ -1330,7 +1336,6 @@ public static class InternalIndexEmitter
         }
         else
         {
-            EmitThenOverload("void", "void");
             EmitThenOverload("unknown", "unknown");
         }
 

@@ -464,7 +464,7 @@ public sealed class ReflectionReader
             AssemblyName = _ctx.Intern(declaringType.Assembly.GetName().Name ?? "Unknown"),
             DeclaringClrFullName = _ctx.Intern(declaringType.FullName ?? declaringType.Name),
             MemberName = _ctx.Intern(field.Name),
-            CanonicalSignature = field.FieldType.FullName ?? field.FieldType.Name,
+            CanonicalSignature = GetStableClrTypeName(field.FieldType),
             MetadataToken = field.MetadataToken
         };
 
@@ -507,7 +507,7 @@ public sealed class ReflectionReader
             AssemblyName = _ctx.Intern(declaringType.Assembly.GetName().Name ?? "Unknown"),
             DeclaringClrFullName = _ctx.Intern(declaringType.FullName ?? declaringType.Name),
             MemberName = _ctx.Intern(memberName),
-            CanonicalSignature = evt.EventHandlerType?.FullName ?? "Unknown",
+            CanonicalSignature = evt.EventHandlerType != null ? GetStableClrTypeName(evt.EventHandlerType) : "Unknown",
             MetadataToken = evt.MetadataToken
         };
 
@@ -683,23 +683,105 @@ public sealed class ReflectionReader
         }
     }
 
+    private static string GetStableClrTypeName(Type type)
+    {
+        // We need stable, collision-free CLR type strings even when reflection returns null FullName
+        // (which happens for open constructed generics, e.g. Func<Task<TResult>, TResult>).
+        //
+        // Do NOT rely on Type.Name, and do not rely on ToString() under MetadataLoadContext
+        // (it can omit namespaces and generic arguments).
+        return GetStableClrTypeNameCore(type);
+    }
+
+    private static string GetStableClrTypeNameCore(Type type)
+    {
+        if (type.IsByRef)
+        {
+            return GetStableClrTypeNameCore(type.GetElementType()!) + "&";
+        }
+
+        if (type.IsPointer)
+        {
+            return GetStableClrTypeNameCore(type.GetElementType()!) + "*";
+        }
+
+        if (type.IsArray)
+        {
+            var elem = GetStableClrTypeNameCore(type.GetElementType()!);
+            var rank = type.GetArrayRank();
+            return rank == 1
+                ? elem + "[]"
+                : elem + "[" + new string(',', rank - 1) + "]";
+        }
+
+        if (type.IsGenericParameter)
+        {
+            // Use IL-style notation to avoid collisions between type and method generic parameters:
+            // - !0  = type generic parameter 0
+            // - !!0 = method generic parameter 0
+            var prefix = type.DeclaringMethod != null ? "!!" : "!";
+            return prefix + type.GenericParameterPosition;
+        }
+
+        if (type.IsGenericType && !type.IsGenericTypeDefinition)
+        {
+            var def = type.GetGenericTypeDefinition();
+            var defName = GetNonGenericTypeFullName(def);
+
+            var args = type.GetGenericArguments()
+                .Select(FormatGenericArgument)
+                .ToArray();
+
+            // Match Type.FullName's generic-argument shape: Outer`N[[Arg1],[Arg2]]
+            return defName + "[" + string.Join(",", args) + "]";
+        }
+
+        return GetNonGenericTypeFullName(type);
+    }
+
+    private static string GetNonGenericTypeFullName(Type type)
+    {
+        if (type.FullName != null)
+            return type.FullName;
+
+        if (type.IsNested && type.DeclaringType != null)
+            return GetNonGenericTypeFullName(type.DeclaringType) + "+" + type.Name;
+
+        if (!string.IsNullOrEmpty(type.Namespace))
+            return type.Namespace + "." + type.Name;
+
+        return type.Name;
+    }
+
+    private static string FormatGenericArgument(Type arg)
+    {
+        var typeName = GetStableClrTypeNameCore(arg);
+
+        // Generic parameters do not have assemblies, and their type identity is positional.
+        if (arg.IsGenericParameter)
+            return "[" + typeName + "]";
+
+        var asm = arg.Assembly.FullName ?? arg.Assembly.GetName().Name ?? "Unknown";
+        return "[" + typeName + "," + asm + "]";
+    }
+
     private string CreateMethodSignature(MethodInfo method)
     {
-        var paramTypes = method.GetParameters().Select(p => p.ParameterType.FullName ?? p.ParameterType.Name).ToList();
-        var returnType = method.ReturnType.FullName ?? method.ReturnType.Name;
+        var paramTypes = method.GetParameters().Select(p => GetStableClrTypeName(p.ParameterType)).ToList();
+        var returnType = GetStableClrTypeName(method.ReturnType);
         return _ctx.CanonicalizeMethod(method.Name, paramTypes, returnType);
     }
 
     private string CreatePropertySignature(PropertyInfo property)
     {
-        var indexTypes = property.GetIndexParameters().Select(p => p.ParameterType.FullName ?? p.ParameterType.Name).ToList();
-        var propType = property.PropertyType.FullName ?? property.PropertyType.Name;
+        var indexTypes = property.GetIndexParameters().Select(p => GetStableClrTypeName(p.ParameterType)).ToList();
+        var propType = GetStableClrTypeName(property.PropertyType);
         return _ctx.CanonicalizeProperty(property.Name, indexTypes, propType);
     }
 
     private string CreateConstructorSignature(ConstructorInfo ctor)
     {
-        var paramTypes = ctor.GetParameters().Select(p => p.ParameterType.FullName ?? p.ParameterType.Name).ToList();
+        var paramTypes = ctor.GetParameters().Select(p => GetStableClrTypeName(p.ParameterType)).ToList();
         return _ctx.CanonicalizeMethod(".ctor", paramTypes, "void");
     }
 

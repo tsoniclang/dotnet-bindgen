@@ -880,14 +880,13 @@ public static class ClassPrinter
             {
                 var exposures = group.ToList();
 
-                // Only emit OWN (non-inherited) methods
-                // Inherited methods are automatically available through TypeScript's extends clause
-                // Re-declaring them causes TS2416 errors even if types are identical
-                // EXCEPTION: Always emit methods that implement abstract base members (TS2654 fix)
+                // Only emit methods when this type declares at least one overload in the family.
+                // If the type declares ANY overload, it must also re-declare the inherited overloads,
+                // otherwise the inherited overloads get hidden and base assignability breaks (TS2430).
                 var ownMethods = exposures.Where(e => !e.IsInherited).ToList();
                 if (!ownMethods.Any())
                 {
-                    // All methods are inherited - skip emitting (already available from base)
+                    // No own overloads - inherit the entire overload family via `extends`.
                     continue;
                 }
 
@@ -910,8 +909,9 @@ public static class ClassPrinter
                 // TS2512 FIX: Compute single abstract status for OWN methods only
                 var groupIsAbstract = ownMethods.All(e => e.Method.IsAbstract) && type.IsAbstract;
 
-                // Emit ONLY own method overload signatures (not inherited)
-                foreach (var exposure in ownMethods)
+                // Emit the full overload family (own + inherited) for this CLR name.
+                // Exposures are override-wins deduplicated in BindingsProvider.
+                foreach (var exposure in exposures)
                 {
                     // D3: Skip if this instance method conflicts with base class
                     if (ShouldSuppressMember(exposure.Method.StableId.ToString()))
@@ -1114,15 +1114,23 @@ public static class ClassPrinter
             {
                 var exposures = group.ToList();
 
+                bool ShouldExpose(MethodSymbol m) =>
+                    m.Visibility == Visibility.Public ||
+                    ((m.Visibility == Visibility.Protected || m.Visibility == Visibility.ProtectedInternal) &&
+                     (m.IsVirtual || m.IsAbstract || m.IsOverride));
+
                 var ownMethods = exposures
-                    .Where(e =>
-                        !e.IsInherited &&
-                        (e.Method.Visibility == Visibility.Public ||
-                         ((e.Method.Visibility == Visibility.Protected || e.Method.Visibility == Visibility.ProtectedInternal) &&
-                          (e.Method.IsVirtual || e.Method.IsAbstract || e.Method.IsOverride))))
+                    .Where(e => !e.IsInherited && ShouldExpose(e.Method))
                     .ToList();
                 if (!ownMethods.Any())
                     continue;
+
+                // If this type declares ANY overload in this family, we must also
+                // re-declare the inherited overloads, otherwise they get hidden (TS2430).
+                var methodsToEmit = exposures
+                    .Where(e => ShouldExpose(e.Method))
+                    .ToList();
+
 
                 string tsName;
                 var preferredName = ownMethods.FirstOrDefault(m => !NameUtilities.HasNumericSuffix(m.TsName));
@@ -1134,7 +1142,7 @@ public static class ClassPrinter
                 // STATIC-SIDE FIX: Interfaces don't have abstract keyword - all methods are implicitly abstract
                 // Since we're now emitting classes as interfaces, we never emit abstract
 
-                foreach (var exposure in ownMethods)
+                foreach (var exposure in methodsToEmit)
                 {
                     // D3: Skip if this instance method conflicts with base class
                     if (ShouldSuppressMember(exposure.Method.StableId.ToString()))

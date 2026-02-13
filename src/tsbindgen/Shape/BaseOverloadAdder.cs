@@ -126,8 +126,11 @@ public static class BaseOverloadAdder
                 return;
             visited.Add(currentClass.ClrFullName);
 
-            // Add this class's methods
-            allMethods.AddRange(currentClass.Members.Methods.Where(m => !m.IsStatic));
+            // Add this class's methods.
+            // IMPORTANT: only consider ClassSurface methods when reasoning about base-class overload coverage.
+            // ViewOnly methods (e.g. ExplicitView interface members) are not emitted on the class surface and
+            // must not block injection of missing base overloads.
+            allMethods.AddRange(currentClass.Members.Methods.Where(m => !m.IsStatic && m.EmitScope == EmitScope.ClassSurface));
 
             // Recurse to base class
             if (currentClass.BaseType != null)
@@ -165,7 +168,7 @@ public static class BaseOverloadAdder
 
         // Find methods in derived that override or hide base methods
         var derivedMethodsByName = derivedClass.Members.Methods
-            .Where(m => !m.IsStatic)
+            .Where(m => !m.IsStatic && m.EmitScope == EmitScope.ClassSurface)
             .GroupBy(m => m.ClrName)
             .ToDictionary(g => g.Key, g => g.ToList());
 
@@ -312,7 +315,7 @@ public static class BaseOverloadAdder
             IsAbstract = baseMethod.IsAbstract,
             IsVirtual = baseMethod.IsVirtual,
             IsOverride = false, // Not an override, it's the base signature
-            IsSealed = false,
+            IsSealed = baseMethod.IsSealed,
             IsNew = false,
             Visibility = baseMethod.Visibility,
             Provenance = MemberProvenance.BaseOverload,
