@@ -190,15 +190,7 @@ public static class ImportPlanner
 
                 // TS2300 FIX: Check for cross-module name collisions (global across all imports)
                 // If this name was already imported from a DIFFERENT module, we need an alias
-                // Prefer friendly aliases for generic imports (Dictionary_2 → Dictionary) deterministically from CLR metadata.
-                // CRITICAL: This MUST NOT assume "_N" means arity; only apply when CLR name is generic (has backtick).
-                string? preferredFriendlyAlias = null;
-                if (isLibraryImport && libraryImportStyle == LibraryImportStyle.InternalIndex)
-                {
-                    preferredFriendlyAlias = GetPreferredFriendlyAliasForGenericInternalImport(ctx, clrName, tsName);
-                }
-
-                var candidateLocalName = preferredFriendlyAlias ?? tsName;
+                var candidateLocalName = tsName;
 
                 // Avoid shadowing TypeScript built-ins (Array, String, Boolean, Object, Symbol, BigInt)
                 // when importing CLR types with matching names.
@@ -231,16 +223,11 @@ public static class ImportPlanner
                             $"vs {importPath} → aliasing to {crossModuleAlias}");
                         candidateLocalName = crossModuleAlias;
                     }
-                    else
-                    {
-                        // Same local name already used from the same module.
-                        // This usually indicates a preferred-friendly alias collision (e.g. Task + Task_1 both want "Task").
-                        // Fall back to the canonical name for this symbol (no friendly alias) to preserve determinism.
-                        if (preferredFriendlyAlias != null)
-                        {
-                            candidateLocalName = tsName;
-                        }
-                    }
+                else
+                {
+                    // Same local name already used from the same module.
+                    // No-op: already imported from the same module.
+                }
                 }
 
                 // Policy: always alias imports (stable, deterministic) - apply after other disambiguation.
@@ -632,49 +619,6 @@ public static class ImportPlanner
 
         // Use canonical family index - no recomputation, no drift
         return libraryContract.FacadeFamilies.ContainsKey(baseName);
-    }
-
-    /// <summary>
-    /// Prefer a "friendly" local alias for generic library imports when importing from internal index.
-    ///
-    /// Example:
-    ///   System.Collections.Generic.Dictionary`2 (tsName: Dictionary_2) → local alias "Dictionary"
-    ///
-    /// Deterministic + safe:
-    /// - Only applies when CLR type is generic (contains backtick)
-    /// - Alias is derived from CLR base name (no arity) and sanitized using the same rules as external types
-    /// - Does NOT assume "_N" means arity for non-generic types (e.g., Database_1 is preserved)
-    /// </summary>
-    private static string? GetPreferredFriendlyAliasForGenericInternalImport(
-        BuildContext ctx,
-        string clrFullName,
-        string tsName)
-    {
-        if (!clrFullName.Contains('`'))
-            return null;
-
-        // Compute the TypeScript identifier for the CLR base name (strip backtick-arity)
-        // and apply reserved-word sanitization.
-        var baseClrFullName = Emit.MultiArityFamilyDetect.ExtractClrBaseName(clrFullName);
-        var baseTsName = GetTypeScriptNameForExternalType(baseClrFullName);
-
-        // No-op if it doesn't actually change anything.
-        if (baseTsName == tsName)
-            return null;
-
-        // Must be a valid identifier and not a reserved word.
-        // (GetTypeScriptNameForExternalType already sanitizes reserved words, but keep guard for safety.)
-        if (!Shared.IsValidTypeScriptIdentifier(baseTsName))
-            return null;
-
-        if (Shared.IsTypeScriptReservedWord(baseTsName))
-            return null;
-
-        // Respect policy: never alias to an identifier that would shadow TS built-ins.
-        if (IsTypeScriptBuiltinIdentifier(baseTsName))
-            return null;
-
-        return baseTsName;
     }
 }
 

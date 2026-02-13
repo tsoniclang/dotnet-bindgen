@@ -7,7 +7,7 @@ namespace tsbindgen.Tests;
 public sealed class FriendlyImportAliasesTests
 {
     [Fact]
-    public void InternalIndex_Aliases_GenericLibraryImports_ToFriendlyNames_WithoutGuessing()
+    public void InternalIndex_Uses_InternalIndex_Imports_Without_Friendly_Aliasing()
     {
         var repoRoot = FindRepoRoot();
 
@@ -71,13 +71,13 @@ public sealed class FriendlyImportAliasesTests
 
         var dts = File.ReadAllText(consumerInternalIndex);
 
-        // Generic import should be aliased to friendly name:
-        //   import type { Box_1 as Box } ...
-        Assert.Contains("Box_1 as Box", dts);
+        // Internal index output must not "prettify" generic names with import aliases.
+        // We want arity-stable imports (Box_1, Database_1_1, etc.) for airplane-grade correctness.
+        Assert.DoesNotContain("Box_1 as Box", dts);
 
-        // Friendly name should be used in signatures (not Box_1<T>).
-        Assert.Contains("GetBox(): Box<", dts);
-        Assert.DoesNotContain("GetBox(): Box_1<", dts);
+        // Generic should stay arity-stable in signatures.
+        Assert.Contains("GetBox(): Box_1<", dts);
+        Assert.DoesNotContain("GetBox(): Box<", dts);
 
         // Database_1 (non-generic) is a legitimate CLR name; it must remain as-is.
         Assert.Contains("GetDb0(): Database_1", dts);
@@ -85,6 +85,9 @@ public sealed class FriendlyImportAliasesTests
         // Database_1<T> SHOULD NOT be aliased to Database_1 because that would collide with the non-generic sibling.
         Assert.DoesNotContain("Database_1_1 as Database_1", dts);
         Assert.Contains("GetDb1(): Database_1_1<", dts);
+
+        // Library imports in internal/index.d.ts must come from dependency internal indices, not facades.
+        Assert.Contains("/internal/index.js", dts);
     }
 
     private static string FindRepoRoot()
