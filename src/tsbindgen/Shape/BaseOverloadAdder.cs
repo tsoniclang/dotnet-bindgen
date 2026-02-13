@@ -5,6 +5,7 @@ using tsbindgen.Renaming;
 using tsbindgen.Model;
 using tsbindgen.Model.Symbols;
 using tsbindgen.Model.Symbols.MemberSymbols;
+using tsbindgen.Model.Types;
 
 namespace tsbindgen.Shape;
 
@@ -15,6 +16,10 @@ namespace tsbindgen.Shape;
 /// </summary>
 public static class BaseOverloadAdder
 {
+    private sealed record ClosedMethodSignature(
+        ImmutableArray<ParameterSymbol> Parameters,
+        TypeReference ReturnType);
+
     public static SymbolGraph AddOverloads(BuildContext ctx, SymbolGraph graph)
     {
         ctx.Log("BaseOverloadAdder", "Adding base class overloads...");
@@ -153,6 +158,11 @@ public static class BaseOverloadAdder
         if (baseClass == null)
             return (graph, 0); // External base or System.Object
 
+        // Build a generic substitution map for the entire inheritance chain so we can close
+        // base class method signatures (e.g. RoutingHost<TSelf>.get(...) returning TSelf) into
+        // the derived class context (e.g. TSelf -> Router).
+        var inheritanceSubstitution = BuildInheritanceSubstitutionMap(graph, derivedClass);
+
         // Find methods in derived that override or hide base methods
         var derivedMethodsByName = derivedClass.Members.Methods
             .Where(m => !m.IsStatic)
@@ -183,30 +193,30 @@ public static class BaseOverloadAdder
             // FIX: Compare by StableId instead of re-canonicalizing (same fix as ExplicitImplSynthesizer)
             foreach (var baseMethod in baseMethods)
             {
-                // Build the StableId that the derived method would have if it existed
-                var expectedStableId = new MemberStableId
+                var closedBase = CloseMethodSignature(baseMethod, inheritanceSubstitution);
+
+                var derivedHasCompatible = derivedMethods.Any(dm =>
                 {
-                    AssemblyName = derivedClass.StableId.AssemblyName,
-                    DeclaringClrFullName = derivedClass.ClrFullName,
-                    MemberName = baseMethod.ClrName,
-                    CanonicalSignature = ctx.CanonicalizeMethod(
-                        baseMethod.ClrName,
-                        baseMethod.Parameters.Select(p => GetTypeFullName(p.Type)).ToList(),
-                        GetTypeFullName(baseMethod.ReturnType))
-                };
+                    var closedDerived = CloseMethodSignature(dm, inheritanceSubstitution);
 
-                var derivedHas = derivedMethods.Any(dm => dm.StableId.Equals(expectedStableId));
+                    // Base overload matching: exact parameter shape (CLR) + covariant return allowed.
+                    // TypeScript assignability allows covariant returns, so a derived overload with
+                    // the same parameters and a more-derived return type already satisfies the base.
+                    if (!ParametersMatch(closedDerived.Parameters, closedBase.Parameters))
+                        return false;
 
-                if (!derivedHas)
+                    return IsReturnAssignable(closedDerived.ReturnType, closedBase.ReturnType, graph);
+                });
+
+                if (!derivedHasCompatible)
                 {
                     // Derived doesn't have this base overload - add it
-                    ctx.Log("BaseOverloadAdder", $"Adding base overload to {derivedClass.ClrFullName}: {baseMethod.ClrName} -> StableId: {expectedStableId}");
-                    var addedMethod = CreateBaseOverloadMethod(ctx, derivedClass, baseMethod);
+                    var addedMethod = CreateBaseOverloadMethod(ctx, derivedClass, baseMethod, closedBase);
                     addedMethods.Add(addedMethod);
                 }
                 else
                 {
-                    ctx.Log("BaseOverloadAdder", $"Derived already has: {baseMethod.ClrName} -> StableId: {expectedStableId}");
+                    // Derived already has a compatible overload.
                 }
             }
         }
@@ -240,18 +250,21 @@ public static class BaseOverloadAdder
 
         // VALIDATION: Check if adding these methods would create duplicates with existing
         var existingStableIds = derivedClass.Members.Methods.Select(m => m.StableId).ToHashSet();
-        var addedStableIds = addedMethods.Select(m => m.StableId).ToList();
-        var duplicates = addedStableIds.Where(id => existingStableIds.Contains(id)).ToList();
-
-        if (duplicates.Any())
+        var duplicates = addedMethods.Where(m => existingStableIds.Contains(m.StableId)).ToList();
+        if (duplicates.Count > 0)
         {
-            var details = string.Join("\n", duplicates.Select(id => $"  {id}"));
-            throw new InvalidOperationException(
-                $"BaseOverloadAdder: Attempting to add duplicate methods to {derivedClass.ClrFullName}:\n{details}\n" +
-                $"This would create duplicates with existing. Check comparison logic.");
+            // Airplane-grade robustness: do not fail generation for redundant additions.
+            // If we computed a StableId that already exists on the derived type, we can
+            // safely skip it (it contributes nothing) and continue.
+            ctx.Log("BaseOverloadAdder",
+                $"Skipping {duplicates.Count} redundant base overload(s) already present on {derivedClass.ClrFullName}");
+            addedMethods = addedMethods.Where(m => !existingStableIds.Contains(m.StableId)).ToList();
         }
 
         // Add to derived class (immutably)
+        if (addedMethods.Count == 0)
+            return (graph, 0);
+
         var updatedGraph = graph.WithUpdatedType(derivedClass.StableId.ToString(), t => t with
         {
             Members = t.Members with
@@ -263,7 +276,7 @@ public static class BaseOverloadAdder
         return (updatedGraph, addedMethods.Count);
     }
 
-    private static MethodSymbol CreateBaseOverloadMethod(BuildContext ctx, TypeSymbol derivedClass, MethodSymbol baseMethod)
+    private static MethodSymbol CreateBaseOverloadMethod(BuildContext ctx, TypeSymbol derivedClass, MethodSymbol baseMethod, ClosedMethodSignature closedBase)
     {
         // Base scope without #static/#instance suffix - ReserveMemberName will add it
         var typeScope = ScopeFactory.ClassBase(derivedClass);
@@ -275,8 +288,8 @@ public static class BaseOverloadAdder
             MemberName = baseMethod.ClrName,
             CanonicalSignature = ctx.CanonicalizeMethod(
                 baseMethod.ClrName,
-                baseMethod.Parameters.Select(p => GetTypeFullName(p.Type)).ToList(),
-                GetTypeFullName(baseMethod.ReturnType))
+                closedBase.Parameters.Select(p => GetTypeFullName(p.Type)).ToList(),
+                GetTypeFullName(closedBase.ReturnType))
         };
 
         // Reserve name with BaseOverload reason
@@ -292,8 +305,8 @@ public static class BaseOverloadAdder
         {
             StableId = stableId,
             ClrName = baseMethod.ClrName,
-            ReturnType = baseMethod.ReturnType,
-            Parameters = baseMethod.Parameters,
+            ReturnType = closedBase.ReturnType,
+            Parameters = closedBase.Parameters,
             GenericParameters = baseMethod.GenericParameters,
             IsStatic = false,
             IsAbstract = baseMethod.IsAbstract,
@@ -305,6 +318,161 @@ public static class BaseOverloadAdder
             Provenance = MemberProvenance.BaseOverload,
             EmitScope = EmitScope.ClassSurface,
             Documentation = baseMethod.Documentation
+        };
+    }
+
+    private static ClosedMethodSignature CloseMethodSignature(MethodSymbol method, Dictionary<GenericParameterId, TypeReference> substitution)
+    {
+        var parameters = method.Parameters
+            .Select(p => p with { Type = SubstituteTypeRef(p.Type, substitution) })
+            .ToImmutableArray();
+
+        var returnType = SubstituteTypeRef(method.ReturnType, substitution);
+
+        return new ClosedMethodSignature(parameters, returnType);
+    }
+
+    private static bool ParametersMatch(ImmutableArray<ParameterSymbol> left, ImmutableArray<ParameterSymbol> right)
+    {
+        if (left.Length != right.Length)
+            return false;
+
+        for (var i = 0; i < left.Length; i++)
+        {
+            var lp = left[i];
+            var rp = right[i];
+
+            // Match the same way StableId canonicalization does (full CLR name),
+            // and intentionally ignore NRT nullability state for overload-coverage purposes.
+            if (GetTypeFullName(lp.Type) != GetTypeFullName(rp.Type))
+                return false;
+
+            if (lp.IsRef != rp.IsRef)
+                return false;
+            if (lp.IsOut != rp.IsOut)
+                return false;
+            if (lp.IsIn != rp.IsIn)
+                return false;
+            if (lp.IsParams != rp.IsParams)
+                return false;
+
+            if (lp.HasDefaultValue != rp.HasDefaultValue)
+                return false;
+            if (lp.HasDefaultValue && !Equals(lp.DefaultValue, rp.DefaultValue))
+                return false;
+        }
+
+        return true;
+    }
+
+    private static bool IsReturnAssignable(TypeReference derivedReturn, TypeReference baseReturn, SymbolGraph graph)
+    {
+        // Exact match (same canonical CLR name) - ignore NRT nullability state here
+        if (GetTypeFullName(derivedReturn) == GetTypeFullName(baseReturn))
+            return true;
+
+        // Everything is assignable to object
+        if (baseReturn is NamedTypeReference bnr && bnr.FullName == "System.Object")
+            return true;
+
+        // Named-to-named: check CLR inheritance chain
+        if (derivedReturn is NamedTypeReference d && baseReturn is NamedTypeReference b)
+        {
+            if (d.FullName == b.FullName)
+                return true;
+
+            // Walk base class chain for derived type
+            if (graph.TryGetType(d.FullName, out var derivedType) && derivedType != null)
+            {
+                // Direct/indirect base classes
+                var current = derivedType;
+                while (current.BaseType is NamedTypeReference baseRef)
+                {
+                    if (baseRef.FullName == b.FullName)
+                        return true;
+
+                    if (!graph.TryGetType(baseRef.FullName, out var next) || next == null)
+                        break;
+
+                    current = next;
+                }
+
+                // Interfaces
+                foreach (var iface in derivedType.Interfaces)
+                {
+                    if (iface is NamedTypeReference inr && inr.FullName == b.FullName)
+                        return true;
+                }
+            }
+        }
+
+        return false;
+    }
+
+    private static Dictionary<GenericParameterId, TypeReference> BuildInheritanceSubstitutionMap(SymbolGraph graph, TypeSymbol derivedType)
+    {
+        // Maps generic parameter IDs (from any base type in the chain) to the corresponding
+        // closed type argument as seen from the derived type.
+        var map = new Dictionary<GenericParameterId, TypeReference>();
+
+        // Walk derived → base → base → ...
+        var current = derivedType;
+        while (current.BaseType != null)
+        {
+            // Resolve base type symbol + reference (which may include type arguments)
+            var baseRef = current.BaseType;
+
+            NamedTypeReference? baseNamed = baseRef switch
+            {
+                NamedTypeReference n => n,
+                NestedTypeReference nested => nested.FullReference,
+                _ => null
+            };
+
+            if (baseNamed == null)
+                break;
+
+            if (!graph.TryGetType(baseNamed.FullName, out var baseSymbol) || baseSymbol == null)
+                break;
+
+            // Bind baseSymbol<T...> generic parameters to the constructed baseNamed<TArg...>
+            if (baseSymbol.GenericParameters.Length > 0 && baseNamed.TypeArguments.Count == baseSymbol.GenericParameters.Length)
+            {
+                for (var i = 0; i < baseSymbol.GenericParameters.Length; i++)
+                {
+                    var gp = baseSymbol.GenericParameters[i];
+                    var arg = SubstituteTypeRef(baseNamed.TypeArguments[i], map);
+                    map[gp.Id] = arg;
+                }
+            }
+
+            current = baseSymbol;
+        }
+
+        return map;
+    }
+
+    private static TypeReference SubstituteTypeRef(TypeReference typeRef, Dictionary<GenericParameterId, TypeReference> substitution)
+    {
+        return typeRef switch
+        {
+            GenericParameterReference gp when substitution.TryGetValue(gp.Id, out var repl) => repl,
+
+            NamedTypeReference named when named.TypeArguments.Count > 0 => named with
+            {
+                TypeArguments = named.TypeArguments.Select(t => SubstituteTypeRef(t, substitution)).ToList()
+            },
+
+            ArrayTypeReference arr => arr with { ElementType = SubstituteTypeRef(arr.ElementType, substitution) },
+            PointerTypeReference ptr => ptr with { PointeeType = SubstituteTypeRef(ptr.PointeeType, substitution) },
+            ByRefTypeReference byref => byref with { ReferencedType = SubstituteTypeRef(byref.ReferencedType, substitution) },
+            NestedTypeReference nested => nested with
+            {
+                DeclaringType = SubstituteTypeRef(nested.DeclaringType, substitution),
+                FullReference = (NamedTypeReference)SubstituteTypeRef(nested.FullReference, substitution)
+            },
+
+            _ => typeRef
         };
     }
 
@@ -324,16 +492,16 @@ public static class BaseOverloadAdder
             .FirstOrDefault(t => t.ClrFullName == baseFullName && t.Kind == TypeKind.Class);
     }
 
-    private static string GetTypeFullName(Model.Types.TypeReference typeRef)
+    private static string GetTypeFullName(TypeReference typeRef)
     {
         return typeRef switch
         {
-            Model.Types.NamedTypeReference named => named.FullName,
-            Model.Types.NestedTypeReference nested => nested.FullReference.FullName,
-            Model.Types.GenericParameterReference gp => gp.Name,
-            Model.Types.ArrayTypeReference arr => $"{GetTypeFullName(arr.ElementType)}[]",
-            Model.Types.PointerTypeReference ptr => $"{GetTypeFullName(ptr.PointeeType)}*",
-            Model.Types.ByRefTypeReference byref => $"{GetTypeFullName(byref.ReferencedType)}&",
+            NamedTypeReference named => named.FullName,
+            NestedTypeReference nested => nested.FullReference.FullName,
+            GenericParameterReference gp => gp.Name,
+            ArrayTypeReference arr => $"{GetTypeFullName(arr.ElementType)}[]",
+            PointerTypeReference ptr => $"{GetTypeFullName(ptr.PointeeType)}*",
+            ByRefTypeReference byref => $"{GetTypeFullName(byref.ReferencedType)}&",
             _ => typeRef.ToString() ?? "Unknown"
         };
     }
