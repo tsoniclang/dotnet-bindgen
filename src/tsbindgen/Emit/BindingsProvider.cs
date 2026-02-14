@@ -1,9 +1,10 @@
+using System.Collections.Immutable;
 using System.Collections.Generic;
 using System.Linq;
 using tsbindgen.Model;
 using tsbindgen.Model.Symbols;
 using tsbindgen.Model.Symbols.MemberSymbols;
-using tsbindgen.Normalize;
+using tsbindgen.Model.Types;
 using tsbindgen.Renaming;
 
 namespace tsbindgen.Emit;
@@ -57,11 +58,13 @@ public sealed class BindingsProvider
 
     private TypeBindingCache GenerateBinding(TypeSymbol type)
     {
+        var inheritanceSubstitution = BuildInheritanceSubstitutionMap(type);
+
         // Collect instance methods (own + inherited)
-        var exposedMethods = CollectExposedMethods(type);
+        var exposedMethods = CollectExposedMethods(type, inheritanceSubstitution);
 
         // Collect instance properties (own + inherited)
-        var exposedProperties = CollectExposedProperties(type);
+        var exposedProperties = CollectExposedProperties(type, inheritanceSubstitution);
 
         return new TypeBindingCache
         {
@@ -70,19 +73,20 @@ public sealed class BindingsProvider
         };
     }
 
-    private List<MethodExposureInfo> CollectExposedMethods(TypeSymbol type)
+    private List<MethodExposureInfo> CollectExposedMethods(TypeSymbol type, Dictionary<GenericParameterId, TypeReference> inheritanceSubstitution)
     {
         var exposures = new List<MethodExposureInfo>();
 
         // Add type's own methods (ONLY ClassSurface - ViewOnly methods are emitted separately)
         foreach (var method in type.Members.Methods.Where(m => m.EmitScope == EmitScope.ClassSurface && !m.IsStatic))
         {
+            var substitutedMethod = ApplyInheritanceSubstitution(method, inheritanceSubstitution);
             var tsName = GetMethodTsName(method, type);
-            var tsSignatureId = SignatureNormalization.NormalizeMethod(method);
+            var tsSignatureId = NormalizeMethodForExposure(substitutedMethod);
 
             exposures.Add(new MethodExposureInfo
             {
-                Method = method,
+                Method = substitutedMethod,
                 TsName = tsName,
                 TsSignatureId = tsSignatureId,
                 DeclaringType = type,
@@ -91,7 +95,7 @@ public sealed class BindingsProvider
         }
 
         // Collect inherited methods from base classes
-        CollectInheritedMethods(type, type, exposures);
+        CollectInheritedMethods(type, type, exposures, inheritanceSubstitution);
 
         // Explicit override-wins deduplication
         // Group by (ClrName, TsSignatureId, IsStatic) and ensure only one exposure per signature
@@ -126,42 +130,12 @@ public sealed class BindingsProvider
             var ownMethods = candidates.Where(e => !e.IsInherited).ToList();
             if (ownMethods.Count > 1)
             {
-                var details = new System.Text.StringBuilder();
-                details.AppendLine($"PHASEGATE VIOLATION: Type {type.ClrFullName} has multiple own methods with same signature:");
-                details.AppendLine($"  CLR Name: {group.Key.ClrName}");
-                details.AppendLine($"  Normalized Signature: {group.Key.TsSignatureId}");
-                details.AppendLine($"  Count: {ownMethods.Count}");
-                details.AppendLine($"  Method Details:");
-                for (int i = 0; i < ownMethods.Count; i++)
-                {
-                    var m = ownMethods[i].Method;
-                    details.AppendLine($"    Method {i + 1}:");
-                    details.AppendLine($"      StableId: {m.StableId}");
-                    details.AppendLine($"      EmitScope: {m.EmitScope}");
-                    details.AppendLine($"      IsInherited (from exposure): {ownMethods[i].IsInherited}");
-                    details.AppendLine($"      Parameters:");
-                    for (int j = 0; j < m.Parameters.Length; j++)
-                    {
-                        var p = m.Parameters[j];
-                        details.AppendLine($"        {j}: {p.Name}");
-                        details.AppendLine($"           Type: {p.Type.GetType().Name}");
-                        if (p.Type is Model.Types.NamedTypeReference ntr)
-                        {
-                            details.AppendLine($"           FullName: {ntr.FullName}");
-                            details.AppendLine($"           Arity: {ntr.Arity}");
-                            details.AppendLine($"           TypeArguments.Count: {ntr.TypeArguments.Count}");
-                            for (int k = 0; k < ntr.TypeArguments.Count; k++)
-                            {
-                                var ta = ntr.TypeArguments[k];
-                                details.AppendLine($"             TypeArg[{k}]: {ta.GetType().Name} - {ta.ToString()}");
-                            }
-                        }
-                    }
-                    details.AppendLine($"      Return Type: {m.ReturnType.ToString()}");
-                    details.AppendLine($"      Generic Arity: {m.Arity}");
-                }
-                details.AppendLine($"  This indicates a bug in signature normalization or method collection.");
-                throw new System.InvalidOperationException(details.ToString());
+                throw new System.InvalidOperationException(
+                    $"PHASEGATE VIOLATION: Type {type.ClrFullName} has multiple own methods with same signature:\n" +
+                    $"  CLR Name: {group.Key.ClrName}\n" +
+                    $"  Signature: {group.Key.TsSignatureId}\n" +
+                    $"  Count: {ownMethods.Count}\n" +
+                    $"  This indicates a bug in method normalization or method collection.");
             }
 
             // Override-wins: Prefer own method over inherited
@@ -201,12 +175,12 @@ public sealed class BindingsProvider
         return deduplicated;
     }
 
-    private void CollectInheritedMethods(TypeSymbol derivedType, TypeSymbol currentType, List<MethodExposureInfo> exposures)
+    private void CollectInheritedMethods(TypeSymbol derivedType, TypeSymbol currentType, List<MethodExposureInfo> exposures, Dictionary<GenericParameterId, TypeReference> inheritanceSubstitution)
     {
         // Get base type
         if (currentType.BaseType == null) return;
 
-        var baseTypeRef = currentType.BaseType as Model.Types.NamedTypeReference;
+        var baseTypeRef = currentType.BaseType as NamedTypeReference;
         if (baseTypeRef == null) return;
 
         // Resolve base type from graph
@@ -220,14 +194,15 @@ public sealed class BindingsProvider
         // ViewOnly methods are emitted separately and shouldn't be part of exposures
         foreach (var baseMethod in baseType.Members.Methods.Where(m => m.EmitScope == EmitScope.ClassSurface && !m.IsStatic))
         {
-            var baseSignature = SignatureNormalization.NormalizeMethod(baseMethod);
+            var substitutedMethod = ApplyInheritanceSubstitution(baseMethod, inheritanceSubstitution);
+            var baseSignature = NormalizeMethodForExposure(substitutedMethod);
 
             // Use base type's scope for TS name (where method was declared and renamed)
             var tsName = GetMethodTsName(baseMethod, baseType);
 
             exposures.Add(new MethodExposureInfo
             {
-                Method = baseMethod,
+                Method = substitutedMethod,
                 TsName = tsName,
                 TsSignatureId = baseSignature,
                 DeclaringType = baseType,
@@ -236,22 +211,23 @@ public sealed class BindingsProvider
         }
 
         // Recursively collect from base's base
-        CollectInheritedMethods(derivedType, baseType, exposures);
+        CollectInheritedMethods(derivedType, baseType, exposures, inheritanceSubstitution);
     }
 
-    private List<PropertyExposureInfo> CollectExposedProperties(TypeSymbol type)
+    private List<PropertyExposureInfo> CollectExposedProperties(TypeSymbol type, Dictionary<GenericParameterId, TypeReference> inheritanceSubstitution)
     {
         var exposures = new List<PropertyExposureInfo>();
 
         // Add type's own properties (ONLY ClassSurface - ViewOnly properties are emitted separately)
         foreach (var property in type.Members.Properties.Where(p => p.EmitScope == EmitScope.ClassSurface && !p.IsStatic))
         {
+            var substitutedProperty = ApplyInheritanceSubstitution(property, inheritanceSubstitution);
             var tsName = GetPropertyTsName(property, type);
-            var tsSignatureId = SignatureNormalization.NormalizeProperty(property);
+            var tsSignatureId = NormalizePropertyForExposure(substitutedProperty);
 
             exposures.Add(new PropertyExposureInfo
             {
-                Property = property,
+                Property = substitutedProperty,
                 TsName = tsName,
                 TsSignatureId = tsSignatureId,
                 DeclaringType = type,
@@ -260,7 +236,7 @@ public sealed class BindingsProvider
         }
 
         // Collect inherited properties from base classes
-        CollectInheritedProperties(type, type, exposures);
+        CollectInheritedProperties(type, type, exposures, inheritanceSubstitution);
 
         // Explicit override-wins deduplication
         // Group by (ClrName, TsSignatureId, IsStatic) and ensure only one exposure per signature
@@ -340,12 +316,12 @@ public sealed class BindingsProvider
         return deduplicated;
     }
 
-    private void CollectInheritedProperties(TypeSymbol derivedType, TypeSymbol currentType, List<PropertyExposureInfo> exposures)
+    private void CollectInheritedProperties(TypeSymbol derivedType, TypeSymbol currentType, List<PropertyExposureInfo> exposures, Dictionary<GenericParameterId, TypeReference> inheritanceSubstitution)
     {
         // Get base type
         if (currentType.BaseType == null) return;
 
-        var baseTypeRef = currentType.BaseType as Model.Types.NamedTypeReference;
+        var baseTypeRef = currentType.BaseType as NamedTypeReference;
         if (baseTypeRef == null) return;
 
         // Resolve base type from graph
@@ -359,14 +335,15 @@ public sealed class BindingsProvider
         // ViewOnly properties are emitted separately and shouldn't be part of exposures
         foreach (var baseProperty in baseType.Members.Properties.Where(p => p.EmitScope == EmitScope.ClassSurface && !p.IsStatic))
         {
-            var baseSignature = SignatureNormalization.NormalizeProperty(baseProperty);
+            var substitutedProperty = ApplyInheritanceSubstitution(baseProperty, inheritanceSubstitution);
+            var baseSignature = NormalizePropertyForExposure(substitutedProperty);
 
             // Use base type's scope for TS name (where property was declared and renamed)
             var tsName = GetPropertyTsName(baseProperty, baseType);
 
             exposures.Add(new PropertyExposureInfo
             {
-                Property = baseProperty,
+                Property = substitutedProperty,
                 TsName = tsName,
                 TsSignatureId = baseSignature,
                 DeclaringType = baseType,
@@ -375,7 +352,154 @@ public sealed class BindingsProvider
         }
 
         // Recursively collect from base's base
-        CollectInheritedProperties(derivedType, baseType, exposures);
+        CollectInheritedProperties(derivedType, baseType, exposures, inheritanceSubstitution);
+    }
+
+    private static string NormalizeMethodForExposure(MethodSymbol method)
+    {
+        // Exposure identity for "override-wins" deduplication.
+        // We include:
+        // - method generic arity
+        // - parameter ref/out/in modifiers (CLR-significant)
+        // - params/default markers (TS-significant)
+        // - return type (so BaseOverload signatures that differ only by return are not collapsed)
+        var parts = method.Parameters.Select((p) =>
+        {
+            var refKind = p.IsOut ? "out" : p.IsIn ? "in" : p.IsRef ? "ref" : "val";
+            var isParams = p.IsParams ? "params" : "noparams";
+            var isOptional = p.HasDefaultValue ? "opt" : "req";
+            return $"{refKind}:{isParams}:{isOptional}:{NormalizeTypeKey(p.Type)}";
+        });
+
+        return $"{method.ClrName}|arity={method.Arity}|static={(method.IsStatic ? "true" : "false")}|params={string.Join(",", parts)}|ret={NormalizeTypeKey(method.ReturnType)}";
+    }
+
+    private static string NormalizeTypeKey(TypeReference typeRef)
+    {
+        return typeRef switch
+        {
+            NamedTypeReference named => $"Named:{named.AssemblyName}:{named.FullName}:{string.Join(",", named.TypeArguments.Select(NormalizeTypeKey))}",
+            GenericParameterReference gp => $"GenericParam:{gp.Id}",
+            ArrayTypeReference arr => $"Array:{NormalizeTypeKey(arr.ElementType)}:{arr.Rank}",
+            PointerTypeReference ptr => $"Pointer:{NormalizeTypeKey(ptr.PointeeType)}:{ptr.Depth}",
+            ByRefTypeReference byRef => $"ByRef:{NormalizeTypeKey(byRef.ReferencedType)}",
+            NestedTypeReference nested => $"Nested:{NormalizeTypeKey(nested.FullReference)}",
+            PlaceholderTypeReference placeholder => $"Placeholder:{placeholder.DebugName}",
+            _ => typeRef.ToString() ?? "unknown"
+        };
+    }
+
+    private static string NormalizePropertyForExposure(PropertySymbol prop)
+    {
+        var accessor = prop.HasGetter && prop.HasSetter
+            ? "getset"
+            : prop.HasGetter ? "get"
+            : prop.HasSetter ? "set"
+            : "none";
+
+        var indexParts = prop.IndexParameters.Select(p =>
+        {
+            var isOptional = p.HasDefaultValue ? "opt" : "req";
+            return $"{isOptional}:{NormalizeTypeKey(p.Type)}";
+        });
+
+        return $"{prop.ClrName}|static={(prop.IsStatic ? "true" : "false")}|accessor={accessor}|type={NormalizeTypeKey(prop.PropertyType)}|index={string.Join(",", indexParts)}";
+    }
+
+    private Dictionary<GenericParameterId, TypeReference> BuildInheritanceSubstitutionMap(TypeSymbol derivedType)
+    {
+        // Maps generic parameter IDs (from any base type in the chain) to the corresponding
+        // closed type argument as seen from the derived type.
+        var map = new Dictionary<GenericParameterId, TypeReference>();
+
+        var current = derivedType;
+        while (current.BaseType != null)
+        {
+            NamedTypeReference? baseNamed = current.BaseType switch
+            {
+                NamedTypeReference n => n,
+                NestedTypeReference nested => nested.FullReference,
+                _ => null
+            };
+
+            if (baseNamed == null)
+                break;
+
+            if (!_graph.TryGetType(baseNamed.FullName, out var baseSymbol) || baseSymbol == null)
+                break;
+
+            if (baseSymbol.GenericParameters.Length > 0 && baseNamed.TypeArguments.Count == baseSymbol.GenericParameters.Length)
+            {
+                for (var i = 0; i < baseSymbol.GenericParameters.Length; i++)
+                {
+                    var gp = baseSymbol.GenericParameters[i];
+                    var arg = SubstituteTypeRef(baseNamed.TypeArguments[i], map);
+                    map[gp.Id] = arg;
+                }
+            }
+
+            current = baseSymbol;
+        }
+
+        return map;
+    }
+
+    private static MethodSymbol ApplyInheritanceSubstitution(MethodSymbol method, Dictionary<GenericParameterId, TypeReference> substitution)
+    {
+        if (substitution.Count == 0)
+            return method;
+
+        var newReturnType = SubstituteTypeRef(method.ReturnType, substitution);
+        var newParameters = method.Parameters
+            .Select(p => p with { Type = SubstituteTypeRef(p.Type, substitution) })
+            .ToImmutableArray();
+
+        return method with
+        {
+            ReturnType = newReturnType,
+            Parameters = newParameters
+        };
+    }
+
+    private static PropertySymbol ApplyInheritanceSubstitution(PropertySymbol prop, Dictionary<GenericParameterId, TypeReference> substitution)
+    {
+        if (substitution.Count == 0)
+            return prop;
+
+        var newPropertyType = SubstituteTypeRef(prop.PropertyType, substitution);
+        var newIndexParameters = prop.IndexParameters
+            .Select(p => p with { Type = SubstituteTypeRef(p.Type, substitution) })
+            .ToImmutableArray();
+
+        return prop with
+        {
+            PropertyType = newPropertyType,
+            IndexParameters = newIndexParameters
+        };
+    }
+
+    private static TypeReference SubstituteTypeRef(TypeReference typeRef, Dictionary<GenericParameterId, TypeReference> substitution)
+    {
+        return typeRef switch
+        {
+            GenericParameterReference gp when substitution.TryGetValue(gp.Id, out var repl) => repl,
+
+            NamedTypeReference named when named.TypeArguments.Count > 0 => named with
+            {
+                TypeArguments = named.TypeArguments.Select(t => SubstituteTypeRef(t, substitution)).ToList()
+            },
+
+            ArrayTypeReference arr => arr with { ElementType = SubstituteTypeRef(arr.ElementType, substitution) },
+            PointerTypeReference ptr => ptr with { PointeeType = SubstituteTypeRef(ptr.PointeeType, substitution) },
+            ByRefTypeReference byref => byref with { ReferencedType = SubstituteTypeRef(byref.ReferencedType, substitution) },
+            NestedTypeReference nested => nested with
+            {
+                DeclaringType = SubstituteTypeRef(nested.DeclaringType, substitution),
+                FullReference = (NamedTypeReference)SubstituteTypeRef(nested.FullReference, substitution)
+            },
+
+            _ => typeRef
+        };
     }
 
     private string GetMethodTsName(Model.Symbols.MemberSymbols.MethodSymbol method, TypeSymbol declaringType)
