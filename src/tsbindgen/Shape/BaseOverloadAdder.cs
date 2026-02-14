@@ -1,6 +1,7 @@
 using System.Collections.Generic;
 using System.Collections.Immutable;
 using System.Linq;
+using System.Text;
 using tsbindgen.Renaming;
 using tsbindgen.Model;
 using tsbindgen.Model.Symbols;
@@ -291,8 +292,8 @@ public static class BaseOverloadAdder
             MemberName = baseMethod.ClrName,
             CanonicalSignature = ctx.CanonicalizeMethod(
                 baseMethod.ClrName,
-                closedBase.Parameters.Select(p => GetTypeFullName(p.Type)).ToList(),
-                GetTypeFullName(closedBase.ReturnType))
+                closedBase.Parameters.Select(p => GetTypeIdentity(p.Type)).ToList(),
+                GetTypeIdentity(closedBase.ReturnType))
         };
 
         // Reserve name with BaseOverload reason
@@ -345,9 +346,9 @@ public static class BaseOverloadAdder
             var lp = left[i];
             var rp = right[i];
 
-            // Match the same way StableId canonicalization does (full CLR name),
-            // and intentionally ignore NRT nullability state for overload-coverage purposes.
-            if (GetTypeFullName(lp.Type) != GetTypeFullName(rp.Type))
+            // Match full type identity INCLUDING constructed generic arguments.
+            // Intentionally ignore NRT nullability state for overload-coverage purposes.
+            if (!TypeRefEqualsForOverloadMatch(lp.Type, rp.Type))
                 return false;
 
             if (lp.IsRef != rp.IsRef)
@@ -370,8 +371,8 @@ public static class BaseOverloadAdder
 
     private static bool IsReturnAssignable(TypeReference derivedReturn, TypeReference baseReturn, SymbolGraph graph)
     {
-        // Exact match (same canonical CLR name) - ignore NRT nullability state here
-        if (GetTypeFullName(derivedReturn) == GetTypeFullName(baseReturn))
+        // Exact match (including constructed generic arguments) - ignore NRT nullability state here
+        if (TypeRefEqualsForOverloadMatch(derivedReturn, baseReturn))
             return true;
 
         // Everything is assignable to object
@@ -381,9 +382,6 @@ public static class BaseOverloadAdder
         // Named-to-named: check CLR inheritance chain
         if (derivedReturn is NamedTypeReference d && baseReturn is NamedTypeReference b)
         {
-            if (d.FullName == b.FullName)
-                return true;
-
             // Walk base class chain for derived type
             if (graph.TryGetType(d.FullName, out var derivedType) && derivedType != null)
             {
@@ -507,5 +505,81 @@ public static class BaseOverloadAdder
             ByRefTypeReference byref => $"{GetTypeFullName(byref.ReferencedType)}&",
             _ => typeRef.ToString() ?? "Unknown"
         };
+    }
+
+    private static bool TypeRefEqualsForOverloadMatch(TypeReference left, TypeReference right)
+    {
+        // Compare full type identity INCLUDING constructed generic arguments, but ignoring NRT nullability state.
+        // Note: TypeReference is a record type, but uses reference equality for list properties; we must compare
+        // TypeArguments structurally rather than relying on record equality.
+        left = left is NestedTypeReference ln ? ln.FullReference : left;
+        right = right is NestedTypeReference rn ? rn.FullReference : right;
+
+        if (left.GetType() != right.GetType())
+            return false;
+
+        return left switch
+        {
+            NamedTypeReference l => right is NamedTypeReference r && NamedEquals(l, r),
+            GenericParameterReference l => right is GenericParameterReference r && l.Id.Equals(r.Id),
+            ArrayTypeReference l => right is ArrayTypeReference r && l.Rank == r.Rank && TypeRefEqualsForOverloadMatch(l.ElementType, r.ElementType),
+            PointerTypeReference l => right is PointerTypeReference r && l.Depth == r.Depth && TypeRefEqualsForOverloadMatch(l.PointeeType, r.PointeeType),
+            ByRefTypeReference l => right is ByRefTypeReference r && TypeRefEqualsForOverloadMatch(l.ReferencedType, r.ReferencedType),
+            PlaceholderTypeReference l => right is PlaceholderTypeReference r && l.DebugName == r.DebugName,
+            _ => left.ToString() == right.ToString()
+        };
+
+        static bool NamedEquals(NamedTypeReference l, NamedTypeReference r)
+        {
+            if (l.AssemblyName != r.AssemblyName) return false;
+            if (l.FullName != r.FullName) return false;
+            if (l.Arity != r.Arity) return false;
+            if (l.IsValueType != r.IsValueType) return false;
+
+            if (l.TypeArguments.Count != r.TypeArguments.Count) return false;
+            for (var i = 0; i < l.TypeArguments.Count; i++)
+            {
+                if (!TypeRefEqualsForOverloadMatch(l.TypeArguments[i], r.TypeArguments[i]))
+                    return false;
+            }
+
+            return true;
+        }
+    }
+
+    private static string GetTypeIdentity(TypeReference typeRef)
+    {
+        // Canonical CLR-ish identity for synthetic StableIds (BaseOverload members).
+        // Includes constructed generic arguments, and ignores NRT nullability state.
+        typeRef = typeRef is NestedTypeReference nested ? nested.FullReference : typeRef;
+        return typeRef switch
+        {
+            NamedTypeReference named => FormatNamedIdentity(named),
+            GenericParameterReference gp => gp.Name,
+            ArrayTypeReference arr => $"{GetTypeIdentity(arr.ElementType)}{FormatArraySuffix(arr.Rank)}",
+            PointerTypeReference ptr => $"{GetTypeIdentity(ptr.PointeeType)}{new string('*', ptr.Depth)}",
+            ByRefTypeReference byref => $"{GetTypeIdentity(byref.ReferencedType)}&",
+            _ => typeRef.ToString() ?? "Unknown"
+        };
+    }
+
+    private static string FormatArraySuffix(int rank) => rank <= 1 ? "[]" : $"[{new string(',', rank - 1)}]";
+
+    private static string FormatNamedIdentity(NamedTypeReference named)
+    {
+        if (named.TypeArguments.Count == 0)
+            return named.FullName;
+
+        var sb = new StringBuilder();
+        sb.Append(named.FullName);
+        sb.Append('<');
+        for (var i = 0; i < named.TypeArguments.Count; i++)
+        {
+            if (i > 0)
+                sb.Append(',');
+            sb.Append(GetTypeIdentity(named.TypeArguments[i]));
+        }
+        sb.Append('>');
+        return sb.ToString();
     }
 }

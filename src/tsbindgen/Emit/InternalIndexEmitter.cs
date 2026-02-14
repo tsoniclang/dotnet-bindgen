@@ -1279,22 +1279,22 @@ public static class InternalIndexEmitter
         //
         // For generic Task<TResult>/ValueTask<TResult>, we include:
         // - awaited (TResult): so Awaited<Task<TResult>> infers TResult
-        // - unknown: a broad overload used by various TS inference paths, and to keep
-        //   Task<TResult> assignable to Task at the surface level.
+        // - unknown: a broad overload used by various TS inference paths.
+        //
+        // For Task<TResult> specifically, we ALSO include an `any` overload so that
+        // Task<TResult> remains assignable to non-generic Task in TypeScript.
+        //
+        // Rationale: in the CLR, Task<TResult> : Task, but TypeScript's structural
+        // typing for thenables would otherwise reject the assignment because
+        // PromiseLike<TResult> is not assignable to PromiseLike<void>.
         //
         // IMPORTANT: We do NOT add a `void` overload for generic forms, because it causes
         // TS's Awaited<> helper to infer `never` (contravariant intersection of overload
         // parameter types like TResult & void & unknown).
         //
         // For non-generic Task/ValueTask, we include:
+        // - void (Awaited<Task> is void)
         // - unknown (broad overload)
-        //
-        // NOTE: We intentionally do NOT include a `void` overload here. If Task has
-        // `then(value: void)` and Task<TResult> has `then(value: TResult)`, TS rejects
-        // Task<TResult> : Task at the type-alias level (TS2322/TS2430) because the
-        // `then` overload sets are incompatible. Using only `unknown` keeps
-        // Task<TResult> assignable to Task (CLR-faithful inheritance) at the cost of
-        // Awaited<Task> being `unknown` in TS.
         var isTask =
             type.ClrFullName == "System.Threading.Tasks.Task" ||
             type.ClrFullName.StartsWith("System.Threading.Tasks.Task`", StringComparison.Ordinal) ||
@@ -1333,9 +1333,14 @@ public static class InternalIndexEmitter
         {
             EmitThenOverload(awaitedType, awaitedType);
             EmitThenOverload("unknown", "unknown");
+            if (isTask)
+            {
+                EmitThenOverload("any", "unknown");
+            }
         }
         else
         {
+            EmitThenOverload("void", "void");
             EmitThenOverload("unknown", "unknown");
         }
 
