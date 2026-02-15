@@ -590,7 +590,21 @@ public static class ClassPrinter
 
         // Emit function signature: (arg1: T1, arg2: T2) => TResult
         sb.Append('(');
-        sb.Append(string.Join(", ", invokeMethod.Parameters.Select(p => $"{p.Name}: {TypeRefPrinter.Print(p.Type, resolver, ctx)}")));
+        sb.Append(string.Join(", ", invokeMethod.Parameters.Select(p =>
+        {
+            // Mirror MethodPrinter's parameter rules:
+            // - `params` arrays become TS rest parameters
+            // - optional parameters become `name?: T`
+            // - reserved binding identifiers get sanitized (break -> break_)
+            if (p.IsParams)
+            {
+                return $"...{TypeScriptReservedWords.SanitizeParameterName(p.Name)}: {TypeRefPrinter.Print(p.Type, resolver, ctx)}";
+            }
+
+            var name = TypeScriptReservedWords.SanitizeParameterName(p.Name);
+            var optional = p.HasDefaultValue ? "?" : string.Empty;
+            return $"{name}{optional}: {TypeRefPrinter.Print(p.Type, resolver, ctx)}";
+        })));
         sb.Append(") => ");
         sb.Append(TypeRefPrinter.Print(invokeMethod.ReturnType, resolver, ctx));
 
