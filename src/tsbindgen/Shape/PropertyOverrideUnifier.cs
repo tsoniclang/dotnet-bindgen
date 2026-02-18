@@ -132,6 +132,17 @@ public static class PropertyOverrideUnifier
             // Create union type from all distinct TypeScript types (sorted for deterministic output)
             : string.Join(" | ", typeStringCounts.Keys.OrderBy(s => s));
 
+        // Record which CLR types appear in the unified override type so import planning can bring them
+        // into scope in every namespace where we apply this override string.
+        var referencedClrTypes = new HashSet<string>(System.StringComparer.Ordinal);
+        if (unionType != "unknown")
+        {
+            foreach (var (_, prop) in group)
+            {
+                CollectReferencedClrTypes(prop.PropertyType, referencedClrTypes);
+            }
+        }
+
         ctx.Log("PropertyOverrideUnifier",
             $"Property '{group[0].Property.ClrName}' has {typeStringCounts.Count} different types across hierarchy: {unionType}");
 
@@ -141,6 +152,7 @@ public static class PropertyOverrideUnifier
         {
             var key = (declType.StableId.ToString(), prop.StableId.ToString());
             plan.PropertyTypeOverrides[key] = unionType;
+            plan.PropertyOverrideReferencedClrTypes[key] = referencedClrTypes;
         }
     }
 
@@ -152,6 +164,46 @@ public static class PropertyOverrideUnifier
             || tsType.StartsWith("unknown | ", System.StringComparison.Ordinal)
             || tsType.EndsWith(" | unknown", System.StringComparison.Ordinal)
             || tsType.Contains(" | unknown | ", System.StringComparison.Ordinal);
+    }
+
+    private static void CollectReferencedClrTypes(TypeReference typeRef, HashSet<string> collected)
+    {
+        switch (typeRef.Kind)
+        {
+            case TypeReferenceKind.Named:
+            {
+                var named = (NamedTypeReference)typeRef;
+                if (!TypeMap.TryMapBuiltin(named.FullName, out _))
+                {
+                    collected.Add(named.FullName);
+                }
+
+                foreach (var arg in named.TypeArguments)
+                {
+                    CollectReferencedClrTypes(arg, collected);
+                }
+                break;
+            }
+            case TypeReferenceKind.Nested:
+            {
+                var nested = (NestedTypeReference)typeRef;
+                CollectReferencedClrTypes(nested.FullReference, collected);
+                break;
+            }
+            case TypeReferenceKind.Array:
+                CollectReferencedClrTypes(((ArrayTypeReference)typeRef).ElementType, collected);
+                break;
+            case TypeReferenceKind.Pointer:
+                CollectReferencedClrTypes(((PointerTypeReference)typeRef).PointeeType, collected);
+                break;
+            case TypeReferenceKind.ByRef:
+                CollectReferencedClrTypes(((ByRefTypeReference)typeRef).ReferencedType, collected);
+                break;
+            case TypeReferenceKind.GenericParameter:
+            case TypeReferenceKind.Placeholder:
+            default:
+                break;
+        }
     }
 
     private static bool ContainsGenericParameters(TypeReference typeRef)

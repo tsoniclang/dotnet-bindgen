@@ -27,4 +27,18 @@ public sealed class PropertyOverridePlan
     /// Value: TypeScript type string (e.g., "RequestCacheLevel | HttpRequestCacheLevel")
     /// </summary>
     public Dictionary<(string TypeStableId, string PropertyStableId), string> PropertyTypeOverrides { get; init; } = new();
+
+    /// <summary>
+    /// Maps (type stable ID, property stable ID) → set of referenced CLR type full names that must be
+    /// considered during import planning for the override type string.
+    ///
+    /// Why this exists:
+    /// - PropertyOverrideUnifier injects unified type strings AFTER import planning.
+    /// - Those strings can mention types that were not otherwise referenced in the declaring namespace,
+    ///   which would produce invalid .d.ts output (missing import, TS2304).
+    ///
+    /// This map lets the build pipeline augment ImportGraph before ImportPlanner runs, so any types
+    /// introduced by override unification are imported deterministically and airplane-grade.
+    /// </summary>
+    public Dictionary<(string TypeStableId, string PropertyStableId), HashSet<string>> PropertyOverrideReferencedClrTypes { get; init; } = new();
 }
