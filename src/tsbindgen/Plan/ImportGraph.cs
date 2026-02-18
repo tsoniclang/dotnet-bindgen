@@ -40,6 +40,98 @@ public static class ImportGraph
         return graphData;
     }
 
+    /// <summary>
+    /// PropertyOverrideUnifier can introduce new cross-namespace type references by unifying property
+    /// types across inheritance chains (e.g., "BaseType | DerivedType").
+    ///
+    /// These unified override type strings are injected AFTER import planning, so without explicitly
+    /// adding their referenced CLR types into the import graph, the emitted internal/index.d.ts can
+    /// become invalid TypeScript (missing import / TS2304).
+    ///
+    /// This method augments an existing ImportGraphData instance with the type references required
+    /// by the PropertyOverridePlan so ImportPlanner can import them deterministically.
+    /// </summary>
+    public static void AugmentWithPropertyOverridePlan(
+        BuildContext ctx,
+        SymbolGraph graph,
+        ImportGraphData graphData,
+        PropertyOverridePlan plan)
+    {
+        if (plan.PropertyOverrideReferencedClrTypes.Count == 0)
+            return;
+
+        ctx.Log("ImportGraph", $"Augmenting import graph with {plan.PropertyOverrideReferencedClrTypes.Count} property override import sets...");
+
+        var existing = new HashSet<(string SourceNs, string SourceType, string TargetNs, string TargetType, ReferenceKind Kind)>();
+        foreach (var r in graphData.CrossNamespaceReferences)
+        {
+            existing.Add((r.SourceNamespace, r.SourceType, r.TargetNamespace, r.TargetType, r.ReferenceKind));
+        }
+
+        foreach (var ((typeStableId, _), referencedClrTypes) in plan.PropertyOverrideReferencedClrTypes)
+        {
+            if (referencedClrTypes.Count == 0)
+                continue;
+
+            // StableId format: "AssemblyName:ClrFullName" (graph.TypeIndex keys are ClrFullName)
+            var clrFullName = typeStableId.Contains(':')
+                ? typeStableId.Substring(typeStableId.IndexOf(':') + 1)
+                : typeStableId;
+
+            if (!graph.TryGetType(clrFullName, out var type) || type == null)
+                continue;
+
+            if (!graph.TryGetNamespace(type.Namespace, out var sourceNs) || sourceNs == null)
+                continue;
+
+            if (!graphData.NamespaceDependencies.TryGetValue(sourceNs.Name, out var deps))
+            {
+                deps = new HashSet<string>();
+                graphData.NamespaceDependencies[sourceNs.Name] = deps;
+            }
+
+            foreach (var targetClr in referencedClrTypes)
+            {
+                // Resolve namespace for this CLR type key.
+                // Prefer the current graph's namespace index; fall back to library contract mapping in library mode.
+                string? targetNsName = null;
+                if (graphData.ClrFullNameToNamespace.TryGetValue(targetClr, out var nsName))
+                {
+                    targetNsName = nsName;
+                }
+                else if (ctx.LibraryContract != null &&
+                         ctx.LibraryContract.ClrFullNameToNamespace.TryGetValue(targetClr, out var libNs))
+                {
+                    targetNsName = libNs;
+                }
+                else
+                {
+                    // Track unresolved so DeclaringAssemblyResolver can try to resolve it.
+                    graphData.UnresolvedClrKeys.Add(targetClr);
+                }
+
+                var key = (sourceNs.Name, type.ClrFullName, targetNsName ?? "", targetClr, ReferenceKind.PropertyType);
+                if (targetNsName != null && existing.Contains(key))
+                    continue;
+
+                RecordTypeReference(
+                    ctx,
+                    graphData,
+                    sourceNs,
+                    type.ClrFullName,
+                    targetClr,
+                    targetNsName,
+                    ReferenceKind.PropertyType,
+                    deps);
+
+                if (targetNsName != null)
+                {
+                    existing.Add(key);
+                }
+            }
+        }
+    }
+
     private static void BuildNamespaceTypeIndex(BuildContext ctx, SymbolGraph graph, ImportGraphData graphData)
     {
         // Build index: namespace name -> set of type full names in that namespace

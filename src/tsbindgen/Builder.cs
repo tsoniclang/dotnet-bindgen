@@ -328,6 +328,13 @@ public static class Builder
         // Build import graph
         var importGraph = ImportGraph.Build(ctx, graph);
 
+        // E: Unify property override types to eliminate property covariance errors.
+        // IMPORTANT: This must run before import planning so the import graph can be augmented
+        // with any types introduced by unified override strings (avoids TS2304 missing imports).
+        ctx.Log("Build", "\n--- Phase 4.0: Property Override Unification ---");
+        var propertyOverrides = Shape.PropertyOverrideUnifier.Build(graph, ctx);
+        ImportGraph.AugmentWithPropertyOverridePlan(ctx, graph, importGraph, propertyOverrides);
+
         // FIX E: Resolve unresolved types to declaring assemblies
         if (importGraph.UnresolvedClrKeys.Count > 0)
         {
@@ -378,10 +385,6 @@ public static class Builder
         // D3: Detect instance member override conflicts between base/derived classes
         ctx.Log("Build", "\n--- Phase 4.9: Override Conflict Detection ---");
         var overrideConflicts = Shape.OverrideConflictDetector.Plan(ctx, graph);
-
-        // E: Unify property override types to eliminate property covariance errors
-        ctx.Log("Build", "\n--- Phase 4.10: Property Override Unification ---");
-        var propertyOverrides = Shape.PropertyOverrideUnifier.Build(graph, ctx);
 
         // Phase 4.11: Analyze extension methods
         ctx.Log("Build", "\n--- Phase 4.11: Extension Method Analysis ---");
