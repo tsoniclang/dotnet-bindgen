@@ -120,9 +120,17 @@ public static class PropertyOverrideUnifier
         if (group.Any((it) => ContainsGenericParameters(it.Property.PropertyType)))
             return;
 
-        // Create union type from all distinct TypeScript types
-        // Sort for deterministic output
-        var unionType = string.Join(" | ", typeStringCounts.Keys.OrderBy(s => s));
+        // `unknown` dominates unions in TypeScript: `T | unknown` is semantically just `unknown`.
+        // When property override unification includes `unknown`, we MUST collapse the union to
+        // `unknown` to avoid:
+        // - noisy / unstable "hint" unions in generated .d.ts
+        // - invalid output when a unified union mentions a derived-only type name that is out of
+        //   scope in the base namespace module (because union override strings are injected after
+        //   import planning).
+        var unionType = typeStringCounts.Keys.Any(ContainsTopLevelUnknown)
+            ? "unknown"
+            // Create union type from all distinct TypeScript types (sorted for deterministic output)
+            : string.Join(" | ", typeStringCounts.Keys.OrderBy(s => s));
 
         ctx.Log("PropertyOverrideUnifier",
             $"Property '{group[0].Property.ClrName}' has {typeStringCounts.Count} different types across hierarchy: {unionType}");
@@ -134,6 +142,16 @@ public static class PropertyOverrideUnifier
             var key = (declType.StableId.ToString(), prop.StableId.ToString());
             plan.PropertyTypeOverrides[key] = unionType;
         }
+    }
+
+    private static bool ContainsTopLevelUnknown(string tsType)
+    {
+        // TypeRefPrinter uses "unknown" and formats unions with " | " separators.
+        // We only treat `unknown` as a top-level union member (not inside generics/tuples/etc).
+        return tsType == "unknown"
+            || tsType.StartsWith("unknown | ", System.StringComparison.Ordinal)
+            || tsType.EndsWith(" | unknown", System.StringComparison.Ordinal)
+            || tsType.Contains(" | unknown | ", System.StringComparison.Ordinal);
     }
 
     private static bool ContainsGenericParameters(TypeReference typeRef)
