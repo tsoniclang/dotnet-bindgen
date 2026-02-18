@@ -87,6 +87,9 @@ public static class ExtensionsEmitter
 
         // Collect all namespaces used in extension method signatures
         var namespacesUsed = new HashSet<string>();
+        // Track the actual referenced CLR full names per namespace so we can choose an
+        // import source package in --lib mode even when a namespace is split across packages.
+        var namespaceToClrFullNames = new Dictionary<string, HashSet<string>>(StringComparer.Ordinal);
         foreach (var bucket in plan.Buckets)
         {
             // Add the target type's namespace (needed for ExtensionMethods_<Namespace> helper)
@@ -95,12 +98,12 @@ public static class ExtensionsEmitter
             foreach (var method in bucket.Methods)
             {
                 // Collect from return type
-                CollectNamespaces(method.ReturnType, namespacesUsed, graph);
+                CollectNamespaces(method.ReturnType, namespacesUsed, namespaceToClrFullNames, graph);
 
                 // Collect from parameters (skip first 'this' parameter)
                 foreach (var param in method.Parameters.Skip(1))
                 {
-                    CollectNamespaces(param.Type, namespacesUsed, graph);
+                    CollectNamespaces(param.Type, namespacesUsed, namespaceToClrFullNames, graph);
                 }
 
                 // Collect from generic constraints
@@ -108,7 +111,7 @@ public static class ExtensionsEmitter
                 {
                     foreach (var constraint in genParam.Constraints)
                     {
-                        CollectNamespaces(constraint, namespacesUsed, graph);
+                        CollectNamespaces(constraint, namespacesUsed, namespaceToClrFullNames, graph);
                     }
                 }
             }
@@ -138,8 +141,37 @@ public static class ExtensionsEmitter
                     return $"../../{outputName}/internal/index.js";
                 }
 
-                // External namespace: import from owning library package.
-                var pkg = ctx.LibraryContract.GetUniquePackageForNamespace(ns);
+                // External namespace: CLR namespaces can be split across multiple packages.
+                // For this file we import exactly one namespace module, so choose a package
+                // based on the actual referenced CLR types in that namespace.
+                var referenced = namespaceToClrFullNames.TryGetValue(ns, out var clrs)
+                    ? clrs
+                    : null;
+
+                string pkg;
+                if (referenced != null && referenced.Count > 0)
+                {
+                    var pkgs = referenced
+                        .Select(ctx.LibraryContract.GetPackageForClrFullName)
+                        .Distinct(StringComparer.Ordinal)
+                        .OrderBy(p => p, StringComparer.Ordinal)
+                        .ToList();
+
+                    if (pkgs.Count != 1)
+                    {
+                        throw new InvalidOperationException(
+                            $"Cannot choose a unique owning package for namespace '{ns}' in extension bucket emission. " +
+                            $"Referenced types resolve to multiple packages: {string.Join(", ", pkgs)}.");
+                    }
+
+                    pkg = pkgs[0];
+                }
+                else
+                {
+                    // No referenced types to guide selection - keep strict behavior.
+                    pkg = ctx.LibraryContract.GetUniquePackageForNamespace(ns);
+                }
+
                 return $"{pkg}/{outputName}/internal/index.js";
             }
 
@@ -221,7 +253,11 @@ public static class ExtensionsEmitter
     /// <summary>
     /// Recursively collect all namespaces used in a type reference.
     /// </summary>
-    private static void CollectNamespaces(Model.Types.TypeReference typeRef, HashSet<string> namespaces, SymbolGraph graph)
+    private static void CollectNamespaces(
+        Model.Types.TypeReference typeRef,
+        HashSet<string> namespaces,
+        Dictionary<string, HashSet<string>> namespaceToClrFullNames,
+        SymbolGraph graph)
     {
         switch (typeRef)
         {
@@ -229,28 +265,38 @@ public static class ExtensionsEmitter
                 // Always add the declared namespace, even if the type is external (filtered out in --lib mode).
                 // Relying on graph lookup causes us to miss external namespaces, producing missing imports.
                 namespaces.Add(named.Namespace);
+                if (!string.IsNullOrEmpty(named.Namespace))
+                {
+                    if (!namespaceToClrFullNames.TryGetValue(named.Namespace, out var set))
+                    {
+                        set = new HashSet<string>(StringComparer.Ordinal);
+                        namespaceToClrFullNames[named.Namespace] = set;
+                    }
+                    // Use the CLR full name key used by LibraryContract.ClrFullNameToPackage.
+                    set.Add(named.FullName);
+                }
 
                 // Collect from type arguments
                 foreach (var arg in named.TypeArguments)
                 {
-                    CollectNamespaces(arg, namespaces, graph);
+                    CollectNamespaces(arg, namespaces, namespaceToClrFullNames, graph);
                 }
                 break;
 
             case Model.Types.ArrayTypeReference array:
-                CollectNamespaces(array.ElementType, namespaces, graph);
+                CollectNamespaces(array.ElementType, namespaces, namespaceToClrFullNames, graph);
                 break;
 
             case Model.Types.ByRefTypeReference byRef:
-                CollectNamespaces(byRef.ReferencedType, namespaces, graph);
+                CollectNamespaces(byRef.ReferencedType, namespaces, namespaceToClrFullNames, graph);
                 break;
 
             case Model.Types.PointerTypeReference pointer:
-                CollectNamespaces(pointer.PointeeType, namespaces, graph);
+                CollectNamespaces(pointer.PointeeType, namespaces, namespaceToClrFullNames, graph);
                 break;
 
             case Model.Types.NestedTypeReference nested:
-                CollectNamespaces(nested.FullReference, namespaces, graph);
+                CollectNamespaces(nested.FullReference, namespaces, namespaceToClrFullNames, graph);
                 break;
         }
     }

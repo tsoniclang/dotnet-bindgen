@@ -310,8 +310,8 @@ public static class FacadeEmitter
         if (typesToFlatten.Count == 0)
             return;
 
-        // Collect all namespaces and type references used by flattened methods
-        var referencedNamespaces = new HashSet<string>();
+        // Flattened exports can reference numeric primitives (int, double, ...)
+        // which are not TS built-ins. Ensure we import the primitive aliases.
         var usesPrimitives = false;
 
         foreach (var type in typesToFlatten)
@@ -325,12 +325,12 @@ public static class FacadeEmitter
             foreach (var method in staticMethods)
             {
                 // Check return type
-                CollectTypeReferencesForImports(method.ReturnType, ns.Name, referencedNamespaces, ref usesPrimitives, plan.Graph, ctx);
+                CollectPrimitiveUsageForFlattenedExports(method.ReturnType, ref usesPrimitives);
 
                 // Check parameters
                 foreach (var param in method.Parameters)
                 {
-                    CollectTypeReferencesForImports(param.Type, ns.Name, referencedNamespaces, ref usesPrimitives, plan.Graph, ctx);
+                    CollectPrimitiveUsageForFlattenedExports(param.Type, ref usesPrimitives);
                 }
             }
 
@@ -340,7 +340,7 @@ public static class FacadeEmitter
                          f.Visibility == Model.Symbols.MemberSymbols.Visibility.Public &&
                          f.EmitScope != Model.Symbols.MemberSymbols.EmitScope.Omitted))
             {
-                CollectTypeReferencesForImports(field.FieldType, ns.Name, referencedNamespaces, ref usesPrimitives, plan.Graph, ctx);
+                CollectPrimitiveUsageForFlattenedExports(field.FieldType, ref usesPrimitives);
             }
 
             // Static properties (non-indexers)
@@ -350,7 +350,7 @@ public static class FacadeEmitter
                          p.EmitScope != Model.Symbols.MemberSymbols.EmitScope.Omitted &&
                          !p.IsIndexer))
             {
-                CollectTypeReferencesForImports(prop.PropertyType, ns.Name, referencedNamespaces, ref usesPrimitives, plan.Graph, ctx);
+                CollectPrimitiveUsageForFlattenedExports(prop.PropertyType, ref usesPrimitives);
             }
         }
 
@@ -361,41 +361,15 @@ public static class FacadeEmitter
             sb.AppendLine("import type { sbyte, byte, short, ushort, int, uint, long, ulong, int128, uint128, half, float, double, decimal, nint, nuint, char } from '@tsonic/core/types.js';");
             sb.AppendLine();
         }
-
-        // Emit namespace imports for referenced external namespaces
-        if (referencedNamespaces.Count > 0)
-        {
-            sb.AppendLine("// Namespace imports for flattened exports");
-            foreach (var targetNs in referencedNamespaces.OrderBy(n => n))
-            {
-                var namespaceAlias = targetNs.Replace('.', '_') + "_Internal";
-                string importPath;
-                if (ctx.LibraryContract != null && ctx.LibraryContract.ClrFullNameToNamespace.ContainsValue(targetNs))
-                {
-                    var targetPackage = ctx.LibraryContract.GetUniquePackageForNamespace(targetNs);
-                    importPath = $"{targetPackage}/{targetNs}.js";
-                }
-                else
-                {
-                    importPath = Plan.PathPlanner.GetFacadeSpecifier(ctx, ns.Name, targetNs);
-                }
-                sb.AppendLine($"import * as {namespaceAlias} from \"{importPath}\";");
-            }
-            sb.AppendLine();
-        }
     }
 
     /// <summary>
-    /// Recursively collects namespace and primitive type references from a type reference.
-    /// Used to determine what imports are needed for flattened exports.
+    /// Recursively checks if a type reference includes numeric primitives (int, double, ...)
+    /// that require importing aliases from @tsonic/core/types.js in facade files.
     /// </summary>
-    private static void CollectTypeReferencesForImports(
+    private static void CollectPrimitiveUsageForFlattenedExports(
         Model.Types.TypeReference? typeRef,
-        string currentNamespace,
-        HashSet<string> referencedNamespaces,
-        ref bool usesPrimitives,
-        SymbolGraph graph,
-        BuildContext ctx)
+        ref bool usesPrimitives)
     {
         if (typeRef == null) return;
 
@@ -407,29 +381,24 @@ public static class FacadeEmitter
                 {
                     usesPrimitives = true;
                 }
-                else if (!string.IsNullOrEmpty(named.Namespace) && named.Namespace != currentNamespace)
-                {
-                    // External namespace - need namespace import for qualified types
-                    referencedNamespaces.Add(named.Namespace);
-                }
 
                 // Recurse into type arguments
                 foreach (var arg in named.TypeArguments)
                 {
-                    CollectTypeReferencesForImports(arg, currentNamespace, referencedNamespaces, ref usesPrimitives, graph, ctx);
+                    CollectPrimitiveUsageForFlattenedExports(arg, ref usesPrimitives);
                 }
                 break;
 
             case Model.Types.ArrayTypeReference arr:
-                CollectTypeReferencesForImports(arr.ElementType, currentNamespace, referencedNamespaces, ref usesPrimitives, graph, ctx);
+                CollectPrimitiveUsageForFlattenedExports(arr.ElementType, ref usesPrimitives);
                 break;
 
             case Model.Types.ByRefTypeReference byref:
-                CollectTypeReferencesForImports(byref.ReferencedType, currentNamespace, referencedNamespaces, ref usesPrimitives, graph, ctx);
+                CollectPrimitiveUsageForFlattenedExports(byref.ReferencedType, ref usesPrimitives);
                 break;
 
             case Model.Types.PointerTypeReference ptr:
-                CollectTypeReferencesForImports(ptr.PointeeType, currentNamespace, referencedNamespaces, ref usesPrimitives, graph, ctx);
+                CollectPrimitiveUsageForFlattenedExports(ptr.PointeeType, ref usesPrimitives);
                 break;
         }
     }
