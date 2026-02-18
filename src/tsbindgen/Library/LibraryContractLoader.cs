@@ -87,10 +87,6 @@ public static class LibraryContractLoader
             }
         }
 
-        // Build namespace-to-package mapping (all namespaces map to this package)
-        var namespaceToPackage = namespaceToTypes.Keys
-            .ToImmutableDictionary(ns => ns, ns => packageName);
-
         return new LibraryContract
         {
             PackageName = packageName,
@@ -103,7 +99,14 @@ public static class LibraryContractLoader
             AllowedClrFullNames = allowedClrFullNames.ToImmutableHashSet(),
             ClrFullNameToNamespace = clrFullNameToNamespace.ToImmutableDictionary(),
             FacadeFamilies = facadeFamilies,
-            NamespaceToPackage = namespaceToPackage
+            PackageNames = ImmutableHashSet.Create(StringComparer.Ordinal, packageName),
+            ClrFullNameToPackage = allowedClrFullNames
+                .ToImmutableDictionary(clr => clr, _ => packageName, StringComparer.Ordinal),
+            NamespaceToPackages = namespaceToTypes.Keys
+                .ToImmutableDictionary(
+                    ns => ns,
+                    _ => ImmutableHashSet.Create(StringComparer.Ordinal, packageName),
+                    StringComparer.Ordinal)
         };
     }
 

@@ -372,7 +372,7 @@ public static class FacadeEmitter
                 string importPath;
                 if (ctx.LibraryContract != null && ctx.LibraryContract.ClrFullNameToNamespace.ContainsValue(targetNs))
                 {
-                    var targetPackage = ctx.LibraryContract.GetPackageForNamespace(targetNs);
+                    var targetPackage = ctx.LibraryContract.GetUniquePackageForNamespace(targetNs);
                     importPath = $"{targetPackage}/{targetNs}.js";
                 }
                 else

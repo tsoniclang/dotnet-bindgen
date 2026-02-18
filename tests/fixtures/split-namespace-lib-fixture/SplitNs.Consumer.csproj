@@ -1,0 +1,14 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <EnableDefaultCompileItems>false</EnableDefaultCompileItems>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <Compile Include="SplitNs.Consumer.cs" />
+    <ProjectReference Include="SplitNs.Abstractions.csproj" />
+    <ProjectReference Include="SplitNs.Types.csproj" />
+  </ItemGroup>
+</Project>
