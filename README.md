@@ -71,6 +71,17 @@ npx tsbindgen generate -d $DOTNET_RUNTIME -o ./bcl-types
 npx tsbindgen generate -a ./MyLibrary.dll -d $DOTNET_RUNTIME -o ./my-lib --lib ./bcl-types
 ```
 
+If you provide multiple `--lib` packages and the same CLR type exists in more than one of them, tsbindgen will hard-error
+because it cannot safely choose an import source. In rare cases where this is expected, you can provide explicit per-type
+overrides:
+
+```bash
+npx tsbindgen generate -a ./MyLibrary.dll -d $DOTNET_RUNTIME -o ./my-lib \
+  --lib ./efcore-types \
+  --lib ./efcore-abstractions \
+  --lib-type-override "Microsoft.EntityFrameworkCore.DbContext=@tsonic/efcore"
+```
+
 ## CLI Reference
 
 ### Commands
@@ -90,6 +101,7 @@ npx tsbindgen generate -a ./MyLibrary.dll -d $DOTNET_RUNTIME -o ./my-lib --lib .
 | `--out-dir` | `-o` | Output directory for generated files | `out` |
 | `--namespaces` | `-n` | Namespace filter (reserved; currently ignored) | (all) |
 | `--lib` | - | Path to pre-existing tsbindgen package (repeatable) | - |
+| `--lib-type-override` | - | Override owning package for a CLR type when merging multiple `--lib` packages (repeatable; `ClrFullName=packageName`) | - |
 | `--namespace-map` | - | Map CLR namespace to output name (repeatable) | - |
 | `--flatten-class` | - | Flatten static class to top-level exports (repeatable) | - |
 | `--verbose` | `-v` | Enable detailed progress output | false |

@@ -76,6 +76,14 @@ public static class GenerateCommand
             Arity = ArgumentArity.ZeroOrMore
         };
 
+        var libTypeOverrideOption = new Option<string[]>(
+            name: "--lib-type-override",
+            description: "Override owning package for a CLR type when merging --lib contracts (format: ClrFullName=packageName, repeatable)")
+        {
+            AllowMultipleArgumentsPerToken = false,
+            Arity = ArgumentArity.ZeroOrMore
+        };
+
         var namespaceMapOption = new Option<string[]>(
             name: "--namespace-map",
             description: "Map CLR namespace to output name (format: Namespace=outputName, repeatable)")
@@ -102,6 +110,7 @@ public static class GenerateCommand
         command.AddOption(strictOption);
         command.AddOption(allowConstructorConstraintLossOption);
         command.AddOption(libOption);
+        command.AddOption(libTypeOverrideOption);
         command.AddOption(namespaceMapOption);
         command.AddOption(flattenClassOption);
 
@@ -117,6 +126,7 @@ public static class GenerateCommand
             var strict = context.ParseResult.GetValueForOption(strictOption);
             var allowConstructorConstraintLoss = context.ParseResult.GetValueForOption(allowConstructorConstraintLossOption);
             var libs = context.ParseResult.GetValueForOption(libOption) ?? Array.Empty<string>();
+            var libTypeOverrides = context.ParseResult.GetValueForOption(libTypeOverrideOption) ?? Array.Empty<string>();
             var namespaceMaps = context.ParseResult.GetValueForOption(namespaceMapOption) ?? Array.Empty<string>();
             var flattenClasses = context.ParseResult.GetValueForOption(flattenClassOption) ?? Array.Empty<string>();
 
@@ -131,6 +141,7 @@ public static class GenerateCommand
                 strict,
                 allowConstructorConstraintLoss,
                 libs,
+                libTypeOverrides,
                 namespaceMaps,
                 flattenClasses);
         });
@@ -149,6 +160,7 @@ public static class GenerateCommand
         bool strict,
         bool allowConstructorConstraintLoss,
         string[] libs,
+        string[] libTypeOverrides,
         string[] namespaceMaps,
         string[] flattenClasses)
     {
@@ -232,6 +244,34 @@ public static class GenerateCommand
             // Parse log categories
             HashSet<string>? logCategories = logs.Length > 0 ? new HashSet<string>(logs) : null;
 
+            // Parse per-type library ownership overrides (for split namespaces / ambiguous packages).
+            // Format: "ClrFullName=packageName" (repeatable).
+            // Example: "Microsoft.EntityFrameworkCore.DbContext=@tsonic/efcore-types"
+            Dictionary<string, string>? overrides = null;
+            if (libTypeOverrides.Length > 0)
+            {
+                overrides = new Dictionary<string, string>(StringComparer.Ordinal);
+                foreach (var ov in libTypeOverrides)
+                {
+                    var parts = ov.Split('=', 2);
+                    if (parts.Length != 2)
+                    {
+                        Console.Error.WriteLine($"Warning: Invalid --lib-type-override format: '{ov}'. Expected 'ClrFullName=packageName'.");
+                        continue;
+                    }
+
+                    var clr = parts[0].Trim();
+                    var pkg = parts[1].Trim();
+                    if (clr.Length == 0 || pkg.Length == 0)
+                    {
+                        Console.Error.WriteLine($"Warning: Invalid --lib-type-override: '{ov}'. CLR full name and package name must be non-empty.");
+                        continue;
+                    }
+
+                    overrides[clr] = pkg;
+                }
+            }
+
             // Run pipeline
             var result = Builder.Build(
                 allAssemblies,
@@ -242,7 +282,8 @@ public static class GenerateCommand
                 logCategories,
                 strict,
                 libs,
-                refDirs);
+                refDirs,
+                libraryClrTypePackageOverrides: overrides);
 
             // Report results
             Console.WriteLine();

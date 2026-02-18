@@ -83,7 +83,7 @@ public static class ImportPlanner
             // - an external library facade import, and
             // - a local internal-index import,
             // for the same target namespace.
-            var importGroups = new List<(string ImportPath, bool IsLibraryImport, List<string> ClrNames)>();
+            var importGroups = new List<(string ImportPath, bool IsLibraryImport, string? LibraryPackageName, List<string> ClrNames)>();
 
             if (ctx.LibraryContract != null)
             {
@@ -97,27 +97,35 @@ public static class ImportPlanner
 
                 if (libraryClrNames.Count > 0)
                 {
-                    var targetPackage = ctx.LibraryContract.GetPackageForNamespace(targetNamespace);
-                    var libraryImportPath = libraryImportStyle == LibraryImportStyle.InternalIndex
-                        ? $"{targetPackage}/{targetNamespace}/internal/index.js"
-                        : $"{targetPackage}/{targetNamespace}.js";
+                    // Per-CLR-type package mapping:
+                    // The same CLR namespace can be split across multiple library packages (e.g., EFCore types vs abstractions).
+                    // Group by package so we import each type from its owning package.
+                    foreach (var pkgGroup in libraryClrNames
+                                 .GroupBy(clr => ctx.LibraryContract.GetPackageForClrFullName(clr))
+                                 .OrderBy(g => g.Key, StringComparer.Ordinal))
+                    {
+                        var targetPackage = pkgGroup.Key;
+                        var libraryImportPath = libraryImportStyle == LibraryImportStyle.InternalIndex
+                            ? $"{targetPackage}/{targetNamespace}/internal/index.js"
+                            : $"{targetPackage}/{targetNamespace}.js";
 
-                    importGroups.Add((libraryImportPath, true, libraryClrNames));
+                        importGroups.Add((libraryImportPath, true, targetPackage, pkgGroup.OrderBy(x => x, StringComparer.Ordinal).ToList()));
+                    }
                 }
 
                 if (localClrNames.Count > 0)
                 {
-                    importGroups.Add((PathPlanner.GetSpecifier(ctx, ns.Name, targetNamespace), false, localClrNames));
+                    importGroups.Add((PathPlanner.GetSpecifier(ctx, ns.Name, targetNamespace), false, null, localClrNames));
                 }
             }
             else
             {
-                importGroups.Add((PathPlanner.GetSpecifier(ctx, ns.Name, targetNamespace), false, referencedTypeClrNames));
+                importGroups.Add((PathPlanner.GetSpecifier(ctx, ns.Name, targetNamespace), false, null, referencedTypeClrNames));
             }
 
             var needsDistinctImportAliases = importGroups.Count > 1;
 
-            foreach (var (importPath, isLibraryImport, groupClrNames) in importGroups)
+            foreach (var (importPath, isLibraryImport, libraryPackageName, groupClrNames) in importGroups)
             {
                 // Check for name collisions and create aliases if needed
                 var typeImports = new List<TypeImport>();
@@ -266,7 +274,7 @@ public static class ImportPlanner
             // Generate namespace alias for this import module
             // Format: "System" → "System_Internal", "System.Collections.Generic" → "System_Collections_Generic_Internal"
             var namespaceAlias = needsDistinctImportAliases
-                ? GenerateNamespaceAlias(targetNamespace, isLibraryImport)
+                ? GenerateNamespaceAlias(targetNamespace, isLibraryImport, libraryPackageName)
                 : GenerateNamespaceAlias(targetNamespace);
 
             var importStatement = new ImportStatement(
@@ -489,10 +497,48 @@ public static class ImportPlanner
         return $"{safeName}_Internal";
     }
 
-    private static string GenerateNamespaceAlias(string namespaceName, bool isLibraryImport)
+    private static string GenerateNamespaceAlias(string namespaceName, bool isLibraryImport, string? libraryPackageName)
     {
-        var safeName = namespaceName.Replace('.', '_');
-        return isLibraryImport ? $"{safeName}_Lib" : $"{safeName}_Internal";
+        var safeNs = namespaceName.Replace('.', '_');
+        if (!isLibraryImport)
+        {
+            return $"{safeNs}_Internal";
+        }
+
+        var safePkg = string.IsNullOrWhiteSpace(libraryPackageName)
+            ? "Lib"
+            : SanitizePackageForAlias(libraryPackageName);
+
+        return $"{safeNs}_Lib_{safePkg}";
+    }
+
+    private static string SanitizePackageForAlias(string packageName)
+    {
+        // Turn an npm package name into a stable identifier fragment for namespace aliases.
+        // Examples:
+        //   "@tsonic/efcore" → "tsonic_efcore"
+        //   "SplitNs.Types"  → "SplitNs_Types"
+        var sb = new System.Text.StringBuilder(packageName.Length);
+        foreach (var ch in packageName)
+        {
+            if (char.IsLetterOrDigit(ch))
+            {
+                sb.Append(ch);
+            }
+            else
+            {
+                sb.Append('_');
+            }
+        }
+
+        // Collapse consecutive underscores for readability (deterministic).
+        var sanitized = sb.ToString();
+        while (sanitized.Contains("__", StringComparison.Ordinal))
+        {
+            sanitized = sanitized.Replace("__", "_", StringComparison.Ordinal);
+        }
+
+        return sanitized.Trim('_');
     }
 
     private static ExportKind DetermineExportKind(Model.Symbols.TypeSymbol type)

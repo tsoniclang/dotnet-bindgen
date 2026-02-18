@@ -131,8 +131,8 @@ public static class InternalIndexEmitter
                 if (ctx.LibraryContract != null && ctx.LibraryContract.AllowedClrFullNames.Contains("System.Int32"))
                 {
                     // Library mode: import from external package internal index
-                    // Use GetPackageForNamespace to get the correct package for System types
-                    var systemPackage = ctx.LibraryContract.GetPackageForNamespace("System");
+                    // Use per-type mapping to get the correct package for System types
+                    var systemPackage = ctx.LibraryContract.GetPackageForClrFullName("System.Int32");
                     systemPath = $"{systemPackage}/System/internal/index.js";
                 }
                 else

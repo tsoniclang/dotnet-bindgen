@@ -139,7 +139,7 @@ public static class ExtensionsEmitter
                 }
 
                 // External namespace: import from owning library package.
-                var pkg = ctx.LibraryContract.GetPackageForNamespace(ns);
+                var pkg = ctx.LibraryContract.GetUniquePackageForNamespace(ns);
                 return $"{pkg}/{outputName}/internal/index.js";
             }
 
@@ -179,7 +179,7 @@ public static class ExtensionsEmitter
             }
             else
             {
-                var pkg = ctx.LibraryContract.GetPackageForNamespace(systemNs);
+                var pkg = ctx.LibraryContract.GetPackageForClrFullName("System.Int32");
                 systemImportPath = $"{pkg}/{outputName}/internal/index.js";
             }
 

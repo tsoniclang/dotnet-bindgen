@@ -41,7 +41,8 @@ public static class Builder
         HashSet<string>? logCategories = null,
         bool strictMode = false,
         string[] libraryPackagePaths = null!,
-        IReadOnlyList<string>? referenceDirectories = null)
+        IReadOnlyList<string>? referenceDirectories = null,
+        IReadOnlyDictionary<string, string>? libraryClrTypePackageOverrides = null)
     {
         libraryPackagePaths ??= Array.Empty<string>();
 
@@ -57,7 +58,7 @@ public static class Builder
                 logger?.Invoke($"  Loaded: {contract.TypeCount} types, {contract.MemberCount} members");
                 contracts.Add(contract);
             }
-            libraryContract = LibraryContract.Merge(contracts);
+            libraryContract = LibraryContract.Merge(contracts, libraryClrTypePackageOverrides);
             logger?.Invoke($"Merged library contract: {libraryContract.TypeCount} types, {libraryContract.MemberCount} members");
         }
 
