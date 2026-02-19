@@ -229,7 +229,13 @@ public static class ExtensionsEmitter
         // Extension methods file needs all cross-namespace types to be fully qualified
         // Use a dummy namespace "__internal.extensions" and enable facade mode
         // This triggers cross-namespace qualification for all type references
-        var resolver = new TypeNameResolver(ctx, graph, importPlan: null, currentNamespace: "__internal.extensions", facadeMode: true);
+        var resolver = new TypeNameResolver(
+            ctx,
+            graph,
+            importPlan: null,
+            currentNamespace: "__internal.extensions",
+            facadeMode: true,
+            libraryImportStyle: Plan.LibraryImportStyle.InternalIndex);
 
         // Emit each bucket interface
         foreach (var bucket in plan.Buckets)
