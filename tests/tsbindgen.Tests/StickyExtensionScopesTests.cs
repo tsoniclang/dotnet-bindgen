@@ -1,4 +1,5 @@
 using System.Diagnostics;
+using System.Text.RegularExpressions;
 using tsbindgen;
 using Xunit;
 
@@ -53,8 +54,22 @@ public sealed class StickyExtensionScopesTests
         // Airplane-grade: avoid mapped-type helpers (Omit/...) in the sticky-scope machinery.
         // These cause TS2321 "Excessive stack depth comparing types" for large extension surfaces.
         Assert.Contains("type __TsonicMergeExtMaps<A, B> = A & B;", dts);
-        Assert.Contains("type __TsonicPreferExt<A, B> = A & B;", dts);
         Assert.DoesNotContain("Omit<", dts);
+        Assert.DoesNotContain("__TsonicPreferExt", dts);
+
+        // Airplane-grade: "more specific receiver wins" without mapped types.
+        // The arity-0 bucket (ISeq) has BaseOnly + AsParallel(), while the arity-1 bucket (ISeq<T>)
+        // overrides AsParallel() but must still retain BaseOnly.
+        var derivedBucket = Regex.Match(
+            dts,
+            @"export interface __Ext_ExtensionScopesFixture_ISeq_1<.*?>\s*\{([\s\S]*?)\n\}",
+            RegexOptions.Singleline);
+        Assert.True(derivedBucket.Success, "Failed to locate derived bucket interface for ISeq<T> in extension index output.");
+        var derivedBody = derivedBucket.Groups[1].Value;
+        Assert.Contains("BaseOnly()", derivedBody);
+        Assert.Contains("AsParallel()", derivedBody);
+        Assert.DoesNotContain("AsParallel(): Rewrap<this, ExtensionScopesFixture.ISeq>;", derivedBody);
+        Assert.Contains("AsParallel(): Rewrap<this, ExtensionScopesFixture.ISeq_1", derivedBody);
 
         // Old generic function applier shape is banned (non-deterministic re-application).
         Assert.DoesNotContain("=> __TsonicExtSurface_", dts);

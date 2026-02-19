@@ -11,6 +11,8 @@ public static class SeqExtensions
     // Arity-0 vs arity-1 receiver pair:
     // This exists to ensure tsbindgen prefers generic receiver buckets over their arity-0 bases
     // for overlapping member names (C# "more specific receiver wins").
+    public static ISeq BaseOnly(this ISeq source) => source;
+
     public static ISeq AsParallel(this ISeq source) => source;
 
     public static ISeq<T> AsParallel<T>(this ISeq<T> source) => source;

@@ -1,4 +1,5 @@
 using System.Diagnostics;
+using System.Text.RegularExpressions;
 using tsbindgen;
 using Xunit;
 
@@ -42,11 +43,19 @@ public sealed class GenericReceiverPreferenceTests
 
         var dts = File.ReadAllText(extensionIndex);
 
-        // Arity-0 base buckets must be merged into arity-1 buckets using __TsonicPreferExt
-        // so overlapping members (e.g. AsParallel) prefer the generic receiver return types.
-        //
         // Fixture: ISeq (arity 0) + ISeq<T> : ISeq (arity 1) both define AsParallel.
-        Assert.Contains("__TsonicPreferExt<__Ext_ExtensionScopesFixture_ISeq, __Ext_ExtensionScopesFixture_ISeq_1", dts);
+        // For the more specific receiver (ISeq<T>), AsParallel() must return ISeq<T>,
+        // while still retaining base-only members like BaseOnly().
+        var derivedBucket = Regex.Match(
+            dts,
+            @"export interface __Ext_ExtensionScopesFixture_ISeq_1<.*?>\s*\{([\s\S]*?)\n\}",
+            RegexOptions.Singleline);
+        Assert.True(derivedBucket.Success, "Failed to locate derived bucket interface for ISeq<T> in extension index output.");
+
+        var derivedBody = derivedBucket.Groups[1].Value;
+        Assert.Contains("BaseOnly()", derivedBody);
+        Assert.DoesNotContain("AsParallel(): Rewrap<this, ExtensionScopesFixture.ISeq>;", derivedBody);
+        Assert.Contains("AsParallel(): Rewrap<this, ExtensionScopesFixture.ISeq_1", derivedBody);
     }
 
     private static string FindRepoRoot()
