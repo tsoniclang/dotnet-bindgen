@@ -322,6 +322,7 @@ public static class ExtensionsEmitter
             importPlan: null,
             currentNamespace: "__internal.extensions",
             facadeMode: true,
+            libraryImportStyle: Plan.LibraryImportStyle.InternalIndex,
             facadeNamespaceAliasResolver: facadeNamespaceAliasResolver);
 
         // Emit each bucket interface
