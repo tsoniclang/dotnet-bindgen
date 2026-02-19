@@ -50,6 +50,12 @@ public sealed class StickyExtensionScopesTests
         Assert.Contains("__tsonic_shape", dts);
         Assert.Contains("__tsonic_type", dts);
 
+        // Airplane-grade: avoid mapped-type helpers (Omit/...) in the sticky-scope machinery.
+        // These cause TS2321 "Excessive stack depth comparing types" for large extension surfaces.
+        Assert.Contains("type __TsonicMergeExtMaps<A, B> = A & B;", dts);
+        Assert.Contains("type __TsonicPreferExt<A, B> = A & B;", dts);
+        Assert.DoesNotContain("Omit<", dts);
+
         // Old generic function applier shape is banned (non-deterministic re-application).
         Assert.DoesNotContain("=> __TsonicExtSurface_", dts);
         Assert.DoesNotContain("<TShape>(shape: TShape) =>", dts);
