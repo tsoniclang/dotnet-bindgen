@@ -156,24 +156,31 @@ public static class TypeRefPrinter
             var argParts = named.TypeArguments.Select(arg =>
             {
                 var printed = Print(arg, resolver, ctx, allowedTypeParameterNames);
-                // Lift primitives to their CLR type names: int → Int32, char → Char, etc.
-                // Qualify with System_Internal when outside System namespace
-                var clrName = PrimitiveLift.GetClrSimpleName(printed);
-                if (clrName != null)
+                // Lift primitives to their CLR type names (Int32, String, ...) only when
+                // emitting internal-index shapes. Facade surfaces should preserve the
+                // ergonomic primitive aliases (int, string, boolean, ...) and should
+                // not introduce System_Internal-qualified primitive names.
+                if (resolver.LibraryImportStyle != Plan.LibraryImportStyle.Facade)
                 {
-                    if (useBooleanShapeInArgs && clrName == "Boolean")
+                    // Lift primitives to their CLR type names: int → Int32, char → Char, etc.
+                    // Qualify with System_Internal when outside System namespace
+                    var clrName = PrimitiveLift.GetClrSimpleName(printed);
+                    if (clrName != null)
                     {
-                        clrName = "Boolean$shape";
-                    }
+                        if (useBooleanShapeInArgs && clrName == "Boolean")
+                        {
+                            clrName = "Boolean$shape";
+                        }
 
-                    // CLR primitive types are defined in System namespace
-                    // Qualify when not in System namespace
-                    var currentNs = resolver.CurrentNamespace;
-                    if (currentNs != null && currentNs != "System")
-                    {
-                        return $"System_Internal.{clrName}";
+                        // CLR primitive types are defined in System namespace
+                        // Qualify when not in System namespace
+                        var currentNs = resolver.CurrentNamespace;
+                        if (currentNs != null && currentNs != "System")
+                        {
+                            return $"System_Internal.{clrName}";
+                        }
+                        return clrName;
                     }
-                    return clrName;
                 }
                 return printed;
             }).ToList();
