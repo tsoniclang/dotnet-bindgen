@@ -58,6 +58,7 @@ public sealed class ModuleContainerExportsTests
 
         var dts = File.ReadAllText(facadePath);
         Assert.Contains("export declare function buildSite(req: Internal.BuildRequest): Internal.BuildResult;", dts);
+        Assert.Contains("export declare const Log: Action_1<string>;", dts);
         Assert.Contains("export declare const Version", dts);
         Assert.Contains("export declare const Count", dts);
 
