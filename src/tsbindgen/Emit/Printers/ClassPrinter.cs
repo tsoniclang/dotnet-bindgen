@@ -2590,6 +2590,45 @@ public static class ClassPrinter
             // This is not great, but it's safer than lying about a key type that TS can't represent.
         }
 
+        // CLR implicit conversion: T -> Nullable<T>
+        //
+        // In C#, assigning a non-nullable value type to a nullable value type is always legal:
+        //   long x = 123;
+        //   long? y = x; // implicit conversion
+        //
+        // The generated d.ts must reflect this for setters, otherwise TS users are forced into
+        // manual construction/casts for a conversion that is guaranteed by the CLR.
+        //
+        // We keep the *getter* type strict (Nullable<T>) so downstream code can rely on
+        // HasValue/Value, but widen the *setter* to accept either Nullable<T> or the underlying T.
+        if (property.HasGetter &&
+            property.HasSetter &&
+            propertyType is NamedTypeReference { FullName: "System.Nullable`1", TypeArguments.Count: 1 } nullable)
+        {
+            var getterType = overrideType ?? TypeRefPrinter.Print(propertyType, resolver, ctx);
+            var underlying = TypeRefPrinter.Print(nullable.TypeArguments[0], resolver, ctx);
+
+            sb.Append("    ");
+            sb.Append(staticPrefix);
+            sb.Append("get ");
+            sb.Append(emitName);
+            sb.Append("(): ");
+            sb.Append(getterType);
+            sb.AppendLine(";");
+
+            sb.Append("    ");
+            sb.Append(staticPrefix);
+            sb.Append("set ");
+            sb.Append(emitName);
+            sb.Append("(value: ");
+            sb.Append(getterType);
+            sb.Append(" | ");
+            sb.Append(underlying);
+            sb.AppendLine(");");
+
+            return;
+        }
+
         // Check if we need split accessors due to NRT nullability asymmetry
         if (NeedsSplitAccessors(property))
         {
