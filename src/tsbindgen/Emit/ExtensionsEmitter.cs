@@ -95,6 +95,19 @@ public static class ExtensionsEmitter
             // Add the target type's namespace (needed for ExtensionMethods_<Namespace> helper)
             namespacesUsed.Add(bucket.TargetType.Namespace);
 
+            // Also record the receiver type's CLR full name so --lib import planning can resolve
+            // namespaces even when only the receiver (and not any parameter/return types) appears.
+            if (!string.IsNullOrEmpty(bucket.TargetType.Namespace))
+            {
+                if (!namespaceToClrFullNames.TryGetValue(bucket.TargetType.Namespace, out var set))
+                {
+                    set = new HashSet<string>(StringComparer.Ordinal);
+                    namespaceToClrFullNames[bucket.TargetType.Namespace] = set;
+                }
+
+                set.Add(bucket.TargetType.ClrFullName);
+            }
+
             foreach (var method in bucket.Methods)
             {
                 // Collect from return type
@@ -122,65 +135,140 @@ public static class ExtensionsEmitter
         // Local namespaces are at ../../{Namespace}/internal/index.js
         // External namespaces (from --lib contracts) are imported via package specifiers
         // (e.g., @tsonic/dotnet/System.Linq/internal/index.js).
+        var localNamespaces = graph.Namespaces.Select(n => n.Name).ToHashSet();
+        var namespaceAliasByPackage = new Dictionary<(string Namespace, string Package), string>();
+        Func<string, string, string, string>? facadeNamespaceAliasResolver = null;
         if (namespacesUsed.Count > 0)
         {
-            var localNamespaces = graph.Namespaces.Select(n => n.Name).ToHashSet();
+            static string SanitizePackageAlias(string pkg)
+            {
+                // Convert an npm package specifier (e.g., "@tsonic/dotnet", "microsoft-foo-types")
+                // into a TS identifier-safe suffix.
+                var sb = new StringBuilder(pkg.Length);
+                foreach (var ch in pkg)
+                {
+                    if (char.IsLetterOrDigit(ch))
+                    {
+                        sb.Append(ch);
+                    }
+                    else
+                    {
+                        sb.Append('_');
+                    }
+                }
 
-            string GetNamespaceModuleImportPath(string ns)
+                var s = sb.ToString().Trim('_');
+                if (s.Length == 0)
+                    return "pkg";
+
+                // Identifiers can't start with a digit.
+                if (char.IsDigit(s[0]))
+                    return "_" + s;
+
+                return s;
+            }
+
+            string GetNamespaceModuleImportPath(string ns, string? pkg)
             {
                 if (string.IsNullOrEmpty(ns))
                 {
+                    // Root namespace is always local within the output package.
                     return "../../_root/index.js";
                 }
 
                 var outputName = NamespacePathMapper.GetOutputName(ns, ctx);
 
                 // Local namespace: relative import within this output package.
-                if (localNamespaces.Contains(ns) || ctx.LibraryContract == null)
+                if (localNamespaces.Contains(ns) || ctx.LibraryContract == null || pkg == null)
                 {
                     return $"../../{outputName}/internal/index.js";
-                }
-
-                // External namespace: CLR namespaces can be split across multiple packages.
-                // For this file we import exactly one namespace module, so choose a package
-                // based on the actual referenced CLR types in that namespace.
-                var referenced = namespaceToClrFullNames.TryGetValue(ns, out var clrs)
-                    ? clrs
-                    : null;
-
-                string pkg;
-                if (referenced != null && referenced.Count > 0)
-                {
-                    var pkgs = referenced
-                        .Select(ctx.LibraryContract.GetPackageForClrFullName)
-                        .Distinct(StringComparer.Ordinal)
-                        .OrderBy(p => p, StringComparer.Ordinal)
-                        .ToList();
-
-                    if (pkgs.Count != 1)
-                    {
-                        throw new InvalidOperationException(
-                            $"Cannot choose a unique owning package for namespace '{ns}' in extension bucket emission. " +
-                            $"Referenced types resolve to multiple packages: {string.Join(", ", pkgs)}.");
-                    }
-
-                    pkg = pkgs[0];
-                }
-                else
-                {
-                    // No referenced types to guide selection - keep strict behavior.
-                    pkg = ctx.LibraryContract.GetUniquePackageForNamespace(ns);
                 }
 
                 return $"{pkg}/{outputName}/internal/index.js";
             }
 
-            sb.AppendLine("// Import namespace modules for cross-namespace type references");
-            foreach (var ns in namespacesUsed.OrderBy(n => n))
+            // Build deterministic per-(namespace, package) imports in --lib mode.
+            // Airplane-grade: if a namespace is split across multiple packages, we import all
+            // contributing namespace modules and qualify type references based on the owning package
+            // of each referenced CLR full name (LibraryContract.GetPackageForClrFullName).
+            var namespaceImports = new List<(string Namespace, string Alias, string ImportPath)>();
+
+            foreach (var ns in namespacesUsed.OrderBy(n => n, StringComparer.Ordinal))
             {
-                var namespaceAlias = GetNamespaceAlias(ns);
-                var importPath = GetNamespaceModuleImportPath(ns);
-                sb.AppendLine($"import * as {namespaceAlias} from \"{importPath}\";");
+                var baseAlias = GetNamespaceAlias(ns);
+
+                // Local namespaces (or non-lib mode): single import as before.
+                if (string.IsNullOrEmpty(ns) || localNamespaces.Contains(ns) || ctx.LibraryContract == null)
+                {
+                    var importPath = GetNamespaceModuleImportPath(ns, pkg: null);
+                    namespaceImports.Add((ns, baseAlias, importPath));
+                    continue;
+                }
+
+                // External namespace in --lib mode: import one module per contributing package.
+                var referenced = namespaceToClrFullNames.TryGetValue(ns, out var clrs) ? clrs : null;
+                if (referenced == null || referenced.Count == 0)
+                {
+                    // We should always have at least the receiver type recorded. Keep strict behavior
+                    // rather than guessing.
+                    throw new InvalidOperationException(
+                        $"No referenced CLR types recorded for namespace '{ns}' in extension bucket emission. " +
+                        "This indicates a tsbindgen bug in namespace collection.");
+                }
+
+                var pkgs = referenced
+                    .Select(ctx.LibraryContract.GetPackageForClrFullName)
+                    .Distinct(StringComparer.Ordinal)
+                    .OrderBy(p => p, StringComparer.Ordinal)
+                    .ToList();
+
+                if (pkgs.Count == 0)
+                {
+                    throw new InvalidOperationException(
+                        $"No owning packages resolved for namespace '{ns}' in extension bucket emission.");
+                }
+
+                // Choose a canonical package for the base alias so existing code that hardcodes
+                // certain namespace aliases (e.g., System.* constraints) remains valid.
+                var canonicalPkg = pkgs[0];
+                if (ns == "System")
+                {
+                    try
+                    {
+                        canonicalPkg = ctx.LibraryContract.GetPackageForClrFullName("System.Int32");
+                    }
+                    catch
+                    {
+                        // Fall back to deterministic sorted-first
+                    }
+                }
+
+                foreach (var pkg in pkgs)
+                {
+                    var alias = pkg == canonicalPkg ? baseAlias : $"{baseAlias}__{SanitizePackageAlias(pkg)}";
+                    namespaceAliasByPackage[(ns, pkg)] = alias;
+                    namespaceImports.Add((ns, alias, GetNamespaceModuleImportPath(ns, pkg)));
+                }
+            }
+
+            facadeNamespaceAliasResolver = (clrFullName, ns, defaultAlias) =>
+            {
+                if (ctx.LibraryContract == null)
+                    return defaultAlias;
+
+                if (string.IsNullOrEmpty(ns) || localNamespaces.Contains(ns))
+                    return defaultAlias;
+
+                var pkg = ctx.LibraryContract.GetPackageForClrFullName(clrFullName);
+                return namespaceAliasByPackage.TryGetValue((ns, pkg), out var alias) ? alias : defaultAlias;
+            };
+
+            sb.AppendLine("// Import namespace modules for cross-namespace type references");
+            foreach (var import in namespaceImports
+                         .OrderBy(i => i.Namespace, StringComparer.Ordinal)
+                         .ThenBy(i => i.Alias, StringComparer.Ordinal))
+            {
+                sb.AppendLine($"import * as {import.Alias} from \"{import.ImportPath}\";");
             }
             sb.AppendLine();
         }
@@ -200,7 +288,6 @@ public static class ExtensionsEmitter
         // This import must work in both normal mode (System emitted locally) and library mode (--lib @tsonic/dotnet).
         sb.AppendLine("// Import CLR type aliases for generic type arguments");
         {
-            var localNamespaces = graph.Namespaces.Select(n => n.Name).ToHashSet();
             var systemNs = "System";
             var outputName = NamespacePathMapper.GetOutputName(systemNs, ctx);
 
@@ -229,7 +316,14 @@ public static class ExtensionsEmitter
         // Extension methods file needs all cross-namespace types to be fully qualified
         // Use a dummy namespace "__internal.extensions" and enable facade mode
         // This triggers cross-namespace qualification for all type references
-        var resolver = new TypeNameResolver(ctx, graph, importPlan: null, currentNamespace: "__internal.extensions", facadeMode: true);
+        var resolver = new TypeNameResolver(
+            ctx,
+            graph,
+            importPlan: null,
+            currentNamespace: "__internal.extensions",
+            facadeMode: true,
+            libraryImportStyle: Plan.LibraryImportStyle.InternalIndex,
+            facadeNamespaceAliasResolver: facadeNamespaceAliasResolver);
 
         // Emit each bucket interface
         foreach (var bucket in plan.Buckets)
@@ -239,7 +333,14 @@ public static class ExtensionsEmitter
         }
 
         // Emit per-namespace ExtensionMethods_<Namespace><TShape> helper types
-        EmitExtensionMethodsHelpers(sb, plan, graph);
+        EmitExtensionMethodsHelpers(
+            sb,
+            plan,
+            graph,
+            getTargetNamespaceAlias: t => (facadeNamespaceAliasResolver ?? ((_, __, d) => d))(
+                t.ClrFullName,
+                t.Namespace,
+                GetNamespaceAlias(t.Namespace)));
 
         return sb.ToString();
     }
@@ -581,7 +682,11 @@ public static class ExtensionsEmitter
         };
     }
 
-    private static void EmitExtensionMethodsHelpers(StringBuilder sb, ExtensionMethodsPlan plan, SymbolGraph graph)
+    private static void EmitExtensionMethodsHelpers(
+        StringBuilder sb,
+        ExtensionMethodsPlan plan,
+        SymbolGraph graph,
+        Func<Model.Symbols.TypeSymbol, string> getTargetNamespaceAlias)
     {
         if (plan.Buckets.Length == 0)
         {
@@ -805,7 +910,7 @@ public static class ExtensionsEmitter
             foreach (var bucket in buckets)
             {
                 var targetType = bucket.TargetType;
-                var targetNamespaceAlias = GetNamespaceAlias(targetType.Namespace);
+                var targetNamespaceAlias = getTargetNamespaceAlias(targetType);
 
                 if (targetType.GenericParameters.Length > 0)
                 {
@@ -834,7 +939,7 @@ public static class ExtensionsEmitter
                     // receiver matches a derived bucket (C# "more specific receiver wins").
                     var derivedMarkers = buckets
                         .Where(d => d != bucket && HasOverrideAncestor(d, bucket))
-                        .Select(d => MarkerTestForBucket(d, GetNamespaceAlias(d.TargetType.Namespace)))
+                        .Select(d => MarkerTestForBucket(d, getTargetNamespaceAlias(d.TargetType)))
                         .Distinct()
                         .ToList();
 
@@ -861,7 +966,7 @@ public static class ExtensionsEmitter
 
                     var derivedMarkers = buckets
                         .Where(d => d != bucket && HasOverrideAncestor(d, bucket))
-                        .Select(d => MarkerTestForBucket(d, GetNamespaceAlias(d.TargetType.Namespace)))
+                        .Select(d => MarkerTestForBucket(d, getTargetNamespaceAlias(d.TargetType)))
                         .Distinct()
                         .ToList();
 

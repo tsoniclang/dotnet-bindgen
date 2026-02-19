@@ -102,6 +102,7 @@ public static class LibraryContractLoader
             PackageNames = ImmutableHashSet.Create(StringComparer.Ordinal, packageName),
             ClrFullNameToPackage = allowedClrFullNames
                 .ToImmutableDictionary(clr => clr, _ => packageName, StringComparer.Ordinal),
+            AmbiguousClrFullNameToPackages = ImmutableDictionary<string, ImmutableArray<string>>.Empty,
             NamespaceToPackages = namespaceToTypes.Keys
                 .ToImmutableDictionary(
                     ns => ns,

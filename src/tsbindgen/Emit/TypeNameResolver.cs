@@ -21,6 +21,7 @@ public sealed class TypeNameResolver
     private readonly bool _facadeMode;
     private readonly bool _qualifyCurrentNamespaceWithInternal;
     private readonly Plan.LibraryImportStyle _libraryImportStyle;
+    private readonly Func<string, string, string, string>? _facadeNamespaceAliasResolver;
 
     public TypeNameResolver(
         BuildContext ctx,
@@ -29,7 +30,8 @@ public sealed class TypeNameResolver
         string? currentNamespace = null,
         bool facadeMode = false,
         Plan.LibraryImportStyle libraryImportStyle = Plan.LibraryImportStyle.Facade,
-        bool qualifyCurrentNamespaceWithInternal = false)
+        bool qualifyCurrentNamespaceWithInternal = false,
+        Func<string, string, string, string>? facadeNamespaceAliasResolver = null)
     {
         _ctx = ctx;
         _graph = graph;
@@ -38,6 +40,7 @@ public sealed class TypeNameResolver
         _facadeMode = facadeMode;
         _libraryImportStyle = libraryImportStyle;
         _qualifyCurrentNamespaceWithInternal = qualifyCurrentNamespaceWithInternal;
+        _facadeNamespaceAliasResolver = facadeNamespaceAliasResolver;
     }
 
     public bool IsFacadeMode => _facadeMode;
@@ -199,6 +202,10 @@ public sealed class TypeNameResolver
                     !finalExternalName.Contains('.'))
                 {
                     var namespaceAlias = GetNamespaceAlias(externalNamespace);
+                    if (_facadeNamespaceAliasResolver != null)
+                    {
+                        namespaceAlias = _facadeNamespaceAliasResolver(named.FullName, externalNamespace, namespaceAlias);
+                    }
                     return $"{namespaceAlias}.{finalExternalName}";
                 }
             }
@@ -259,6 +266,10 @@ public sealed class TypeNameResolver
                 // Cross-namespace reference in facade - must qualify
                 // Convert "System.Runtime.InteropServices" → "System_Runtime_InteropServices"
                 var namespaceAlias = GetNamespaceAlias(targetNamespace);
+                if (_facadeNamespaceAliasResolver != null)
+                {
+                    namespaceAlias = _facadeNamespaceAliasResolver(typeSymbol.ClrFullName, targetNamespace, namespaceAlias);
+                }
                 var facadeQualified = $"{namespaceAlias}.{finalName}";
                 _ctx.Log("TypeNameResolver", $"  → Facade mode cross-namespace: {facadeQualified}");
                 return facadeQualified;

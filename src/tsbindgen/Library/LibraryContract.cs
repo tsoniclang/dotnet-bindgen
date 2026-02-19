@@ -77,6 +77,18 @@ public sealed record LibraryContract
     public required ImmutableDictionary<string, string> ClrFullNameToPackage { get; init; }
 
     /// <summary>
+    /// Mapping from CLR full name to ALL packages that provide that CLR type when merging --lib contracts.
+    /// Only contains ambiguous CLR full names (those that appear in more than one package) that were NOT
+    /// resolved via --lib-type-override.
+    ///
+    /// Airplane-grade: tsbindgen will only error if an ambiguous CLR type is actually referenced during
+    /// emission (when an import source is required). This avoids failing upfront when multiple --lib
+    /// packages contain duplicate CLR full names that are not used by the user's emitted surface
+    /// (common with internal helper types duplicated across assemblies).
+    /// </summary>
+    public required ImmutableDictionary<string, ImmutableArray<string>> AmbiguousClrFullNameToPackages { get; init; }
+
+    /// <summary>
     /// Mapping from CLR namespace to all packages that contribute types in that namespace.
     /// Useful for diagnostics and for emitters that need a single owning module per namespace.
     /// </summary>
@@ -90,6 +102,14 @@ public sealed record LibraryContract
         if (ClrFullNameToPackage.TryGetValue(clrFullName, out var pkg))
         {
             return pkg;
+        }
+
+        if (AmbiguousClrFullNameToPackages.TryGetValue(clrFullName, out var pkgs))
+        {
+            throw new InvalidOperationException(
+                $"Ambiguous library type ownership for CLR type '{clrFullName}'. " +
+                $"It appears in multiple packages: {string.Join(", ", pkgs)}.\n" +
+                "Provide explicit overrides (ClrFullName=packageName) to resolve these conflicts.");
         }
 
         throw new KeyNotFoundException($"No package mapping found for CLR type '{clrFullName}'.");
@@ -206,7 +226,7 @@ public sealed record LibraryContract
         }
 
         var clrFullNameToPackage = new Dictionary<string, string>(StringComparer.Ordinal);
-        var conflicts = new List<(string Clr, ImmutableArray<string> Packages)>();
+        var ambiguousClrFullNameToPackages = new Dictionary<string, ImmutableArray<string>>(StringComparer.Ordinal);
 
         foreach (var (clr, pkgs) in clrToPackages.OrderBy(kvp => kvp.Key, StringComparer.Ordinal))
         {
@@ -231,39 +251,20 @@ public sealed record LibraryContract
                 continue;
             }
 
-            conflicts.Add((clr, pkgs.OrderBy(p => p, StringComparer.Ordinal).ToImmutableArray()));
-        }
-
-        if (conflicts.Count > 0)
-        {
-            var lines = conflicts
-                .Take(10)
-                .Select(c => $"  - {c.Clr}: {string.Join(", ", c.Packages)}");
-
-            var suffix = conflicts.Count > 10
-                ? $"\n  ... and {conflicts.Count - 10} more."
-                : "";
-
-            throw new InvalidOperationException(
-                "Ambiguous library type ownership detected while merging --lib contracts. " +
-                "The same CLR type appears in multiple packages, so tsbindgen cannot safely choose an import source.\n" +
-                string.Join("\n", lines) +
-                suffix +
-                "\nProvide explicit overrides (ClrFullName=packageName) to resolve these conflicts.");
+            // Keep ambiguity, but do not fail upfront. Only error if the type is actually referenced
+            // and an import source is required.
+            ambiguousClrFullNameToPackages[clr] = pkgs.OrderBy(p => p, StringComparer.Ordinal).ToImmutableArray();
         }
 
         var packageNameSet = contracts.Select(c => c.PackageName).ToImmutableHashSet(StringComparer.Ordinal);
 
         // Build namespace-to-packages for quick lookups.
-        var namespaceToPackages = clrFullNameToNamespace
-            .GroupBy(kvp => kvp.Value, kvp => kvp.Key)
+        var namespaceToPackages = clrToPackages
+            .GroupBy(kvp => clrFullNameToNamespace[kvp.Key])
             .ToImmutableDictionary(
                 g => g.Key,
-                g => g
-                    .Select(clr => clrFullNameToPackage.TryGetValue(clr, out var pkg) ? pkg : null)
-                    .Where(pkg => pkg != null)
-                    .Cast<string>()
-                    .ToImmutableHashSet(StringComparer.Ordinal));
+                g => g.SelectMany(kvp => kvp.Value).ToImmutableHashSet(StringComparer.Ordinal),
+                StringComparer.Ordinal);
 
         return new LibraryContract
         {
@@ -277,6 +278,7 @@ public sealed record LibraryContract
             FacadeFamilies = facadeFamilies,
             PackageNames = packageNameSet,
             ClrFullNameToPackage = clrFullNameToPackage.ToImmutableDictionary(StringComparer.Ordinal),
+            AmbiguousClrFullNameToPackages = ambiguousClrFullNameToPackages.ToImmutableDictionary(StringComparer.Ordinal),
             NamespaceToPackages = namespaceToPackages
         };
     }
