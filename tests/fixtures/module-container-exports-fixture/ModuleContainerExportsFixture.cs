@@ -23,6 +23,8 @@ namespace ModuleContainerExportsFixture
     {
         public static BuildResult buildSite(BuildRequest req) => new(req.X + 1);
 
+        public static global::System.Action<string> Log = _ => { };
+
         public static string Version => "1";
 
         public static int Count = 42;

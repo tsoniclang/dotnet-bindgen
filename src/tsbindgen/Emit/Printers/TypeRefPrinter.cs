@@ -1,3 +1,4 @@
+using System.Text.RegularExpressions;
 using System.Text;
 using tsbindgen.Model;
 using tsbindgen.Model.Types;
@@ -11,6 +12,35 @@ namespace tsbindgen.Emit.Printers;
 /// </summary>
 public static class TypeRefPrinter
 {
+    private static string DemoteLiftedPrimitivesForFacade(string typeText, TypeNameResolver resolver)
+    {
+        // Facade surfaces should never leak internal lifted primitive names like `System_Internal.Int32`.
+        // These appear when primitives are lifted to CLR names in generic positions (internal-index style),
+        // but a facade later reuses those type references.
+        //
+        // Airplane-grade rule:
+        // - Facades must use the TypeScript primitive aliases (string/boolean/int/long/...) so consumers
+        //   can pass idiomatic TS values without manual casts.
+        if (resolver.LibraryImportStyle != Plan.LibraryImportStyle.Facade)
+        {
+            return typeText;
+        }
+
+        if (!typeText.Contains("System_Internal.", StringComparison.Ordinal))
+        {
+            return typeText;
+        }
+
+        // Replace only when the identifier is EXACTLY the primitive name (avoid StringComparer, String$instance, etc.)
+        foreach (var rule in PrimitiveLift.Rules)
+        {
+            var pattern = $@"System_Internal\.{Regex.Escape(rule.ClrSimpleName)}(?![\w$])";
+            typeText = Regex.Replace(typeText, pattern, rule.TsName);
+        }
+
+        return typeText;
+    }
+
     /// <summary>
     /// Print a TypeReference to TypeScript syntax.
     /// CRITICAL: Always pass TypeNameResolver - never use CLR names directly.
@@ -206,10 +236,10 @@ public static class TypeRefPrinter
         // Guard: even if a bug sets Nullability=Nullable on a value type, don't emit union
         if (named.Nullability == NrtState.Nullable && !named.IsValueType)
         {
-            return $"{result} | undefined";
+            return $"{DemoteLiftedPrimitivesForFacade(result, resolver)} | undefined";
         }
 
-        return result;
+        return DemoteLiftedPrimitivesForFacade(result, resolver);
     }
 
     private static string PrintGenericParameter(
