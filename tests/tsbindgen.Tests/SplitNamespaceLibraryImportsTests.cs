@@ -180,13 +180,20 @@ public sealed class SplitNamespaceLibraryImportsTests
             emittedOutRoot: emitTypesOut,
             namespaceDirName: "Example.SplitNs");
 
-        // Without overrides, merging the --lib contracts must hard-error (airplane-grade).
-        Assert.Throws<InvalidOperationException>(() =>
-            Builder.Build(
-                assemblyPaths: new[] { consumerAssemblyPath },
-                outputDirectory: Path.Combine(scratch, "emit-consumer-no-override"),
-                libraryPackagePaths: new[] { abstractionsPkgDir, typesPkgDirA, typesPkgDirB },
-                referenceDirectories: new[] { runtimeDir! }));
+        // Without overrides, the build must fail deterministically (airplane-grade) when an
+        // ambiguous CLR type is actually referenced and an import source is required.
+        //
+        // NOTE: Builder.Build returns diagnostics (it does not throw).
+        var noOverrideResult = Builder.Build(
+            assemblyPaths: new[] { consumerAssemblyPath },
+            outputDirectory: Path.Combine(scratch, "emit-consumer-no-override"),
+            libraryPackagePaths: new[] { abstractionsPkgDir, typesPkgDirA, typesPkgDirB },
+            referenceDirectories: new[] { runtimeDir! });
+
+        Assert.False(noOverrideResult.Success, "Build unexpectedly succeeded without overrides for ambiguous library types.");
+        Assert.Contains(
+            noOverrideResult.Diagnostics,
+            d => d.Code == "BUILD_EXCEPTION" && d.Message.Contains("Ambiguous library type ownership", StringComparison.Ordinal));
 
         // With explicit per-type overrides, the build should succeed deterministically.
         var typesContract = LibraryContractLoader.Load(typesPkgDirA);

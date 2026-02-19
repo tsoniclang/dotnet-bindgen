@@ -698,9 +698,16 @@ public static class ExtensionsEmitter
         // extension methods can preserve all active namespaces via Rewrap<this, ReturnShape>.
         sb.AppendLine("// Internal helper types for sticky extension scopes");
         sb.AppendLine("type __TsonicExtMapOf<T> = T extends { __tsonic_ext?: infer M } ? M : {};");
-        sb.AppendLine("type __TsonicMergeExtMaps<A, B> = Omit<A, keyof B> & B;");
+        // NOTE: We intentionally avoid mapped types (Omit/Exclude/...) here.
+        // Large, deeply nested extension surfaces (e.g. System.Linq + EF Core) can trigger
+        // TS2321 "Excessive stack depth comparing types" when mapped types are involved in
+        // the sticky-scope carrier / preference composition.
+        //
+        // We rely on the fact that extension scope keys (namespace strings) are stable and
+        // applier types for a given key are identical, so `A & B` is sufficient.
+        sb.AppendLine("type __TsonicMergeExtMaps<A, B> = A & B;");
         sb.AppendLine("type __TsonicWithExt<TShape, K extends string, TApplier> = { __tsonic_ext?: __TsonicMergeExtMaps<__TsonicExtMapOf<TShape>, { [P in K]: TApplier }> };");
-        sb.AppendLine("type __TsonicPreferExt<A, B> = Omit<A, keyof B> & B;");
+        sb.AppendLine("type __TsonicPreferExt<A, B> = A & B;");
         sb.AppendLine();
 
         // Build a fast lookup for inheritance traversal (ClrFullName -> first TypeSymbol)
