@@ -988,14 +988,19 @@ public static class ExtensionsEmitter
 
                     if (derivedMarkers.Count > 0)
                     {
-                        // Wrap base bucket with nested derived guards:
-                        //   TShape extends Base<infer ...> ? (TShape extends Derived ? {} : BaseBucket<...>) : {}
-                        var guarded = trueExpr;
-                        for (var i = derivedMarkers.Count - 1; i >= 0; i--)
-                        {
-                            guarded = $"(TShape extends {derivedMarkers[i]} ? {{}} : {guarded})";
-                        }
-                        trueExpr = guarded;
+                        // Guard base bucket when the receiver matches any derived bucket.
+                        //
+                        // IMPORTANT: Use a single union check instead of nested conditionals.
+                        // Deep nesting (System.Linq + EF Core) can trigger TS2321 "Excessive stack depth"
+                        // in real projects due to type comparison recursion.
+                        //
+                        // Old (nested):
+                        //   TShape extends Base ? (TShape extends D1 ? {} : (TShape extends D2 ? {} : BaseBucket)) : {}
+                        //
+                        // New (flat):
+                        //   TShape extends Base ? (TShape extends (D1 | D2) ? {} : BaseBucket) : {}
+                        var derivedUnion = string.Join(" | ", derivedMarkers);
+                        trueExpr = $"(TShape extends ({derivedUnion}) ? {{}} : {trueExpr})";
                     }
 
                     conditionals.Add(
@@ -1014,12 +1019,9 @@ public static class ExtensionsEmitter
                     var trueExpr = bucket.BucketInterfaceName;
                     if (derivedMarkers.Count > 0)
                     {
-                        var guarded = trueExpr;
-                        for (var i = derivedMarkers.Count - 1; i >= 0; i--)
-                        {
-                            guarded = $"(TShape extends {derivedMarkers[i]} ? {{}} : {guarded})";
-                        }
-                        trueExpr = guarded;
+                        // See generic case above: flatten derived guards to avoid deep nesting.
+                        var derivedUnion = string.Join(" | ", derivedMarkers);
+                        trueExpr = $"(TShape extends ({derivedUnion}) ? {{}} : {trueExpr})";
                     }
 
                     conditionals.Add(
