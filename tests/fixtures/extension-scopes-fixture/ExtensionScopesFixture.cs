@@ -22,3 +22,13 @@ public static class SeqExtensions
     public static ISeq<TResult> Select<TSource, TResult>(this ISeq<TSource> source, Func<TSource, TResult> selector) =>
         new Seq<TResult>();
 }
+
+public static class BclLinqExtensions
+{
+    // BCL receiver specificity: IQueryable<T> is a strict subtype of IEnumerable<T>.
+    // Airplane-grade: method-table overload ordering must emit the IQueryable receiver
+    // overload BEFORE the IEnumerable receiver overload so fluent chains preserve IQueryable<T>.
+    public static IEnumerable<T> Stamp<T>(this IEnumerable<T> source) => source;
+
+    public static IQueryable<T> Stamp<T>(this IQueryable<T> source) => source;
+}

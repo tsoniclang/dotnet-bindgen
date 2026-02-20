@@ -415,11 +415,12 @@ public static class ExtensionsEmitter
         TypeSymbol @base,
         IReadOnlyDictionary<string, TypeSymbol> typeByClrFullName)
     {
-        if (derived.ClrFullName == @base.ClrFullName)
+        var baseClrFullName = CanonicalClrFullName(@base.ClrFullName, @base.Arity);
+        if (CanonicalClrFullName(derived.ClrFullName, derived.Arity) == baseClrFullName)
             return false;
 
         var visited = new HashSet<string>(StringComparer.Ordinal);
-        return IsSubtypeOfFullName(derived, @base.ClrFullName, typeByClrFullName, visited);
+        return IsSubtypeOfFullName(derived, baseClrFullName, typeByClrFullName, visited);
     }
 
     private static bool IsSubtypeOfFullName(
@@ -433,10 +434,11 @@ public static class ExtensionsEmitter
 
         if (type.BaseType is NamedTypeReference namedBase)
         {
-            if (namedBase.FullName == baseClrFullName)
+            var baseFullName = CanonicalClrFullName(namedBase.FullName, namedBase.Arity);
+            if (baseFullName == baseClrFullName)
                 return true;
 
-            if (typeByClrFullName.TryGetValue(namedBase.FullName, out var baseSym) &&
+            if (typeByClrFullName.TryGetValue(baseFullName, out var baseSym) &&
                 IsSubtypeOfFullName(baseSym, baseClrFullName, typeByClrFullName, visited))
                 return true;
         }
@@ -446,15 +448,40 @@ public static class ExtensionsEmitter
             if (ifaceRef is not NamedTypeReference namedIface)
                 continue;
 
-            if (namedIface.FullName == baseClrFullName)
+            var ifaceFullName = CanonicalClrFullName(namedIface.FullName, namedIface.Arity);
+            if (ifaceFullName == baseClrFullName)
                 return true;
 
-            if (typeByClrFullName.TryGetValue(namedIface.FullName, out var ifaceSym) &&
+            if (typeByClrFullName.TryGetValue(ifaceFullName, out var ifaceSym) &&
                 IsSubtypeOfFullName(ifaceSym, baseClrFullName, typeByClrFullName, visited))
                 return true;
         }
 
         return false;
+    }
+
+    private static string CanonicalClrFullName(string fullName, int arity)
+    {
+        // Normalize assembly-qualified full names ("Foo.Bar, Baz") to the CLR full name ("Foo.Bar").
+        // This is defensive: most TypeSymbols/TypeReferences are already normalized, but library-contract
+        // inputs (and some MetadataLoadContext edges) can surface with commas.
+        var s = fullName;
+        var commaIndex = s.IndexOf(',');
+        if (commaIndex >= 0)
+        {
+            s = s.Substring(0, commaIndex).Trim();
+        }
+
+        // Some code paths (facade-family references in library mode) can carry a "family base"
+        // CLR name without backtick arity (e.g., "System.Linq.IQueryable" + Arity=1). Canonicalize
+        // that to the real CLR generic definition name ("System.Linq.IQueryable`1") so subtype
+        // comparisons remain correct.
+        if (!s.Contains('`') && arity > 0)
+        {
+            s = $"{s}`{arity}";
+        }
+
+        return s;
     }
 
     private static void EmitMethodTableInterface(
@@ -627,4 +654,3 @@ public static class ExtensionsEmitter
         sb.AppendLine();
     }
 }
-

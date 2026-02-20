@@ -81,6 +81,22 @@ public sealed class StickyExtensionScopesTests
         // Old generic function applier shape is banned (non-deterministic re-application).
         Assert.DoesNotContain("=> __TsonicExtSurface_", dts);
         Assert.DoesNotContain("<TShape>(shape: TShape) =>", dts);
+
+        // Airplane-grade: ensure "more specific receiver wins" for BCL receiver types too.
+        // IQueryable<T> is a strict subtype of IEnumerable<T>, so Stamp(this: IQueryable<T>) must
+        // appear BEFORE Stamp(this: IEnumerable<T>) in the method table.
+        Assert.Contains("Stamp<T>(this: System_Linq.IQueryable_1<T>)", body);
+        Assert.Contains("Stamp<T>(this: System_Collections_Generic.IEnumerable_1<T>)", body);
+
+        var stampQueryableIdx = body.IndexOf(
+            "Stamp<T>(this: System_Linq.IQueryable_1<T>)",
+            StringComparison.Ordinal);
+        var stampEnumerableIdx = body.IndexOf(
+            "Stamp<T>(this: System_Collections_Generic.IEnumerable_1<T>)",
+            StringComparison.Ordinal);
+
+        Assert.True(stampQueryableIdx >= 0 && stampEnumerableIdx >= 0, "Failed to locate both Stamp overloads in method table.");
+        Assert.True(stampQueryableIdx < stampEnumerableIdx, "Expected IQueryable<T> Stamp overload to appear before IEnumerable<T> Stamp overload.");
     }
 
     private static string FindRepoRoot()
