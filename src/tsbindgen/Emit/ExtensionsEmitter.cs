@@ -415,7 +415,22 @@ public static class ExtensionsEmitter
         TypeSymbol @base,
         IReadOnlyDictionary<string, TypeSymbol> typeByClrFullName)
     {
+        // Prefer the canonical graph symbol for comparisons (TypeIndex-backed).
+        // This avoids edge cases where a bucket's TargetType came from a different traversal
+        // than the TypeIndex (e.g., forwarders/duplicates in large assembly sets).
+        var derivedClrFullName = CanonicalClrFullName(derived.ClrFullName, derived.Arity);
+        if (typeByClrFullName.TryGetValue(derivedClrFullName, out var canonicalDerived))
+        {
+            derived = canonicalDerived;
+        }
+
         var baseClrFullName = CanonicalClrFullName(@base.ClrFullName, @base.Arity);
+        if (typeByClrFullName.TryGetValue(baseClrFullName, out var canonicalBase))
+        {
+            @base = canonicalBase;
+            baseClrFullName = CanonicalClrFullName(@base.ClrFullName, @base.Arity);
+        }
+
         if (CanonicalClrFullName(derived.ClrFullName, derived.Arity) == baseClrFullName)
             return false;
 
