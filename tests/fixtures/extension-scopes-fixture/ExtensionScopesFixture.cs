@@ -32,3 +32,16 @@ public static class BclLinqExtensions
 
     public static IQueryable<T> Stamp<T>(this IQueryable<T> source) => source;
 }
+
+public static class ForceBclLinqLoad
+{
+    // Ensure the build includes System.Linq + System.Linq.Queryable + System.Linq.Parallel so we can
+    // assert BCL receiver ordering inside the real System.Linq method table (Queryable/ParallelQuery
+    // overloads must appear before Enumerable overloads).
+    public static void Touch()
+    {
+        _ = Enumerable.Empty<int>();
+        _ = Queryable.AsQueryable(Enumerable.Empty<int>());
+        _ = ParallelEnumerable.AsParallel(Enumerable.Empty<int>());
+    }
+}

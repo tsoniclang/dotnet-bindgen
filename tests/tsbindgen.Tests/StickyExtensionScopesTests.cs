@@ -97,6 +97,33 @@ public sealed class StickyExtensionScopesTests
 
         Assert.True(stampQueryableIdx >= 0 && stampEnumerableIdx >= 0, "Failed to locate both Stamp overloads in method table.");
         Assert.True(stampQueryableIdx < stampEnumerableIdx, "Expected IQueryable<T> Stamp overload to appear before IEnumerable<T> Stamp overload.");
+
+        // Also validate ordering in the *real* BCL System.Linq method table.
+        // This catches regressions that only surface when generating large BCL extension surfaces.
+        var linqMethodsTable = Regex.Match(
+            dts,
+            @"interface __TsonicExtMethods_System_Linq\s*\{([\s\S]*?)\n\}",
+            RegexOptions.Singleline);
+        Assert.True(linqMethodsTable.Success, "Failed to locate method-table interface for System.Linq in extension index output.");
+
+        var linqBody = linqMethodsTable.Groups[1].Value;
+
+        var whereEnumerableIdx = linqBody.IndexOf(
+            "Where<TSource>(this: System_Collections_Generic.IEnumerable_1<TSource>",
+            StringComparison.Ordinal);
+        var whereQueryableIdx = linqBody.IndexOf(
+            "Where<TSource>(this: System_Linq.IQueryable_1<TSource>",
+            StringComparison.Ordinal);
+        var whereParallelIdx = linqBody.IndexOf(
+            "Where<TSource>(this: System_Linq.ParallelQuery_1<TSource>",
+            StringComparison.Ordinal);
+
+        Assert.True(whereEnumerableIdx >= 0, "Failed to locate LINQ Enumerable.Where overload in method table.");
+        Assert.True(whereQueryableIdx >= 0, "Failed to locate LINQ Queryable.Where overload in method table.");
+        Assert.True(whereParallelIdx >= 0, "Failed to locate LINQ ParallelQuery.Where overload in method table.");
+
+        Assert.True(whereQueryableIdx < whereEnumerableIdx, "Expected Queryable.Where overload to appear before Enumerable.Where overload.");
+        Assert.True(whereParallelIdx < whereEnumerableIdx, "Expected ParallelQuery.Where overload to appear before Enumerable.Where overload.");
     }
 
     private static string FindRepoRoot()

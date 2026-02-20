@@ -398,15 +398,34 @@ public static class ExtensionsEmitter
 
     private static Dictionary<string, TypeSymbol> BuildTypeIndex(SymbolGraph graph)
     {
-        // Prefer the first occurrence for determinism (graph is deterministic).
         var map = new Dictionary<string, TypeSymbol>(StringComparer.Ordinal);
-        foreach (var t in graph.TypeIndex.Values)
+
+        // IMPORTANT: Prefer concrete symbols from graph.Namespaces (not graph.TypeIndex).
+        //
+        // Some Shape passes rebuild namespaces without immediately re-indexing. Even when indices
+        // are rebuilt, TypeIndex can point at a different instance than the one in Namespaces when
+        // duplicates exist. Extension receiver ordering must consult the symbols we actually emit.
+        void IndexTypeRecursive(TypeSymbol type)
         {
-            if (!map.ContainsKey(t.ClrFullName))
+            if (!map.ContainsKey(type.ClrFullName))
             {
-                map[t.ClrFullName] = t;
+                map[type.ClrFullName] = type;
+            }
+
+            foreach (var nested in type.NestedTypes.OrderBy(t => t.ClrFullName, StringComparer.Ordinal))
+            {
+                IndexTypeRecursive(nested);
             }
         }
+
+        foreach (var ns in graph.Namespaces.OrderBy(n => n.Name, StringComparer.Ordinal))
+        {
+            foreach (var type in ns.Types.OrderBy(t => t.ClrFullName, StringComparer.Ordinal))
+            {
+                IndexTypeRecursive(type);
+            }
+        }
+
         return map;
     }
 
@@ -458,9 +477,26 @@ public static class ExtensionsEmitter
                 return true;
         }
 
-        foreach (var ifaceRef in type.Interfaces)
+        // IMPORTANT: Extension method receiver specificity must follow CLR assignability, not TS structural conformance.
+        //
+        // For many CLR types (e.g., ParallelQuery<T>), interface members are implemented explicitly, so tsbindgen
+        // represents the interface via an explicit view (As_IInterface...) instead of a structural `extends` clause.
+        // Those interfaces still participate in CLR overload resolution, so we must treat ExplicitViews as
+        // implemented interfaces for subtype checks.
+        var implementedInterfaces = type.Interfaces
+            .Concat(type.ExplicitViews.Select(v => v.InterfaceReference))
+            .ToArray();
+
+        foreach (var ifaceRef in implementedInterfaces)
         {
-            if (ifaceRef is not NamedTypeReference namedIface)
+            NamedTypeReference? namedIface = ifaceRef switch
+            {
+                NamedTypeReference named => named,
+                NestedTypeReference nested => nested.FullReference,
+                _ => null
+            };
+
+            if (namedIface == null)
                 continue;
 
             var ifaceFullName = CanonicalClrFullName(namedIface.FullName, namedIface.Arity);
@@ -513,26 +549,13 @@ public static class ExtensionsEmitter
         sb.AppendLine($"interface {methodsTableName} {{");
 
         // Order receiver buckets by CLR specificity (more specific receivers first).
-        var orderedBuckets = buckets
-            .OrderBy(b => b.TargetType.Namespace, StringComparer.Ordinal)
-            .ThenBy(b => b.TargetType.TsEmitName, StringComparer.Ordinal)
-            .ThenBy(b => b.Key.Arity)
-            .ToList();
-
-        orderedBuckets.Sort((a, b) =>
-        {
-            var aSubB = IsStrictSubtypeOf(a.TargetType, b.TargetType, typeByClrFullName);
-            var bSubA = IsStrictSubtypeOf(b.TargetType, a.TargetType, typeByClrFullName);
-            if (aSubB && !bSubA) return -1;   // a is more specific -> earlier
-            if (bSubA && !aSubB) return 1;    // b is more specific -> earlier
-
-            // Stable deterministic fallback
-            var c = string.Compare(a.TargetType.Namespace, b.TargetType.Namespace, StringComparison.Ordinal);
-            if (c != 0) return c;
-            c = string.Compare(a.TargetType.TsEmitName, b.TargetType.TsEmitName, StringComparison.Ordinal);
-            if (c != 0) return c;
-            return a.Key.Arity.CompareTo(b.Key.Arity);
-        });
+        //
+        // IMPORTANT: Receiver "is subtype of" is a partial order. Mixing it into a pairwise comparator with
+        // a lexical fallback can make the comparer non-transitive, which makes List.Sort results undefined
+        // and can violate CLR receiver specificity in the output.
+        //
+        // We therefore compute a deterministic total order via topological sort over the strict-subtype graph.
+        var orderedBuckets = TopologicallyOrderReceiverBuckets(ctx, buckets, typeByClrFullName);
 
         var bucketRank = orderedBuckets
             .Select((b, i) => (b, i))
@@ -556,6 +579,115 @@ public static class ExtensionsEmitter
         }
 
         sb.AppendLine("}");
+    }
+
+    private static List<ExtensionBucketPlan> TopologicallyOrderReceiverBuckets(
+        BuildContext ctx,
+        IReadOnlyList<ExtensionBucketPlan> buckets,
+        IReadOnlyDictionary<string, TypeSymbol> typeByClrFullName)
+    {
+        if (buckets.Count == 0)
+            return new List<ExtensionBucketPlan>();
+
+        // Deterministic tie-break order for unrelated receivers.
+        var nodes = buckets
+            .OrderBy(b => b.TargetType.Namespace, StringComparer.Ordinal)
+            .ThenBy(b => b.TargetType.TsEmitName, StringComparer.Ordinal)
+            .ThenBy(b => b.Key.Arity)
+            .ThenBy(b => b.TargetType.ClrFullName, StringComparer.Ordinal)
+            .ToList();
+
+        var n = nodes.Count;
+        var outgoing = new List<int>[n];
+        for (var i = 0; i < n; i++) outgoing[i] = new List<int>();
+
+        var indegree = new int[n];
+
+        // Build edges: i -> j if receiver_i is a strict subtype of receiver_j.
+        for (var i = 0; i < n; i++)
+        {
+            for (var j = 0; j < n; j++)
+            {
+                if (i == j) continue;
+
+                if (IsStrictSubtypeOf(nodes[i].TargetType, nodes[j].TargetType, typeByClrFullName))
+                {
+                    outgoing[i].Add(j);
+                    indegree[j]++;
+                }
+            }
+        }
+
+        static int CompareNodes(ExtensionBucketPlan a, ExtensionBucketPlan b)
+        {
+            var c = string.Compare(a.TargetType.Namespace, b.TargetType.Namespace, StringComparison.Ordinal);
+            if (c != 0) return c;
+            c = string.Compare(a.TargetType.TsEmitName, b.TargetType.TsEmitName, StringComparison.Ordinal);
+            if (c != 0) return c;
+            c = a.Key.Arity.CompareTo(b.Key.Arity);
+            if (c != 0) return c;
+            return string.Compare(a.TargetType.ClrFullName, b.TargetType.ClrFullName, StringComparison.Ordinal);
+        }
+
+        var processed = new bool[n];
+        var inReady = new bool[n];
+        var ready = new List<int>(capacity: n);
+
+        for (var i = 0; i < n; i++)
+        {
+            if (indegree[i] == 0)
+            {
+                ready.Add(i);
+                inReady[i] = true;
+            }
+        }
+
+        var ordered = new List<ExtensionBucketPlan>(capacity: n);
+
+        while (ordered.Count < n)
+        {
+            if (ready.Count == 0)
+            {
+                // Cycle detected (should be impossible in CLR inheritance/interface graphs).
+                // Break deterministically to keep emission stable, but log to aid investigation.
+                ctx.Log("ExtensionsEmitter",
+                    $"WARNING: cycle detected in extension receiver ordering for declaring namespace '{buckets[0].DeclaringNamespace}'. " +
+                    "Breaking cycle deterministically.");
+
+                for (var i = 0; i < n; i++)
+                {
+                    if (!processed[i] && !inReady[i])
+                    {
+                        ready.Add(i);
+                        inReady[i] = true;
+                    }
+                }
+            }
+
+            ready.Sort((i, j) => CompareNodes(nodes[i], nodes[j]));
+
+            var next = ready[0];
+            ready.RemoveAt(0);
+            inReady[next] = false;
+
+            if (processed[next])
+                continue;
+
+            processed[next] = true;
+            ordered.Add(nodes[next]);
+
+            foreach (var to in outgoing[next])
+            {
+                indegree[to]--;
+                if (indegree[to] == 0 && !processed[to] && !inReady[to])
+                {
+                    ready.Add(to);
+                    inReady[to] = true;
+                }
+            }
+        }
+
+        return ordered;
     }
 
     private static void EmitExtensionMethodSignature(
