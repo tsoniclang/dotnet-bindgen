@@ -44,18 +44,29 @@ public sealed class GenericReceiverPreferenceTests
         var dts = File.ReadAllText(extensionIndex);
 
         // Fixture: ISeq (arity 0) + ISeq<T> : ISeq (arity 1) both define AsParallel.
-        // For the more specific receiver (ISeq<T>), AsParallel() must return ISeq<T>,
-        // while still retaining base-only members like BaseOnly().
-        var derivedBucket = Regex.Match(
+        //
+        // Airplane-grade: the more specific receiver overload (ISeq<T>) must appear BEFORE
+        // the base receiver overload (ISeq). TS overload resolution picks the first
+        // matching signature, so order is semantic.
+        var methodsTable = Regex.Match(
             dts,
-            @"export interface __Ext_ExtensionScopesFixture_ISeq_1<.*?>\s*\{([\s\S]*?)\n\}",
+            @"interface __TsonicExtMethods_ExtensionScopesFixture\s*\{([\s\S]*?)\n\}",
             RegexOptions.Singleline);
-        Assert.True(derivedBucket.Success, "Failed to locate derived bucket interface for ISeq<T> in extension index output.");
+        Assert.True(methodsTable.Success, "Failed to locate method-table interface for ExtensionScopesFixture in extension index output.");
 
-        var derivedBody = derivedBucket.Groups[1].Value;
-        Assert.Contains("BaseOnly()", derivedBody);
-        Assert.DoesNotContain("AsParallel(): Rewrap<this, ExtensionScopesFixture.ISeq>;", derivedBody);
-        Assert.Contains("AsParallel(): Rewrap<this, ExtensionScopesFixture.ISeq_1", derivedBody);
+        var body = methodsTable.Groups[1].Value;
+
+        Assert.Contains("BaseOnly(this: ExtensionScopesFixture.ISeq)", body);
+        Assert.Contains("AsParallel<T>(this: ExtensionScopesFixture.ISeq_1<T>)", body);
+        Assert.Contains("AsParallel(this: ExtensionScopesFixture.ISeq)", body);
+
+        var genericIdx = body.IndexOf("AsParallel<T>(this: ExtensionScopesFixture.ISeq_1<T>)", StringComparison.Ordinal);
+        var baseIdx = body.IndexOf("AsParallel(this: ExtensionScopesFixture.ISeq)", StringComparison.Ordinal);
+        Assert.True(genericIdx >= 0 && baseIdx >= 0, "Failed to locate both AsParallel overloads in method table.");
+        Assert.True(genericIdx < baseIdx, "Expected generic receiver overload to appear before base receiver overload.");
+
+        Assert.Contains("AsParallel<T>(this: ExtensionScopesFixture.ISeq_1<T>): Rewrap<this, ExtensionScopesFixture.ISeq_1<T>>;", body);
+        Assert.Contains("AsParallel(this: ExtensionScopesFixture.ISeq): Rewrap<this, ExtensionScopesFixture.ISeq>;", body);
     }
 
     private static string FindRepoRoot()
