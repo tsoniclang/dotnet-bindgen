@@ -39,7 +39,15 @@ public static class LibraryContractLoader
         var namespaceToTypes = new Dictionary<string, HashSet<string>>();
 
         // Load all bindings.json files from namespace subdirectories
-        var bindingsFiles = Directory.GetFiles(packagePath, "bindings.json", SearchOption.AllDirectories);
+        //
+        // Airplane-grade: the library contract must reflect ONLY the package's own emitted surface.
+        // Repo checkouts often contain `node_modules/` with transitive dependencies that also include
+        // bindings.json files; including them would silently merge multiple packages into one contract,
+        // causing ambiguous type ownership (e.g. System.Array appears in both @tsonic/dotnet and a
+        // consuming generated package).
+        //
+        // Therefore we enumerate bindings.json files ourselves and skip dependency/infra directories.
+        var bindingsFiles = EnumerateBindingsJsonFiles(packagePath).ToArray();
 
         if (bindingsFiles.Length == 0)
         {
@@ -109,6 +117,36 @@ public static class LibraryContractLoader
                     _ => ImmutableHashSet.Create(StringComparer.Ordinal, packageName),
                     StringComparer.Ordinal)
         };
+    }
+
+    private static IEnumerable<string> EnumerateBindingsJsonFiles(string packageRoot)
+    {
+        static bool ShouldSkipDirName(string name) =>
+            name is "node_modules" or ".git" or ".tests" or "__build";
+
+        var stack = new Stack<string>();
+        stack.Push(packageRoot);
+
+        while (stack.Count > 0)
+        {
+            var dir = stack.Pop();
+
+            foreach (var file in Directory.EnumerateFiles(dir, "bindings.json", SearchOption.TopDirectoryOnly))
+            {
+                yield return file;
+            }
+
+            foreach (var subdir in Directory.EnumerateDirectories(dir))
+            {
+                var name = Path.GetFileName(subdir);
+                if (ShouldSkipDirName(name))
+                {
+                    continue;
+                }
+
+                stack.Push(subdir);
+            }
+        }
     }
 
     private static string ReadPackageName(string packageJsonPath)

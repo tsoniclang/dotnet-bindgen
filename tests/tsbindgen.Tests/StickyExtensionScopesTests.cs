@@ -58,22 +58,72 @@ public sealed class StickyExtensionScopesTests
         Assert.DoesNotContain("__TsonicPreferExt", dts);
 
         // Airplane-grade: "more specific receiver wins" without mapped types.
-        // The arity-0 bucket (ISeq) has BaseOnly + AsParallel(), while the arity-1 bucket (ISeq<T>)
-        // overrides AsParallel() but must still retain BaseOnly.
-        var derivedBucket = Regex.Match(
+        // In method-table typing, this is enforced by overload ordering on `this:` receivers:
+        // the more-specific receiver overload (ISeq<T>) must appear before the base overload (ISeq).
+        Assert.DoesNotContain("export interface __Ext_", dts);
+
+        var methodsTable = Regex.Match(
             dts,
-            @"export interface __Ext_ExtensionScopesFixture_ISeq_1<.*?>\s*\{([\s\S]*?)\n\}",
+            @"interface __TsonicExtMethods_ExtensionScopesFixture\s*\{([\s\S]*?)\n\}",
             RegexOptions.Singleline);
-        Assert.True(derivedBucket.Success, "Failed to locate derived bucket interface for ISeq<T> in extension index output.");
-        var derivedBody = derivedBucket.Groups[1].Value;
-        Assert.Contains("BaseOnly()", derivedBody);
-        Assert.Contains("AsParallel()", derivedBody);
-        Assert.DoesNotContain("AsParallel(): Rewrap<this, ExtensionScopesFixture.ISeq>;", derivedBody);
-        Assert.Contains("AsParallel(): Rewrap<this, ExtensionScopesFixture.ISeq_1", derivedBody);
+        Assert.True(methodsTable.Success, "Failed to locate method-table interface for ExtensionScopesFixture in extension index output.");
+
+        var body = methodsTable.Groups[1].Value;
+        Assert.Contains("BaseOnly(this: ExtensionScopesFixture.ISeq)", body);
+        Assert.Contains("AsParallel<T>(this: ExtensionScopesFixture.ISeq_1<T>)", body);
+        Assert.Contains("AsParallel(this: ExtensionScopesFixture.ISeq)", body);
+
+        var genericIdx = body.IndexOf("AsParallel<T>(this: ExtensionScopesFixture.ISeq_1<T>)", StringComparison.Ordinal);
+        var baseIdx = body.IndexOf("AsParallel(this: ExtensionScopesFixture.ISeq)", StringComparison.Ordinal);
+        Assert.True(genericIdx >= 0 && baseIdx >= 0, "Failed to locate both AsParallel overloads in method table.");
+        Assert.True(genericIdx < baseIdx, "Expected generic receiver overload to appear before base receiver overload.");
 
         // Old generic function applier shape is banned (non-deterministic re-application).
         Assert.DoesNotContain("=> __TsonicExtSurface_", dts);
         Assert.DoesNotContain("<TShape>(shape: TShape) =>", dts);
+
+        // Airplane-grade: ensure "more specific receiver wins" for BCL receiver types too.
+        // IQueryable<T> is a strict subtype of IEnumerable<T>, so Stamp(this: IQueryable<T>) must
+        // appear BEFORE Stamp(this: IEnumerable<T>) in the method table.
+        Assert.Contains("Stamp<T>(this: System_Linq.IQueryable_1<T>)", body);
+        Assert.Contains("Stamp<T>(this: System_Collections_Generic.IEnumerable_1<T>)", body);
+
+        var stampQueryableIdx = body.IndexOf(
+            "Stamp<T>(this: System_Linq.IQueryable_1<T>)",
+            StringComparison.Ordinal);
+        var stampEnumerableIdx = body.IndexOf(
+            "Stamp<T>(this: System_Collections_Generic.IEnumerable_1<T>)",
+            StringComparison.Ordinal);
+
+        Assert.True(stampQueryableIdx >= 0 && stampEnumerableIdx >= 0, "Failed to locate both Stamp overloads in method table.");
+        Assert.True(stampQueryableIdx < stampEnumerableIdx, "Expected IQueryable<T> Stamp overload to appear before IEnumerable<T> Stamp overload.");
+
+        // Also validate ordering in the *real* BCL System.Linq method table.
+        // This catches regressions that only surface when generating large BCL extension surfaces.
+        var linqMethodsTable = Regex.Match(
+            dts,
+            @"interface __TsonicExtMethods_System_Linq\s*\{([\s\S]*?)\n\}",
+            RegexOptions.Singleline);
+        Assert.True(linqMethodsTable.Success, "Failed to locate method-table interface for System.Linq in extension index output.");
+
+        var linqBody = linqMethodsTable.Groups[1].Value;
+
+        var whereEnumerableIdx = linqBody.IndexOf(
+            "Where<TSource>(this: System_Collections_Generic.IEnumerable_1<TSource>",
+            StringComparison.Ordinal);
+        var whereQueryableIdx = linqBody.IndexOf(
+            "Where<TSource>(this: System_Linq.IQueryable_1<TSource>",
+            StringComparison.Ordinal);
+        var whereParallelIdx = linqBody.IndexOf(
+            "Where<TSource>(this: System_Linq.ParallelQuery_1<TSource>",
+            StringComparison.Ordinal);
+
+        Assert.True(whereEnumerableIdx >= 0, "Failed to locate LINQ Enumerable.Where overload in method table.");
+        Assert.True(whereQueryableIdx >= 0, "Failed to locate LINQ Queryable.Where overload in method table.");
+        Assert.True(whereParallelIdx >= 0, "Failed to locate LINQ ParallelQuery.Where overload in method table.");
+
+        Assert.True(whereQueryableIdx < whereEnumerableIdx, "Expected Queryable.Where overload to appear before Enumerable.Where overload.");
+        Assert.True(whereParallelIdx < whereEnumerableIdx, "Expected ParallelQuery.Where overload to appear before Enumerable.Where overload.");
     }
 
     private static string FindRepoRoot()
