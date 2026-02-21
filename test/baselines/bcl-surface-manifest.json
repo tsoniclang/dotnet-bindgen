@@ -1,6 +1,6 @@
 {
   "dotnetVersion": "10.0.1",
-  "capturedAt": "2026-02-19T14:33:50Z",
+  "capturedAt": "2026-02-21T00:59:34Z",
   "generation": {
     "namespaces": 130,
     "types": 4296,
@@ -397,6 +397,6 @@
     "System.d.ts": "sha256:64cb0478839faaf2c94fba64178fb58fe4fcca5bf452315bb9ec280051b52fe5",
     "System/bindings.json": "sha256:7ba354c787f350ae38b19f4106da1bf360bacdf6581fc95ef0985fc662855e16",
     "System/internal/index.d.ts": "sha256:3b70c50a9818f5ba3be415bab237a63ba93e870f7f32359b27e753288da19deb",
-    "__internal/extensions/index.d.ts": "sha256:4c4c6993a1aff4c3b3d70b9a6a189e119e8cbf93c945b9504d21de36c4102337"
+    "__internal/extensions/index.d.ts": "sha256:842bb5974e9f5d9bed2101b3fab215194ea078dfed9afd0867c8561ef6080e25"
   }
 }
