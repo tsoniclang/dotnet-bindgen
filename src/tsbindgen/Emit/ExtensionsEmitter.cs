@@ -713,7 +713,7 @@ public static class ExtensionsEmitter
         if (method.GenericParameters.Length > 0)
         {
             sb.Append('<');
-            sb.Append(string.Join(", ", method.GenericParameters.Select(p => p.Name)));
+            sb.Append(string.Join(", ", method.GenericParameters.Select(p => PrintGenericParameter(p, resolver, ctx))));
             sb.Append('>');
         }
 
@@ -752,6 +752,42 @@ public static class ExtensionsEmitter
         var returnType = TypeRefPrinter.Print(method.ReturnType, resolver, ctx, allowedTypeParams);
         sb.Append($": Rewrap<this, {returnType}>");
         sb.AppendLine(";");
+    }
+
+    private static string PrintGenericParameter(GenericParameterSymbol gp, TypeNameResolver resolver, BuildContext ctx)
+    {
+        var sb = new StringBuilder();
+        sb.Append(gp.Name);
+
+        // Print constraints from the IReadOnlyList<TypeReference>.
+        // Airplane-grade: method generic constraints must be emitted, otherwise constrained generic
+        // types used in the signature (e.g., SearchValues_1<T>) can cause TS2344 errors in the
+        // extension method table itself.
+        if (gp.Constraints.Length > 0)
+        {
+            sb.Append(" extends ");
+
+            // Filter out unrepresentable constraints ("any"/"unknown") - never emit "any" in constraints.
+            var printedConstraints = gp.Constraints
+                .Select(c => TypeRefPrinter.Print(c, resolver, ctx))
+                .Where(c => c != "any" && c != "unknown")
+                .ToArray();
+
+            if (printedConstraints.Length == 0)
+            {
+                sb.Append("unknown");
+            }
+            else if (printedConstraints.Length == 1)
+            {
+                sb.Append(printedConstraints[0]);
+            }
+            else
+            {
+                sb.Append(string.Join(" & ", printedConstraints));
+            }
+        }
+
+        return sb.ToString();
     }
 
     private static void EmitExtensionMethodsHelper(
