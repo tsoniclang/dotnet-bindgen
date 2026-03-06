@@ -1,0 +1,47 @@
+{
+  "schemaVersion": 1,
+  "prependReferences": [
+    { "kind": "path", "target": "./node-aliases.d.ts" }
+  ],
+  "declarationFiles": [
+    {
+      "path": "node-aliases.d.ts",
+      "imports": [],
+      "global": {
+        "interfaces": [],
+        "typeAliases": [],
+        "consts": [],
+        "functions": [],
+        "classes": []
+      },
+      "modules": [
+        {
+          "name": "fs",
+          "statements": [
+            {
+              "kind": "reexport",
+              "from": "@acme/node/index.js",
+              "names": ["fs"]
+            }
+          ]
+        }
+      ],
+      "statements": [],
+      "exportEmpty": false
+    }
+  ],
+  "simpleBindings": {
+    "Map": {
+      "kind": "global",
+      "assembly": "Example.Runtime",
+      "type": "Example.Runtime.Map`2",
+      "csharpName": "Map"
+    }
+  },
+  "bindingsManifest": {
+    "bindingVersion": 1,
+    "packageName": "@acme/node",
+    "surfaceMode": "@acme/node",
+    "runtimePackages": ["@acme/node"]
+  }
+}

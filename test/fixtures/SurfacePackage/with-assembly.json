@@ -1,0 +1,37 @@
+{
+  "schemaVersion": 1,
+  "prependReferences": [
+    { "kind": "path", "target": "./ambient.d.ts" }
+  ],
+  "declarationFiles": [
+    {
+      "path": "ambient.d.ts",
+      "imports": [],
+      "global": {
+        "interfaces": [
+          {
+            "name": "Number",
+            "typeParameters": [],
+            "extends": [],
+            "members": [
+              {
+                "kind": "method",
+                "name": "twice",
+                "parameters": [],
+                "typeParameters": [],
+                "returnType": "number"
+              }
+            ]
+          }
+        ],
+        "typeAliases": [],
+        "consts": [],
+        "functions": [],
+        "classes": []
+      },
+      "modules": [],
+      "statements": [],
+      "exportEmpty": true
+    }
+  ]
+}

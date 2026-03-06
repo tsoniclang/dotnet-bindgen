@@ -1,0 +1,58 @@
+{
+  "schemaVersion": 1,
+  "prependReferences": [
+    { "kind": "path", "target": "./globals.d.ts" }
+  ],
+  "declarationFiles": [
+    {
+      "path": "globals.d.ts",
+      "imports": [],
+      "global": {
+        "interfaces": [
+          {
+            "name": "String",
+            "typeParameters": [],
+            "extends": [],
+            "members": [
+              {
+                "kind": "method",
+                "name": "trim",
+                "parameters": [],
+                "typeParameters": [],
+                "returnType": "string"
+              }
+            ]
+          }
+        ],
+        "typeAliases": [],
+        "consts": [],
+        "functions": [],
+        "classes": []
+      },
+      "modules": [],
+      "statements": [],
+      "exportEmpty": true
+    }
+  ],
+  "simpleBindings": {
+    "String": {
+      "kind": "global",
+      "assembly": "Example.Runtime",
+      "type": "Example.Runtime.String"
+    }
+  },
+  "surfaceManifest": {
+    "schemaVersion": 1,
+    "id": "@acme/js",
+    "extends": [],
+    "requiredTypeRoots": ["."],
+    "useStandardLib": false
+  },
+  "bindingsManifest": {
+    "bindingVersion": 1,
+    "packageName": "@acme/js",
+    "packageVersion": "1.0.0",
+    "surfaceMode": "@acme/js",
+    "runtimePackages": ["@acme/js"]
+  }
+}
