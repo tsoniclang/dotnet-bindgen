@@ -10,6 +10,7 @@ using tsbindgen.Shape;
 using tsbindgen.Plan;
 using tsbindgen.Emit;
 using tsbindgen.Library;
+using tsbindgen.Surface;
 
 namespace tsbindgen;
 
@@ -42,9 +43,11 @@ public static class Builder
         bool strictMode = false,
         string[] libraryPackagePaths = null!,
         IReadOnlyList<string>? referenceDirectories = null,
-        IReadOnlyDictionary<string, string>? libraryClrTypePackageOverrides = null)
+        IReadOnlyDictionary<string, string>? libraryClrTypePackageOverrides = null,
+        IReadOnlyList<SurfacePackageSpec>? surfacePackages = null)
     {
         libraryPackagePaths ??= Array.Empty<string>();
+        surfacePackages ??= [];
 
         // Load library contracts if in library mode (merge multiple libraries)
         LibraryContract? libraryContract = null;
@@ -69,9 +72,37 @@ public static class Builder
         ctx.Log("Build", $"Mode: {(libraryContract != null ? "Library" : "Normal")}");
         ctx.Log("Build", $"Assemblies: {assemblyPaths.Count}");
         ctx.Log("Build", $"Output: {outputDirectory}");
+        ctx.Log("Build", $"Surface packages: {surfacePackages.Count}");
 
         try
         {
+            if (assemblyPaths.Count == 0)
+            {
+                if (surfacePackages.Count == 0)
+                {
+                    throw new InvalidOperationException("Builder.Build requires at least one assembly or one surface package.");
+                }
+
+                ctx.Log("Build", "\n--- Surface-Only Emit ---");
+                SurfacePackageEmitter.EmitAll(outputDirectory, surfacePackages);
+
+                return new BuildResult
+                {
+                    Success = !ctx.Diagnostics.HasErrors(),
+                    Statistics = new SymbolGraphStatistics
+                    {
+                        NamespaceCount = 0,
+                        TypeCount = 0,
+                        MethodCount = 0,
+                        PropertyCount = 0,
+                        FieldCount = 0,
+                        EventCount = 0
+                    },
+                    Diagnostics = ctx.Diagnostics.GetAll(),
+                    RenameDecisions = ctx.Renamer.GetAllDecisions()
+                };
+            }
+
             // Phase 1: Load
             ctx.Log("Build", "\n--- Phase 1: Load ---");
             var (graph, loadContext) = LoadPhase(
@@ -124,6 +155,13 @@ public static class Builder
             // Phase 5: Emit
             ctx.Log("Build", "\n--- Phase 5: Emit ---");
             EmitPhase(ctx, plan, outputDirectory);
+
+            if (surfacePackages.Count > 0)
+            {
+                ctx.Log("Build", "\n--- Phase 5.1: Surface Package Emit ---");
+                SurfacePackageEmitter.EmitAll(outputDirectory, surfacePackages);
+            }
+
             ctx.Log("Build", $"Emitted all files to {outputDirectory}");
 
             // Gather results

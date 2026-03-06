@@ -1,4 +1,5 @@
 using System.CommandLine;
+using tsbindgen.Surface;
 
 namespace tsbindgen.Cli;
 
@@ -100,6 +101,14 @@ public static class GenerateCommand
             Arity = ArgumentArity.ZeroOrMore
         };
 
+        var surfacePackageOption = new Option<string[]>(
+            name: "--surface-package",
+            description: "Path to tsbindgen surface package config (repeatable)")
+        {
+            AllowMultipleArgumentsPerToken = false,
+            Arity = ArgumentArity.ZeroOrMore
+        };
+
         command.AddOption(assemblyOption);
         command.AddOption(assemblyDirOption);
         command.AddOption(refDirOption);
@@ -113,6 +122,7 @@ public static class GenerateCommand
         command.AddOption(libTypeOverrideOption);
         command.AddOption(namespaceMapOption);
         command.AddOption(flattenClassOption);
+        command.AddOption(surfacePackageOption);
 
         command.SetHandler(async (context) =>
         {
@@ -129,6 +139,7 @@ public static class GenerateCommand
             var libTypeOverrides = context.ParseResult.GetValueForOption(libTypeOverrideOption) ?? Array.Empty<string>();
             var namespaceMaps = context.ParseResult.GetValueForOption(namespaceMapOption) ?? Array.Empty<string>();
             var flattenClasses = context.ParseResult.GetValueForOption(flattenClassOption) ?? Array.Empty<string>();
+            var surfacePackages = context.ParseResult.GetValueForOption(surfacePackageOption) ?? Array.Empty<string>();
 
             await ExecuteAsync(
                 assemblies,
@@ -143,7 +154,8 @@ public static class GenerateCommand
                 libs,
                 libTypeOverrides,
                 namespaceMaps,
-                flattenClasses);
+                flattenClasses,
+                surfacePackages);
         });
 
         return command;
@@ -162,7 +174,8 @@ public static class GenerateCommand
         string[] libs,
         string[] libTypeOverrides,
         string[] namespaceMaps,
-        string[] flattenClasses)
+        string[] flattenClasses,
+        string[] surfacePackagePaths)
     {
         try
         {
@@ -181,9 +194,9 @@ public static class GenerateCommand
                 allAssemblies.AddRange(dllFiles);
             }
 
-            if (allAssemblies.Count == 0)
+            if (allAssemblies.Count == 0 && surfacePackagePaths.Length == 0)
             {
-                Console.Error.WriteLine("Error: No assemblies specified. Use --assembly or --assembly-dir");
+                Console.Error.WriteLine("Error: No assemblies specified. Use --assembly/--assembly-dir or provide --surface-package");
                 Environment.Exit(2);
             }
 
@@ -272,6 +285,10 @@ public static class GenerateCommand
                 }
             }
 
+            var surfacePackages = surfacePackagePaths.Length > 0
+                ? SurfacePackageLoader.LoadMany(surfacePackagePaths)
+                : [];
+
             // Run pipeline
             var result = Builder.Build(
                 allAssemblies,
@@ -283,7 +300,8 @@ public static class GenerateCommand
                 strict,
                 libs,
                 refDirs,
-                libraryClrTypePackageOverrides: overrides);
+                libraryClrTypePackageOverrides: overrides,
+                surfacePackages: surfacePackages);
 
             // Report results
             Console.WriteLine();
