@@ -51,5 +51,49 @@ public sealed class LibraryContractLoaderTests
         Assert.Contains("Foo.Bar", contract.AllowedClrFullNames);
         Assert.DoesNotContain("Foo.Baz", contract.AllowedClrFullNames);
     }
-}
 
+    [Fact]
+    public void Load_IgnoresSurfaceRootBindingsJson()
+    {
+        var scratch = Path.Combine(Path.GetTempPath(), "tsbindgen-tests", Guid.NewGuid().ToString("n"));
+        Directory.CreateDirectory(scratch);
+
+        File.WriteAllText(
+            Path.Combine(scratch, "package.json"),
+            """
+            { "name": "@test/js-like-lib", "version": "1.0.0" }
+            """);
+
+        File.WriteAllText(
+            Path.Combine(scratch, "bindings.json"),
+            """
+            {
+              "bindings": {
+                "Date": {
+                  "kind": "global",
+                  "assembly": "Test.Runtime",
+                  "type": "Test.Runtime.Date"
+                }
+              }
+            }
+            """);
+
+        var ownNsDir = Path.Combine(scratch, "Test.Runtime");
+        Directory.CreateDirectory(ownNsDir);
+        File.WriteAllText(
+            Path.Combine(ownNsDir, "bindings.json"),
+            """
+            {
+              "namespace": "Test.Runtime",
+              "types": [
+                { "stableId": "Test.Runtime:Test.Runtime.Date" }
+              ]
+            }
+            """);
+
+        var contract = LibraryContractLoader.Load(scratch);
+
+        Assert.Equal("@test/js-like-lib", contract.PackageName);
+        Assert.Contains("Test.Runtime.Date", contract.AllowedClrFullNames);
+    }
+}
