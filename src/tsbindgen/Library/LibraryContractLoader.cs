@@ -173,9 +173,18 @@ public static class LibraryContractLoader
         using var doc = JsonDocument.Parse(json);
         var root = doc.RootElement;
 
-        // Get namespace name
         if (!root.TryGetProperty("namespace", out var nsElement))
         {
+            // Surface packages may also ship a package-root bindings.json for ambient/global
+            // lowering metadata. Those files are not namespace contracts and must not
+            // participate in library-contract ownership resolution.
+            if (root.TryGetProperty("bindings", out _)
+                || root.TryGetProperty("bindingVersion", out _)
+                || root.TryGetProperty("surfaceMode", out _))
+            {
+                return;
+            }
+
             throw new InvalidOperationException($"Missing 'namespace' field in bindings file: {filePath}");
         }
         var namespaceName = nsElement.GetString() ?? throw new InvalidOperationException($"Null namespace in {filePath}");
