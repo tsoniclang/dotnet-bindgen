@@ -129,12 +129,17 @@ public sealed class AssemblyLoader
         IReadOnlyList<string> refPaths,
         bool strictVersions = false)
     {
+        var effectiveRefPaths = refPaths
+            .Concat(GetRuntimeReferenceDirectories())
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToArray();
+
         _ctx.Log("AssemblyLoader", "=== Loading Transitive Closure ===");
         _ctx.Log("AssemblyLoader", $"Seed assemblies: {seedPaths.Count}");
-        _ctx.Log("AssemblyLoader", $"Reference paths: {refPaths.Count}");
+        _ctx.Log("AssemblyLoader", $"Reference paths: {effectiveRefPaths.Length}");
 
         // Phase 1: Build candidate map from ref paths
-        var candidateMap = BuildCandidateMap(refPaths);
+        var candidateMap = BuildCandidateMap(effectiveRefPaths);
         _ctx.Log("AssemblyLoader", $"Candidate assemblies discovered: {candidateMap.Count}");
 
         // Phase 2: BFS closure resolution
@@ -172,6 +177,15 @@ public sealed class AssemblyLoader
         }
 
         return new LoadClosureResult(loadContext, assemblies, resolvedPaths, references);
+    }
+
+    private static IEnumerable<string> GetRuntimeReferenceDirectories()
+    {
+        var runtimeDir = Path.GetDirectoryName(typeof(object).Assembly.Location);
+        if (runtimeDir is not null && Directory.Exists(runtimeDir))
+        {
+            yield return runtimeDir;
+        }
     }
 
     /// <summary>
