@@ -18,6 +18,9 @@ public sealed class SurfacePackageSpec
     public IReadOnlyDictionary<string, SurfaceSimpleBindingSpec> SimpleBindings { get; init; } =
         new Dictionary<string, SurfaceSimpleBindingSpec>(StringComparer.Ordinal);
 
+    [JsonPropertyName("memberSemantics")]
+    public IReadOnlyList<BindingMemberSemanticsRuleSpec> MemberSemantics { get; init; } = [];
+
     [JsonPropertyName("surfaceManifest")]
     public JsonElement? SurfaceManifest { get; init; }
 
@@ -266,4 +269,7 @@ public sealed class SurfaceSimpleBindingSpec
 
     [JsonPropertyName("csharpName")]
     public string? CSharpName { get; init; }
+
+    [JsonPropertyName("typeSemantics")]
+    public TypeSemanticsSpec? TypeSemantics { get; init; }
 }

@@ -51,7 +51,8 @@ public static class SurfacePackageEmitter
                         assembly = entry.Value.Assembly,
                         type = entry.Value.Type,
                         staticType = entry.Value.StaticType,
-                        csharpName = entry.Value.CSharpName
+                        csharpName = entry.Value.CSharpName,
+                        typeSemantics = entry.Value.TypeSemantics
                     })
             }, JsonOptions);
             File.WriteAllText(bindingsPath, json + Environment.NewLine);

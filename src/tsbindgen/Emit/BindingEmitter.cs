@@ -9,6 +9,7 @@ using tsbindgen.Model.Symbols.MemberSymbols;
 using tsbindgen.Model.Types;
 using tsbindgen.Normalize;
 using tsbindgen.Plan;
+using tsbindgen.Surface;
 
 namespace tsbindgen.Emit;
 
@@ -283,7 +284,25 @@ public static class BindingEmitter
             DeclaringAssemblyName = method.StableId.AssemblyName,
             IsExtensionMethod = method.IsExtensionMethod,
             SourceInterface = method.SourceInterface != null ? GetTypeRefName(method.SourceInterface) : null,
-            ParameterModifiers = modifiers.Count > 0 ? modifiers : null
+            ParameterModifiers = modifiers.Count > 0 ? modifiers : null,
+            EmitSemantics = GetEmitSemantics(ctx, method.StableId.DeclaringClrFullName, method.ClrName)
+        };
+    }
+
+    private static EmitSemanticsSpec? GetEmitSemantics(
+        BuildContext ctx,
+        string declaringClrType,
+        string clrMemberName)
+    {
+        var callStyle = ctx.BindingSemantics.ResolveMethodCallStyle(declaringClrType, clrMemberName);
+        if (callStyle is null)
+        {
+            return null;
+        }
+
+        return new EmitSemanticsSpec
+        {
+            CallStyle = callStyle
         };
     }
 
@@ -974,6 +993,7 @@ public sealed record MethodBinding
     public string? DeclaringAssemblyName { get; init; }
     public bool IsExtensionMethod { get; init; }
     public string? SourceInterface { get; init; }
+    public EmitSemanticsSpec? EmitSemantics { get; init; }
 
     /// <summary>
     /// Parameter modifier vector for ref/out/in semantics.

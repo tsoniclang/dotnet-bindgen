@@ -30,6 +30,8 @@ dotnet run --project "$PROJECT_ROOT/src/tsbindgen/tsbindgen.csproj" --no-build -
 assert_grep '/// <reference path="./globals.d.ts" />' "$SURFACE_ONLY_OUT/index.d.ts" "surface-only prepends index reference"
 assert_grep 'interface String {' "$SURFACE_ONLY_OUT/globals.d.ts" "surface-only emits ambient declaration file"
 assert_grep '"String"' "$SURFACE_ONLY_OUT/bindings.json" "surface-only emits root bindings"
+assert_grep '"typeSemantics"' "$SURFACE_ONLY_OUT/bindings.json" "surface-only emits explicit type semantics"
+assert_grep '"contributesTypeIdentity": true' "$SURFACE_ONLY_OUT/bindings.json" "surface-only preserves type-like globals explicitly"
 assert_grep '"surfaceMode": "@acme/js"' "$SURFACE_ONLY_OUT/tsonic.bindings.json" "surface-only emits bindings manifest"
 assert_grep '"id": "@acme/js"' "$SURFACE_ONLY_OUT/tsonic.surface.json" "surface-only emits surface manifest"
 
@@ -74,6 +76,20 @@ dotnet run --project "$PROJECT_ROOT/src/tsbindgen/tsbindgen.csproj" --no-build -
 assert_grep '/// <reference path="./ambient.d.ts" />' "$WITH_ASSEMBLY_OUT/index.d.ts" "assembly mode prepends surface reference"
 assert_grep 'interface Number {' "$WITH_ASSEMBLY_OUT/ambient.d.ts" "assembly mode emits surface declarations"
 assert_grep 'export { Calculator as Calculator }' "$WITH_ASSEMBLY_OUT/MyCompany.Utils.d.ts" "assembly mode still emits reflected declarations"
+assert_grep '"emitSemantics"' "$WITH_ASSEMBLY_OUT/MyCompany.Utils/bindings.json" "assembly mode emits embedded member semantics"
+assert_grep '"callStyle": "static"' "$WITH_ASSEMBLY_OUT/MyCompany.Utils/bindings.json" "embedded member semantics preserve declared static style"
+
+echo "[6/6] Standalone bindings-semantics overlay..."
+dotnet run --project "$PROJECT_ROOT/src/tsbindgen/tsbindgen.csproj" --no-build -c Release -- \
+  generate \
+  -a "$USERLIB_DLL" \
+  -d "$DOTNET_RUNTIME" \
+  --out-dir "$WITH_ASSEMBLY_OUT" \
+  --surface-package "$PROJECT_ROOT/test/fixtures/SurfacePackage/with-assembly.json" \
+  --bindings-semantics "$PROJECT_ROOT/test/fixtures/SurfacePackage/with-assembly-semantics.json" \
+  >/dev/null
+
+assert_grep '"callStyle": "receiver"' "$WITH_ASSEMBLY_OUT/MyCompany.Utils/bindings.json" "standalone bindings-semantics overlays emit receiver style metadata"
 
 echo ""
 echo "================================================"

@@ -1,0 +1,14 @@
+{
+  "schemaVersion": 1,
+  "memberSemantics": [
+    {
+      "binding": {
+        "type": "MyCompany.Utils.StringHelper",
+        "member": "Reverse"
+      },
+      "emitSemantics": {
+        "callStyle": "receiver"
+      }
+    }
+  ]
+}
