@@ -1,13 +1,13 @@
 {
   "name": "tsbindgen",
-  "version": "0.7.47",
+  "version": "0.7.49",
   "description": "Generate TypeScript declarations from .NET assemblies",
   "type": "module",
   "bin": {
     "tsbindgen": "./bin.js"
   },
   "dependencies": {
-    "@tsonic/tsbindgen": "0.7.46"
+    "@tsonic/tsbindgen": "0.7.49"
   },
   "keywords": [
     "tsonic",
