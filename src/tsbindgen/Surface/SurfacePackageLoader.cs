@@ -113,6 +113,14 @@ public static class SurfacePackageLoader
                 throw new InvalidOperationException($"{path}: simpleBindings['{name}'] must define assembly and type.");
             }
         }
+
+        for (var i = 0; i < spec.MemberSemantics.Count; i++)
+        {
+            BindingSemanticsLoader.ValidateMemberSemanticsRule(
+                spec.MemberSemantics[i],
+                path,
+                $"memberSemantics[{i}]");
+        }
     }
 
     private static void ValidateGlobalBlock(

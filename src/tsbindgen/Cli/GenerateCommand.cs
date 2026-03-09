@@ -109,6 +109,14 @@ public static class GenerateCommand
             Arity = ArgumentArity.ZeroOrMore
         };
 
+        var bindingsSemanticsOption = new Option<string[]>(
+            name: "--bindings-semantics",
+            description: "Path to explicit bindings-semantics config (repeatable)")
+        {
+            AllowMultipleArgumentsPerToken = false,
+            Arity = ArgumentArity.ZeroOrMore
+        };
+
         command.AddOption(assemblyOption);
         command.AddOption(assemblyDirOption);
         command.AddOption(refDirOption);
@@ -123,6 +131,7 @@ public static class GenerateCommand
         command.AddOption(namespaceMapOption);
         command.AddOption(flattenClassOption);
         command.AddOption(surfacePackageOption);
+        command.AddOption(bindingsSemanticsOption);
 
         command.SetHandler(async (context) =>
         {
@@ -140,6 +149,7 @@ public static class GenerateCommand
             var namespaceMaps = context.ParseResult.GetValueForOption(namespaceMapOption) ?? Array.Empty<string>();
             var flattenClasses = context.ParseResult.GetValueForOption(flattenClassOption) ?? Array.Empty<string>();
             var surfacePackages = context.ParseResult.GetValueForOption(surfacePackageOption) ?? Array.Empty<string>();
+            var bindingsSemantics = context.ParseResult.GetValueForOption(bindingsSemanticsOption) ?? Array.Empty<string>();
 
             await ExecuteAsync(
                 assemblies,
@@ -155,7 +165,8 @@ public static class GenerateCommand
                 libTypeOverrides,
                 namespaceMaps,
                 flattenClasses,
-                surfacePackages);
+                surfacePackages,
+                bindingsSemantics);
         });
 
         return command;
@@ -175,7 +186,8 @@ public static class GenerateCommand
         string[] libTypeOverrides,
         string[] namespaceMaps,
         string[] flattenClasses,
-        string[] surfacePackagePaths)
+        string[] surfacePackagePaths,
+        string[] bindingsSemanticsPaths)
     {
         try
         {
@@ -288,6 +300,18 @@ public static class GenerateCommand
             var surfacePackages = surfacePackagePaths.Length > 0
                 ? SurfacePackageLoader.LoadMany(surfacePackagePaths)
                 : [];
+            var explicitBindingSemantics = bindingsSemanticsPaths.Length > 0
+                ? BindingSemanticsLoader.LoadMany(bindingsSemanticsPaths)
+                : [];
+            var surfaceBindingSemantics = surfacePackages
+                .Where(package => package.MemberSemantics.Count > 0)
+                .Select(package => new BindingSemanticsSpec
+                {
+                    SchemaVersion = 1,
+                    MemberSemantics = package.MemberSemantics
+                });
+            var bindingSemantics = BindingSemanticsCatalog.Create(
+                explicitBindingSemantics.Concat(surfaceBindingSemantics));
 
             // Run pipeline
             var result = Builder.Build(
@@ -301,7 +325,8 @@ public static class GenerateCommand
                 libs,
                 refDirs,
                 libraryClrTypePackageOverrides: overrides,
-                surfacePackages: surfacePackages);
+                surfacePackages: surfacePackages,
+                bindingSemantics: bindingSemantics);
 
             // Report results
             Console.WriteLine();

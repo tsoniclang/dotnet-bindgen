@@ -38,7 +38,10 @@
     "String": {
       "kind": "global",
       "assembly": "Example.Runtime",
-      "type": "Example.Runtime.String"
+      "type": "Example.Runtime.String",
+      "typeSemantics": {
+        "contributesTypeIdentity": true
+      }
     }
   },
   "surfaceManifest": {

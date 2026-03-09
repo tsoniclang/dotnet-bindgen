@@ -33,5 +33,16 @@
       "statements": [],
       "exportEmpty": true
     }
+  ],
+  "memberSemantics": [
+    {
+      "binding": {
+        "type": "MyCompany.Utils.Calculator",
+        "member": "Add"
+      },
+      "emitSemantics": {
+        "callStyle": "static"
+      }
+    }
   ]
 }

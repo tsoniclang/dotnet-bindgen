@@ -4,6 +4,7 @@ using tsbindgen.Core.Intern;
 using tsbindgen.Core.Policy;
 using tsbindgen.Renaming;
 using tsbindgen.Library;
+using tsbindgen.Surface;
 
 namespace tsbindgen;
 
@@ -73,6 +74,12 @@ public sealed class BuildContext
     public Dictionary<string, string>? LibraryNamespaceIndex { get; set; }
 
     /// <summary>
+    /// Explicit binding semantics authored by package/config owners.
+    /// These drive emitted metadata and remove compiler-side guessing.
+    /// </summary>
+    public BindingSemanticsCatalog BindingSemantics { get; init; } = BindingSemanticsCatalog.Empty;
+
+    /// <summary>
     /// Create a new BuildContext with default services.
     /// </summary>
     public static BuildContext Create(
@@ -81,7 +88,8 @@ public sealed class BuildContext
         bool verboseLogging = false,
         HashSet<string>? logCategories = null,
         bool strictMode = false,
-        LibraryContract? libraryContract = null)
+        LibraryContract? libraryContract = null,
+        BindingSemanticsCatalog? bindingSemantics = null)
     {
         policy ??= PolicyDefaults.Create();
 
@@ -107,7 +115,8 @@ public sealed class BuildContext
             VerboseLogging = verboseLogging,
             LogCategories = logCategories,
             StrictMode = strictMode,
-            LibraryContract = libraryContract
+            LibraryContract = libraryContract,
+            BindingSemantics = bindingSemantics ?? BindingSemanticsCatalog.Empty
         };
     }
 

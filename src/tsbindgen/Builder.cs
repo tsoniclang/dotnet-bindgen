@@ -44,7 +44,8 @@ public static class Builder
         string[] libraryPackagePaths = null!,
         IReadOnlyList<string>? referenceDirectories = null,
         IReadOnlyDictionary<string, string>? libraryClrTypePackageOverrides = null,
-        IReadOnlyList<SurfacePackageSpec>? surfacePackages = null)
+        IReadOnlyList<SurfacePackageSpec>? surfacePackages = null,
+        BindingSemanticsCatalog? bindingSemantics = null)
     {
         libraryPackagePaths ??= Array.Empty<string>();
         surfacePackages ??= [];
@@ -66,7 +67,14 @@ public static class Builder
         }
 
         // Create build context with all shared services
-        var ctx = BuildContext.Create(policy, logger, verboseLogging, logCategories, strictMode, libraryContract);
+        var ctx = BuildContext.Create(
+            policy,
+            logger,
+            verboseLogging,
+            logCategories,
+            strictMode,
+            libraryContract,
+            bindingSemantics);
 
         ctx.Log("Build", "=== Build Started ===");
         ctx.Log("Build", $"Mode: {(libraryContract != null ? "Library" : "Normal")}");
