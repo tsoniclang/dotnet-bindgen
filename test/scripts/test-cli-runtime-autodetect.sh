@@ -37,7 +37,7 @@ if ! dotnet run --project "$PROJECT_ROOT/src/tsbindgen/tsbindgen.csproj" -- \
     exit 1
 fi
 
-if [ ! -f "$TEST_DIR/out/MyCompany.Utils/index.d.ts" ]; then
+if [ ! -f "$TEST_DIR/out/MyCompany.Utils.d.ts" ] || [ ! -f "$TEST_DIR/out/MyCompany.Utils/internal/index.d.ts" ]; then
     echo -e "${RED}❌ FAILED: expected generated declarations${NC}"
     exit 1
 fi
