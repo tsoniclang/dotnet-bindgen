@@ -115,17 +115,23 @@ Machine-readable dependency resolution for one or more seed assemblies. Useful f
 - Tooling integrations (e.g. build systems) that need deterministic closure resolution
 
 ```bash
+# Standard SDK/runtime installs usually work with no extra ref dirs
+npx tsbindgen resolve-closure -a ./MyLibrary.dll
+
+# Add extra directories only when dependencies live outside the runtime closure
 npx tsbindgen resolve-closure \
   -a ./MyLibrary.dll \
-  --ref-dir $DOTNET_RUNTIME \
   --ref-dir ./libs
 ```
 
 ### Examples
 
 ```bash
-# Generate a custom assembly when dependencies live outside the runtime directory
-npx tsbindgen generate -a ./MyLibrary.dll -d $DOTNET_RUNTIME -o ./out \
+# Generate a custom assembly
+npx tsbindgen generate -a ./MyLibrary.dll -o ./out
+
+# Add extra directories when dependencies live outside the runtime closure
+npx tsbindgen generate -a ./MyLibrary.dll -o ./out \
   --ref-dir ./libs
 
 # Verbose output with specific log categories

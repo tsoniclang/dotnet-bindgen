@@ -142,18 +142,25 @@ export type List_1<T> = List_1$instance<T> & __List_1$views<T>;
 
 ## Generating a Custom Assembly (with Dependencies)
 
-If your assembly references other DLLs outside the runtime directory, add one or
-more `--ref-dir` entries so tsbindgen can resolve the full closure.
+For normal SDK/runtime installs, tsbindgen automatically discovers the runtime
+reference set. Add `--ref-dir` only when your assembly references extra DLLs
+outside that standard runtime closure.
 
 ```bash
-npx tsbindgen generate -a ./MyLibrary.dll -d $DOTNET_RUNTIME -o ./my-lib-types \
+npx tsbindgen generate -a ./MyLibrary.dll -o ./my-lib-types
+
+# Add extra ref dirs only for non-runtime dependencies
+npx tsbindgen generate -a ./MyLibrary.dll -o ./my-lib-types \
   --ref-dir ./libs
 ```
 
 To inspect resolution without generating, use `resolve-closure`:
 
 ```bash
-npx tsbindgen resolve-closure -a ./MyLibrary.dll --ref-dir $DOTNET_RUNTIME --ref-dir ./libs
+npx tsbindgen resolve-closure -a ./MyLibrary.dll
+
+# Add extra ref dirs only for non-runtime dependencies
+npx tsbindgen resolve-closure -a ./MyLibrary.dll --ref-dir ./libs
 ```
 
 ## Validating Output
