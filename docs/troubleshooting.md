@@ -21,16 +21,17 @@ Error: Could not load assembly 'MyLibrary.dll'
 # Verify assembly exists
 ls -la ./MyLibrary.dll
 
-# Ensure runtime directory contains dependencies
-npx tsbindgen generate -a ./MyLibrary.dll -d $DOTNET_RUNTIME -o ./out
+# Standard SDK/runtime installs usually work directly
+npx tsbindgen generate -a ./MyLibrary.dll -o ./out
 
-# If the assembly references other DLLs outside the runtime directory,
+# If the assembly references other DLLs outside the standard runtime closure,
 # add one or more extra search directories:
-npx tsbindgen generate -a ./MyLibrary.dll -d $DOTNET_RUNTIME -o ./out \
+npx tsbindgen generate -a ./MyLibrary.dll -o ./out \
   --ref-dir ./libs
 
 # To debug resolution without generating, inspect the dependency closure (JSON):
-npx tsbindgen resolve-closure -a ./MyLibrary.dll --ref-dir $DOTNET_RUNTIME --ref-dir ./libs
+npx tsbindgen resolve-closure -a ./MyLibrary.dll
+npx tsbindgen resolve-closure -a ./MyLibrary.dll --ref-dir ./libs
 ```
 
 ### Missing Runtime Directory

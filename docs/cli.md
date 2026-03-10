@@ -36,9 +36,12 @@ dotnet run --project src/tsbindgen/tsbindgen.csproj -- generate [options]
 Resolve the transitive closure of assembly references and emit machine-readable JSON.
 
 ```bash
-# Resolve closure for a local library (requires runtime dirs in --ref-dir)
+# Standard SDK/runtime installs usually work with no extra ref dirs
+npx tsbindgen resolve-closure -a ./MyLibrary.dll
+
+# Add extra ref dirs only for non-runtime dependencies
 npx tsbindgen resolve-closure -a ./MyLibrary.dll \
-  --ref-dir $DOTNET_RUNTIME
+  --ref-dir ./libs
 ```
 
 `resolve-closure` options:
