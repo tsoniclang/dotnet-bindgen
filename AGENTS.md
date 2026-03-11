@@ -13,3 +13,10 @@ This repo is “airplane-grade”: correctness > speed.
 - No dangling local work: if something matters, put it on a branch as commits (and ideally push + PR it).
 - Before switching tasks/repos, ensure `git status` is clean; otherwise commit to a branch or explicitly discard.
 
+## Branch Hygiene (IMPORTANT)
+
+- Before starting work, and again before creating a new branch, run:
+  - `bash scripts/check-branch-hygiene.sh`
+- Do not proceed if that script reports warnings unless the maintainer explicitly says to ignore them for the current task.
+- Keep this repo on `main` unless it is the one active PR branch.
+- Do not leave local feature/release branches behind after they are merged.
