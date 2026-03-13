@@ -34,6 +34,9 @@ WAVE_REPOS=(
   "${NUGET_WAVE_REPOS[@]}"
 )
 
+NPM_TO_PUBLISH=()
+NUGET_TO_PUBLISH=()
+
 usage() {
   cat <<'EOF'
 Usage:
@@ -53,6 +56,8 @@ Modes:
 Safety in --publish:
   - Every wave repo must be on clean local main
   - local main must match origin/main exactly
+  - Entire wave is preflight-validated before any package is published
+  - NuGet runtimes publish before npm packages that depend on them
   - Checks npm and NuGet publishables
   - Skips only when registry version matches and there is no content drift
   - Fails if local content changed at the same published version
@@ -492,30 +497,185 @@ publish_wave() {
   echo "root: $TSONICLANG_ROOT"
   echo ""
 
-  run_repo_publish_script "tsbindgen" "$(package_json_for_repo tsbindgen)"
-  run_repo_publish_script "tsonic" "$(package_json_for_repo tsonic)"
+  gather_wave_targets
+  preflight_wave
 
-  run_repo_publish_npm_script "core" "$(package_json_for_repo core)" "publish:10"
-  run_repo_publish_npm_script "dotnet" "$(package_json_for_repo dotnet)" "publish:10"
-  run_repo_publish_npm_script "globals" "$(package_json_for_repo globals)" "publish:10"
-  run_repo_publish_npm_script "js" "$(package_json_for_repo js)" "publish:10"
-  run_repo_publish_npm_script "nodejs" "$(package_json_for_repo nodejs)" "publish:10"
-  run_repo_publish_npm_script "express" "$(package_json_for_repo express)" "publish:10"
-
-  run_repo_direct_publish "aspnetcore" "$(package_json_for_repo aspnetcore)"
-  run_repo_direct_publish "microsoft-extensions" "$(package_json_for_repo microsoft-extensions)"
-  run_repo_direct_publish "efcore" "$(package_json_for_repo efcore)"
-  run_repo_direct_publish "efcore-sqlite" "$(package_json_for_repo efcore-sqlite)"
-  run_repo_direct_publish "efcore-sqlserver" "$(package_json_for_repo efcore-sqlserver)"
-  run_repo_direct_publish "efcore-npgsql" "$(package_json_for_repo efcore-npgsql)"
-
-  run_repo_publish_nuget "runtime"
-  run_repo_publish_nuget "js-runtime"
-  run_repo_publish_nuget "nodejs-clr"
-  run_repo_publish_nuget "express-clr"
+  publish_nuget_wave
+  publish_npm_wave
 
   echo ""
   echo "Wave publish complete."
+}
+
+gather_wave_targets() {
+  local repo package_json
+
+  NPM_TO_PUBLISH=()
+  NUGET_TO_PUBLISH=()
+
+  echo "=== Gather publish targets ==="
+
+  for repo in "${NPM_WAVE_REPOS[@]}"; do
+    package_json="$(package_json_for_repo "$repo")"
+    assert_clean_main_latest "$repo"
+    if should_publish_package "$repo" "$package_json"; then
+      NPM_TO_PUBLISH+=("$repo")
+    fi
+  done
+
+  for repo in "${NUGET_WAVE_REPOS[@]}"; do
+    assert_clean_main_latest "$repo"
+    if should_publish_nuget_package "$repo"; then
+      NUGET_TO_PUBLISH+=("$repo")
+    fi
+  done
+
+  echo ""
+}
+
+repo_in_array() {
+  local needle="$1"
+  shift
+  local item
+  for item in "$@"; do
+    if [ "$item" = "$needle" ]; then
+      return 0
+    fi
+  done
+  return 1
+}
+
+preflight_repo() {
+  local repo="$1"
+  local path
+  path="$(repo_path "$repo")"
+
+  case "$repo" in
+    runtime)
+      echo ">>> preflight $repo: dotnet test"
+      (cd "$path" && dotnet test)
+      ;;
+    js-runtime)
+      echo ">>> preflight $repo: dotnet test"
+      (cd "$path" && dotnet test)
+      ;;
+    nodejs-clr)
+      echo ">>> preflight $repo: npm run verify:api && dotnet test -c Release"
+      (cd "$path" && npm run verify:api && dotnet test -c Release)
+      ;;
+    express-clr)
+      echo ">>> preflight $repo: dotnet test tests/express.Tests/express.Tests.csproj -c Release"
+      (cd "$path" && dotnet test tests/express.Tests/express.Tests.csproj -c Release)
+      ;;
+    tsbindgen)
+      echo ">>> preflight $repo: bash test/scripts/run-all.sh"
+      (cd "$path" && bash test/scripts/run-all.sh)
+      ;;
+    tsonic)
+      echo ">>> preflight $repo: ./test/scripts/run-all.sh"
+      (cd "$path" && ./test/scripts/run-all.sh)
+      ;;
+    js)
+      echo ">>> preflight $repo: bash scripts/selftest.sh"
+      (cd "$path" && bash scripts/selftest.sh)
+      ;;
+    nodejs)
+      echo ">>> preflight $repo: bash scripts/selftest.sh"
+      (cd "$path" && bash scripts/selftest.sh)
+      ;;
+    express)
+      echo ">>> preflight $repo: bash scripts/selftest.sh"
+      (cd "$path" && bash scripts/selftest.sh)
+      ;;
+  esac
+}
+
+preflight_wave() {
+  echo "=== Wave preflight ==="
+
+  for repo in "${NUGET_TO_PUBLISH[@]}"; do
+    preflight_repo "$repo"
+  done
+
+  local ordered_npm_preflight=(
+    "tsbindgen"
+    "tsonic"
+    "core"
+    "dotnet"
+    "globals"
+    "aspnetcore"
+    "microsoft-extensions"
+    "efcore"
+    "efcore-sqlite"
+    "efcore-sqlserver"
+    "efcore-npgsql"
+    "js"
+    "nodejs"
+    "express"
+  )
+  local repo
+  for repo in "${ordered_npm_preflight[@]}"; do
+    if repo_in_array "$repo" "${NPM_TO_PUBLISH[@]}"; then
+      preflight_repo "$repo"
+    fi
+  done
+
+  echo ""
+}
+
+publish_nuget_wave() {
+  echo "=== Publish NuGet wave ==="
+  local ordered_nuget=(
+    "runtime"
+    "js-runtime"
+    "nodejs-clr"
+    "express-clr"
+  )
+  local repo
+  for repo in "${ordered_nuget[@]}"; do
+    if repo_in_array "$repo" "${NUGET_TO_PUBLISH[@]}"; then
+      run_repo_publish_nuget "$repo"
+    fi
+  done
+  echo ""
+}
+
+publish_npm_wave() {
+  echo "=== Publish npm wave ==="
+  local ordered_npm=(
+    "tsbindgen"
+    "tsonic"
+    "core"
+    "dotnet"
+    "globals"
+    "aspnetcore"
+    "microsoft-extensions"
+    "efcore"
+    "efcore-sqlite"
+    "efcore-sqlserver"
+    "efcore-npgsql"
+    "js"
+    "nodejs"
+    "express"
+  )
+  local repo
+  for repo in "${ordered_npm[@]}"; do
+    if ! repo_in_array "$repo" "${NPM_TO_PUBLISH[@]}"; then
+      continue
+    fi
+    case "$repo" in
+      tsbindgen|tsonic)
+        run_repo_publish_script "$repo" "$(package_json_for_repo "$repo")"
+        ;;
+      core|dotnet|globals|js|nodejs|express)
+        run_repo_publish_npm_script "$repo" "$(package_json_for_repo "$repo")" "publish:10"
+        ;;
+      aspnetcore|microsoft-extensions|efcore|efcore-sqlite|efcore-sqlserver|efcore-npgsql)
+        run_repo_direct_publish "$repo" "$(package_json_for_repo "$repo")"
+        ;;
+    esac
+  done
+  echo ""
 }
 
 if [ "$MODE" = "push" ]; then
