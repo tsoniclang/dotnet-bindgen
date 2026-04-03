@@ -19,7 +19,7 @@ public enum NrtState : byte
 
     /// <summary>
     /// Explicitly nullable (T? in NRT context).
-    /// Emits "| undefined" in TypeScript.
+    /// Emits "| null" in TypeScript.
     /// </summary>
     Nullable = 2
 }
@@ -68,6 +68,11 @@ public enum TypeReferenceKind
     /// Nested type (Outer.Inner).
     /// </summary>
     Nested,
+
+    /// <summary>
+    /// CLR function pointer type (delegate* / signature-only callback type).
+    /// </summary>
+    FunctionPointer,
 
     /// <summary>
     /// Placeholder type (internal - used to break recursion cycles).
@@ -129,7 +134,7 @@ public sealed record NamedTypeReference : TypeReference
     /// <summary>
     /// NRT nullability state from C# 8+ metadata.
     /// Only meaningful for reference types; value types use Nullable&lt;T&gt;.
-    /// When Nullable, TypeScript emission appends "| undefined".
+    /// When Nullable, TypeScript emission appends "| null".
     /// </summary>
     public NrtState Nullability { get; init; } = NrtState.Oblivious;
 }
@@ -163,7 +168,7 @@ public sealed record GenericParameterReference : TypeReference
 
     /// <summary>
     /// NRT nullability state for this generic parameter reference (T? in NRT context).
-    /// When Nullable, TypeScript emission appends "| undefined".
+    /// When Nullable, TypeScript emission appends "| null".
     /// </summary>
     public NrtState Nullability { get; init; } = NrtState.Oblivious;
 }
@@ -187,7 +192,7 @@ public sealed record ArrayTypeReference : TypeReference
 
     /// <summary>
     /// NRT nullability state for this array reference (T[]? in NRT context).
-    /// When Nullable, TypeScript emission appends "| undefined".
+    /// When Nullable, TypeScript emission appends "| null".
     /// </summary>
     public NrtState Nullability { get; init; } = NrtState.Oblivious;
 }
@@ -244,6 +249,29 @@ public sealed record NestedTypeReference : TypeReference
     /// Full reference including all nesting levels.
     /// </summary>
     public required NamedTypeReference FullReference { get; init; }
+}
+
+/// <summary>
+/// Reference to a CLR function pointer type.
+/// </summary>
+public sealed record FunctionPointerTypeReference : TypeReference
+{
+    public override TypeReferenceKind Kind => TypeReferenceKind.FunctionPointer;
+
+    /// <summary>
+    /// Return type of the function pointer.
+    /// </summary>
+    public required TypeReference ReturnType { get; init; }
+
+    /// <summary>
+    /// Parameter types of the function pointer.
+    /// </summary>
+    public required IReadOnlyList<TypeReference> ParameterTypes { get; init; }
+
+    /// <summary>
+    /// CLR calling convention marker types, when present.
+    /// </summary>
+    public required IReadOnlyList<TypeReference> CallingConventionTypes { get; init; }
 }
 
 /// <summary>

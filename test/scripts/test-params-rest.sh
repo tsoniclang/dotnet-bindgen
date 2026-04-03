@@ -9,82 +9,61 @@ echo "Params Rest Parameter Test (TS1016)"
 echo "================================================"
 echo ""
 
-# Use the nodejs package which has console methods with params
-NODEJS_DIR="${NODEJS_DIR:-$PROJECT_ROOT/../nodejs}"
+echo "[1/3] Checking for rest parameter syntax in generated BCL..."
 
-if [ ! -d "$NODEJS_DIR" ]; then
-    echo -e "${RED}❌ FAILED: nodejs directory not found${NC}"
+BCL_DIR=$(ensure_bcl default)
+prepare_local_core_dependency "$BCL_DIR"
+INTERNAL_FILE="$BCL_DIR/System/internal/index.d.ts"
+
+if ! grep -q "ExecuteAssemblyByName(assemblyName: string, ...args: (string | null)\\[\\]): int;" "$INTERNAL_FILE"; then
+    echo -e "${RED}❌ FAILED: ExecuteAssemblyByName should have a rest parameter with array element nullability only${NC}"
+    grep "ExecuteAssemblyByName(assemblyName: string" "$INTERNAL_FILE"
     exit 1
 fi
+echo -e "${GREEN}✓ ExecuteAssemblyByName has valid rest parameter syntax${NC}"
 
-echo "[1/3] Checking for rest parameter syntax in console methods..."
-
-# Resolve latest version directory under nodejs/versions (e.g. versions/10)
-VERSIONS_DIR="$NODEJS_DIR/versions"
-if [ ! -d "$VERSIONS_DIR" ]; then
-    echo -e "${RED}❌ FAILED: nodejs versions directory not found: $VERSIONS_DIR${NC}"
+if ! grep -q "Combine(...delegates: (Function | null)\\[\\]): Function | null;" "$INTERNAL_FILE"; then
+    echo -e "${RED}❌ FAILED: Delegate.Combine should have a valid rest parameter${NC}"
+    grep "Combine(...delegates" "$INTERNAL_FILE"
     exit 1
 fi
-
-LATEST_VERSION_DIR=$(ls -d "$VERSIONS_DIR"/*/ 2>/dev/null | sort -V | tail -1 | sed 's:/*$::')
-if [ -z "$LATEST_VERSION_DIR" ]; then
-    echo -e "${RED}❌ FAILED: no version directories found under: $VERSIONS_DIR${NC}"
-    exit 1
-fi
-
-# Note: nodejs uses --namespace-map "nodejs=index" so path is versions/<ver>/index/internal/index.d.ts
-INTERNAL_FILE="$LATEST_VERSION_DIR/index/internal/index.d.ts"
-
-# Check console.assert has rest params
-if ! grep -q "static assert.*\\.\\.\\.optionalParams:" "$INTERNAL_FILE"; then
-    echo -e "${RED}❌ FAILED: console.assert should have ...optionalParams rest parameter${NC}"
-    grep "static assert" "$INTERNAL_FILE"
-    exit 1
-fi
-echo -e "${GREEN}✓ console.assert has ...optionalParams rest parameter${NC}"
-
-# Check console.log has rest params
-if ! grep -q "static log.*\\.\\.\\.optionalParams:" "$INTERNAL_FILE"; then
-    echo -e "${RED}❌ FAILED: console.log should have ...optionalParams rest parameter${NC}"
-    grep "static log" "$INTERNAL_FILE"
-    exit 1
-fi
-echo -e "${GREEN}✓ console.log has ...optionalParams rest parameter${NC}"
+echo -e "${GREEN}✓ Delegate.Combine has valid rest parameter syntax${NC}"
 
 echo ""
 echo "[2/3] Verifying no 'required after optional' errors..."
 
-# Run tsc and check for TS1016 errors in nodejs files
-cd "$NODEJS_DIR"
+# Run tsc and check for rest-parameter syntax errors in the generated BCL
+cd "$BCL_DIR"
 tsc_path=$(get_tsc)
 if [ -z "$tsc_path" ]; then
     echo -e "${RED}ERROR: TypeScript not installed. Run 'npm install' first.${NC}" >&2
     exit 1
 fi
 
-TSC_OUTPUT=$(timeout 120 "$tsc_path" 2>&1 || true)
+echo '{ "compilerOptions": { "strict": true, "noEmit": true, "skipLibCheck": false, "moduleResolution": "bundler", "target": "ES2020", "module": "ES2020" }, "include": ["**/*.d.ts"] }' > tsconfig.json
+TSC_OUTPUT=$(timeout 120 "$tsc_path" --noEmit 2>&1 || true)
 
-# Check for TS1016 errors specifically in nodejs files
-TS1016_ERRORS=$(echo "$TSC_OUTPUT" | grep -E "^nodejs.*TS1016" || true)
-if [ -n "$TS1016_ERRORS" ]; then
-    echo -e "${RED}❌ FAILED: TS1016 'required after optional' errors found${NC}"
-    echo "$TS1016_ERRORS"
+# Check for rest-parameter syntax errors across the generated BCL
+REST_ERRORS=$(echo "$TSC_OUTPUT" | grep -E "error TS1016:|error TS2370:" || true)
+if [ -n "$REST_ERRORS" ]; then
+    echo -e "${RED}❌ FAILED: Rest parameter syntax errors found${NC}"
+    echo "$REST_ERRORS"
     exit 1
 fi
 
-echo -e "${GREEN}✓ No TS1016 'required after optional' errors${NC}"
+echo -e "${GREEN}✓ No TS1016/TS2370 rest parameter errors${NC}"
 
 echo ""
 echo "[3/3] Verifying rest param syntax is correct..."
 
-# Check that the rest param comes LAST (no regular params after ...)
-# If we see a pattern like "...something: T[], regularParam:" that would be wrong
-if grep -E "\\.\\.\\..*\\[\\], [a-zA-Z]+" "$INTERNAL_FILE" | grep -v "^//" > /dev/null; then
-    echo -e "${RED}❌ FAILED: Rest parameter should be last in signature${NC}"
+# Check that no rest parameter retains a top-level nullable array type.
+if grep -E "\\.\\.\\.[^:]+: .*\\[\\] \\| null" "$INTERNAL_FILE" | grep -v "^//" > /dev/null; then
+    echo -e "${RED}❌ FAILED: Rest parameter should not carry a top-level nullable array type${NC}"
+    grep -E "\\.\\.\\.[^:]+: .*\\[\\] \\| null" "$INTERNAL_FILE" | head -10
     exit 1
 fi
 
-echo -e "${GREEN}✓ Rest parameters are always last in signature${NC}"
+echo -e "${GREEN}✓ Rest parameters do not carry top-level nullable array syntax${NC}"
 
 echo ""
 echo "================================================"
@@ -93,6 +72,6 @@ echo "================================================"
 echo ""
 echo "Verified:"
 echo "  - C# params T[] → TypeScript ...name: T[]"
-echo "  - console.assert has ...optionalParams"
-echo "  - console.log has ...optionalParams"
-echo "  - No TS1016 'required after optional' errors"
+echo "  - Representative BCL params methods emit rest syntax"
+echo "  - No TS1016 / TS2370 rest parameter errors"
+echo "  - Top-level nullable array carriers are not emitted on rest parameters"

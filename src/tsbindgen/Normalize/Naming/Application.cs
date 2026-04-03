@@ -60,11 +60,23 @@ internal static class Application
         // Pass declaringType so ViewOnly members can use view scopes
         var updatedMembers = ApplyNamesToMembers(ctx, type, type.Members, typeScope);
 
-        // Return new type with updated names
-        return type with
+        var updatedType = type with
         {
             TsEmitName = tsEmitName,
-            Members = updatedMembers
+            Members = updatedMembers,
+            NestedTypes = ImmutableArray<TypeSymbol>.Empty
+        };
+
+        var updatedNestedTypes = type.NestedTypes
+            .Select(nested => ApplyNamesToType(
+                ctx,
+                nested with { DeclaringType = updatedType },
+                nsScope))
+            .ToImmutableArray();
+
+        return updatedType with
+        {
+            NestedTypes = updatedNestedTypes
         };
     }
 

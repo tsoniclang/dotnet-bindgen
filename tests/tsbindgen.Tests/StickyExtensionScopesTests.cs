@@ -70,10 +70,10 @@ public sealed class StickyExtensionScopesTests
 
         var body = methodsTable.Groups[1].Value;
         Assert.Contains("BaseOnly(this: ExtensionScopesFixture.ISeq)", body);
-        Assert.Contains("AsParallel<T>(this: ExtensionScopesFixture.ISeq_1<T>)", body);
+        Assert.Contains("AsParallel<T extends JsValue>(this: ExtensionScopesFixture.ISeq_1<T>)", body);
         Assert.Contains("AsParallel(this: ExtensionScopesFixture.ISeq)", body);
 
-        var genericIdx = body.IndexOf("AsParallel<T>(this: ExtensionScopesFixture.ISeq_1<T>)", StringComparison.Ordinal);
+        var genericIdx = body.IndexOf("AsParallel<T extends JsValue>(this: ExtensionScopesFixture.ISeq_1<T>)", StringComparison.Ordinal);
         var baseIdx = body.IndexOf("AsParallel(this: ExtensionScopesFixture.ISeq)", StringComparison.Ordinal);
         Assert.True(genericIdx >= 0 && baseIdx >= 0, "Failed to locate both AsParallel overloads in method table.");
         Assert.True(genericIdx < baseIdx, "Expected generic receiver overload to appear before base receiver overload.");
@@ -85,14 +85,14 @@ public sealed class StickyExtensionScopesTests
         // Airplane-grade: ensure "more specific receiver wins" for BCL receiver types too.
         // IQueryable<T> is a strict subtype of IEnumerable<T>, so Stamp(this: IQueryable<T>) must
         // appear BEFORE Stamp(this: IEnumerable<T>) in the method table.
-        Assert.Contains("Stamp<T>(this: System_Linq.IQueryable_1<T>)", body);
-        Assert.Contains("Stamp<T>(this: System_Collections_Generic.IEnumerable_1<T>)", body);
+        Assert.Contains("Stamp<T extends JsValue>(this: System_Linq.IQueryable_1<T>)", body);
+        Assert.Contains("Stamp<T extends JsValue>(this: System_Collections_Generic.IEnumerable_1<T>)", body);
 
         var stampQueryableIdx = body.IndexOf(
-            "Stamp<T>(this: System_Linq.IQueryable_1<T>)",
+            "Stamp<T extends JsValue>(this: System_Linq.IQueryable_1<T>)",
             StringComparison.Ordinal);
         var stampEnumerableIdx = body.IndexOf(
-            "Stamp<T>(this: System_Collections_Generic.IEnumerable_1<T>)",
+            "Stamp<T extends JsValue>(this: System_Collections_Generic.IEnumerable_1<T>)",
             StringComparison.Ordinal);
 
         Assert.True(stampQueryableIdx >= 0 && stampEnumerableIdx >= 0, "Failed to locate both Stamp overloads in method table.");
@@ -109,13 +109,13 @@ public sealed class StickyExtensionScopesTests
         var linqBody = linqMethodsTable.Groups[1].Value;
 
         var whereEnumerableIdx = linqBody.IndexOf(
-            "Where<TSource>(this: System_Collections_Generic.IEnumerable_1<TSource>",
+            "Where<TSource extends JsValue>(this: System_Collections_Generic.IEnumerable_1<TSource>",
             StringComparison.Ordinal);
         var whereQueryableIdx = linqBody.IndexOf(
-            "Where<TSource>(this: System_Linq.IQueryable_1<TSource>",
+            "Where<TSource extends JsValue>(this: System_Linq.IQueryable_1<TSource>",
             StringComparison.Ordinal);
         var whereParallelIdx = linqBody.IndexOf(
-            "Where<TSource>(this: System_Linq.ParallelQuery_1<TSource>",
+            "Where<TSource extends JsValue>(this: System_Linq.ParallelQuery_1<TSource>",
             StringComparison.Ordinal);
 
         Assert.True(whereEnumerableIdx >= 0, "Failed to locate LINQ Enumerable.Where overload in method table.");

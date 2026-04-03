@@ -82,6 +82,22 @@ public sealed class TypeReferenceFactory
             };
         }
 
+        if (type.IsFunctionPointer)
+        {
+            return new FunctionPointerTypeReference
+            {
+                ReturnType = Create(type.GetFunctionPointerReturnType()),
+                ParameterTypes = type
+                    .GetFunctionPointerParameterTypes()
+                    .Select(Create)
+                    .ToArray(),
+                CallingConventionTypes = type
+                    .GetFunctionPointerCallingConventions()
+                    .Select(Create)
+                    .ToArray()
+            };
+        }
+
         if (type.IsArray)
         {
             return new ArrayTypeReference
@@ -359,6 +375,34 @@ public sealed class TypeReferenceFactory
             {
                 PointeeType = CreateWithNullabilityInternal(elementType, nullabilityFlags, singleNullability, ref position),
                 Depth = depth
+            };
+        }
+
+        if (type.IsFunctionPointer)
+        {
+            var parameterTypes = new List<TypeReference>();
+            foreach (var parameterType in type.GetFunctionPointerParameterTypes())
+            {
+                parameterTypes.Add(
+                    CreateWithNullabilityInternal(
+                        parameterType,
+                        nullabilityFlags,
+                        singleNullability,
+                        ref position));
+            }
+
+            return new FunctionPointerTypeReference
+            {
+                ReturnType = CreateWithNullabilityInternal(
+                    type.GetFunctionPointerReturnType(),
+                    nullabilityFlags,
+                    singleNullability,
+                    ref position),
+                ParameterTypes = parameterTypes,
+                CallingConventionTypes = type
+                    .GetFunctionPointerCallingConventions()
+                    .Select(Create)
+                    .ToArray()
             };
         }
 

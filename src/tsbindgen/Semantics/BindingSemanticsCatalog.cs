@@ -82,7 +82,7 @@ public sealed class BindingSemanticsCatalog
             {
                 var originalSource = sourceByKey.TryGetValue(sourceKey, out var source)
                     ? source
-                    : "unknown";
+                    : "<missing>";
                 throw new InvalidOperationException(
                     $"Conflicting bindings semantics for '{sourceKey}': '{originalSource}' says '{existing}', new value is '{value}'.");
             }

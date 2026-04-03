@@ -135,12 +135,12 @@ public static class ImportGraph
     private static void BuildNamespaceTypeIndex(BuildContext ctx, SymbolGraph graph, ImportGraphData graphData)
     {
         // Build index: namespace name -> set of type full names in that namespace
-        // ONLY INDEX PUBLIC TYPES - internal types won't be emitted so shouldn't be in import index
+        // ONLY INDEX EMITTABLE TYPES - non-emitted types should not appear in import index
         foreach (var ns in graph.Namespaces)
         {
             var typeNames = new HashSet<string>();
 
-            foreach (var type in ns.Types.Where(t => t.Accessibility == Accessibility.Public))
+            foreach (var type in ns.Types.Where(TypeEmissionAccessibility.IsEmittable))
             {
                 // TS2304 FIX: Index this type AND all nested types recursively
                 IndexTypeRecursively(type, ns.Name, typeNames, graphData);
@@ -167,8 +167,8 @@ public static class ImportGraph
         typeNames.Add(type.ClrFullName);
         graphData.ClrFullNameToNamespace[type.ClrFullName] = namespaceName;
 
-        // Recursively index nested types (ONLY PUBLIC nested types)
-        foreach (var nestedType in type.NestedTypes.Where(t => t.Accessibility == Accessibility.Public))
+        // Recursively index nested types that are themselves emittable.
+        foreach (var nestedType in type.NestedTypes.Where(TypeEmissionAccessibility.IsEmittable))
         {
             IndexTypeRecursively(nestedType, namespaceName, typeNames, graphData);
         }
@@ -182,8 +182,8 @@ public static class ImportGraph
     {
         var dependencies = new HashSet<string>();
 
-        // ONLY ANALYZE PUBLIC TYPES - internal types won't be emitted
-        foreach (var type in ns.Types.Where(t => t.Accessibility == Accessibility.Public))
+        // ONLY ANALYZE EMITTABLE TYPES - non-emitted types won't appear in declarations
+        foreach (var type in ns.Types.Where(TypeEmissionAccessibility.IsEmittable))
         {
             // TS2304 FIX: Analyze this type AND all nested types recursively
             AnalyzeTypeAndNestedRecursively(ctx, graph, graphData, ns, type, dependencies);
@@ -325,7 +325,7 @@ public static class ImportGraph
         AnalyzeInheritedMemberDependencies(ctx, graph, graphData, ns, type, dependencies);
 
         // TS2304 FIX: Recursively analyze nested types (ONLY PUBLIC nested types)
-        foreach (var nestedType in type.NestedTypes.Where(t => t.Accessibility == Accessibility.Public))
+        foreach (var nestedType in type.NestedTypes.Where(TypeEmissionAccessibility.IsEmittable))
         {
             AnalyzeTypeAndNestedRecursively(ctx, graph, graphData, ns, nestedType, dependencies);
         }
@@ -653,7 +653,7 @@ public static class ImportGraph
         // Get normalized CLR lookup key (backtick arity, generic definition)
         var clrKey = GetClrLookupKey(typeRef);
         if (clrKey == null)
-            return null; // Generic parameter, placeholder, or unknown
+            return null; // Generic parameter, placeholder, or opaque/unhandled
 
         // Fast O(1) lookup using CLR full name in local graph
         // CRITICAL: This now works for generic types because clrKey uses backtick form
@@ -693,7 +693,7 @@ public static class ImportGraph
             PointerTypeReference ptr => GetClrLookupKey(ptr.PointeeType),
             ByRefTypeReference byref => GetClrLookupKey(byref.ReferencedType),
             GenericParameterReference => null, // Type parameters are local, never imported
-            PlaceholderTypeReference => null, // Placeholders are unknown, no import
+            PlaceholderTypeReference => null, // Placeholders are explicit opaque markers, no import
             _ => null
         };
     }

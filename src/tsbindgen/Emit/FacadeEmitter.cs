@@ -59,8 +59,8 @@ public static class FacadeEmitter
         sb.AppendLine($"import * as Internal from '{internalImportPath}';");
         sb.AppendLine();
 
-        // Check if this namespace has flattened classes - they need additional imports
-        EmitFlattenedClassImports(sb, ctx, plan, ns);
+        SupportTypePreamble.EmitCoreTypeImports(sb);
+        SupportTypePreamble.EmitOpaqueTypeSupportMarker(sb);
 
         if (plan.Imports.NamespaceExports.TryGetValue(ns.Name, out var exports) && exports.Count > 0)
         {
@@ -286,150 +286,7 @@ public static class FacadeEmitter
         // - Explicit --flatten-class targets.
         EmitFlattenedExports(sb, ctx, plan, ns);
 
-        return sb.ToString();
-    }
-
-    /// <summary>
-    /// Emits imports required by flattened static class methods.
-    /// The facade file needs primitive type aliases and namespace imports for types used in flattened exports.
-    /// This is separate from the cross-namespace constraint imports which serve a different purpose.
-    /// </summary>
-    private static void EmitFlattenedClassImports(
-        StringBuilder sb,
-        BuildContext ctx,
-        EmissionPlan plan,
-        Model.Symbols.NamespaceSymbol ns)
-    {
-        var flattenedClasses = ctx.Policy.Emission.FlattenedClasses;
-        var typesToFlatten = ns.Types
-            .Where(t =>
-                t.IsStatic &&
-                (t.IsTsonicModuleContainer || flattenedClasses.Contains(t.ClrFullName)))
-            .ToList();
-
-        if (typesToFlatten.Count == 0)
-            return;
-
-        // Flattened exports can reference numeric primitives (int, double, ...)
-        // which are not TS built-ins. Ensure we import the primitive aliases.
-        var usesPrimitives = false;
-
-        foreach (var type in typesToFlatten)
-        {
-            var staticMethods = type.Members.Methods
-                .Where(m =>
-                    m.IsStatic &&
-                    m.Visibility == Model.Symbols.MemberSymbols.Visibility.Public &&
-                    m.EmitScope != Model.Symbols.MemberSymbols.EmitScope.Omitted);
-
-            foreach (var method in staticMethods)
-            {
-                // Check return type
-                CollectPrimitiveUsageForFlattenedExports(method.ReturnType, ref usesPrimitives);
-
-                // Check parameters
-                foreach (var param in method.Parameters)
-                {
-                    CollectPrimitiveUsageForFlattenedExports(param.Type, ref usesPrimitives);
-                }
-            }
-
-            // Static fields
-            foreach (var field in type.Members.Fields.Where(f =>
-                         f.IsStatic &&
-                         f.Visibility == Model.Symbols.MemberSymbols.Visibility.Public &&
-                         f.EmitScope != Model.Symbols.MemberSymbols.EmitScope.Omitted))
-            {
-                CollectPrimitiveUsageForFlattenedExports(field.FieldType, ref usesPrimitives);
-            }
-
-            // Static properties (non-indexers)
-            foreach (var prop in type.Members.Properties.Where(p =>
-                         p.IsStatic &&
-                         p.Visibility == Model.Symbols.MemberSymbols.Visibility.Public &&
-                         p.EmitScope != Model.Symbols.MemberSymbols.EmitScope.Omitted &&
-                         !p.IsIndexer))
-            {
-                CollectPrimitiveUsageForFlattenedExports(prop.PropertyType, ref usesPrimitives);
-            }
-        }
-
-        // Emit primitive imports if needed
-        if (usesPrimitives)
-        {
-            sb.AppendLine("// Primitive type aliases for flattened exports");
-            sb.AppendLine("import type { sbyte, byte, short, ushort, int, uint, long, ulong, int128, uint128, half, float, double, decimal, nint, nuint, char } from '@tsonic/core/types.js';");
-            sb.AppendLine();
-        }
-    }
-
-    /// <summary>
-    /// Recursively checks if a type reference includes numeric primitives (int, double, ...)
-    /// that require importing aliases from @tsonic/core/types.js in facade files.
-    /// </summary>
-    private static void CollectPrimitiveUsageForFlattenedExports(
-        Model.Types.TypeReference? typeRef,
-        ref bool usesPrimitives)
-    {
-        if (typeRef == null) return;
-
-        switch (typeRef)
-        {
-            case Model.Types.NamedTypeReference named:
-                // Check if this is a primitive type (uses lowercase alias like double, int)
-                if (IsPrimitiveType(named.FullName))
-                {
-                    usesPrimitives = true;
-                }
-
-                // Recurse into type arguments
-                foreach (var arg in named.TypeArguments)
-                {
-                    CollectPrimitiveUsageForFlattenedExports(arg, ref usesPrimitives);
-                }
-                break;
-
-            case Model.Types.ArrayTypeReference arr:
-                CollectPrimitiveUsageForFlattenedExports(arr.ElementType, ref usesPrimitives);
-                break;
-
-            case Model.Types.ByRefTypeReference byref:
-                CollectPrimitiveUsageForFlattenedExports(byref.ReferencedType, ref usesPrimitives);
-                break;
-
-            case Model.Types.PointerTypeReference ptr:
-                CollectPrimitiveUsageForFlattenedExports(ptr.PointeeType, ref usesPrimitives);
-                break;
-        }
-    }
-
-    /// <summary>
-    /// Checks if a CLR full name is a primitive numeric type that uses a lowercase TypeScript alias.
-    /// These need to be imported from @tsonic/core/types.js.
-    /// </summary>
-    private static bool IsPrimitiveType(string clrFullName)
-    {
-        return clrFullName switch
-        {
-            "System.SByte" => true,
-            "System.Byte" => true,
-            "System.Int16" => true,
-            "System.UInt16" => true,
-            "System.Int32" => true,
-            "System.UInt32" => true,
-            "System.Int64" => true,
-            "System.UInt64" => true,
-            "System.Int128" => true,
-            "System.UInt128" => true,
-            "System.Half" => true,
-            "System.Single" => true,
-            "System.Double" => true,
-            "System.Decimal" => true,
-            "System.IntPtr" => true,
-            "System.UIntPtr" => true,
-            "System.Char" => true,
-            _ => false
-        };
+        return SupportTypePreamble.FinalizeOpaqueTypeSupport(sb.ToString());
     }
 
     /// <summary>
@@ -489,11 +346,10 @@ public static class FacadeEmitter
                 var scope = Renaming.ScopeFactory.ClassSurface(type, isStatic: true);
                 var methodName = ctx.Renamer.GetFinalMemberName(method.StableId, scope);
 
-                // Print the method signature (without static/abstract modifiers)
-                var signature = Printers.MethodPrinter.PrintSignatureOnly(method, type, methodName, resolver, ctx);
-
-                // Emit as exported function declaration
-                sb.AppendLine($"export declare function {signature};");
+                foreach (var signature in Printers.MethodPrinter.PrintSignatureOnlyVariants(method, type, methodName, resolver, ctx))
+                {
+                    sb.AppendLine($"export declare function {signature};");
+                }
 
                 // Track collisions at the export-name level (overloads share the same name).
                 // Only record the first time we see a name for a given member group.
@@ -590,8 +446,7 @@ public static class FacadeEmitter
 
             if (typeConstraints.Count == 0)
             {
-                // No constraints: just the parameter name
-                parts.Add(gp.Name);
+                parts.Add($"{gp.Name} extends {AliasEmit.BuildConstraintText(gp, Array.Empty<string>())}");
             }
             else
             {
@@ -608,11 +463,10 @@ public static class FacadeEmitter
                         }
                         return printed;
                     })
+                    .Where(c => c != "any" && !Printers.TypeRefPrinter.IsOpaqueTypeText(c))
                     .ToArray();
 
-                // Join multiple constraints with & (intersection type)
-                var constraintList = string.Join(" & ", constraintStrings);
-                parts.Add($"{gp.Name} extends {constraintList}");
+                parts.Add($"{gp.Name} extends {AliasEmit.BuildConstraintText(gp, constraintStrings)}");
             }
         }
 

@@ -5,7 +5,10 @@ namespace tsbindgen.Surface;
 public sealed class EmitSemanticsSpec
 {
     [JsonPropertyName("callStyle")]
-    public string CallStyle { get; init; } = "";
+    public string? CallStyle { get; init; }
+
+    [JsonPropertyName("callableStaticAccessorKind")]
+    public string? CallableStaticAccessorKind { get; init; }
 }
 
 public sealed class TypeSemanticsSpec

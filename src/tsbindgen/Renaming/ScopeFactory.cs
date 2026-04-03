@@ -180,7 +180,7 @@ public static class ScopeFactory
             // Fallback for non-interfaces or old code paths
             NamedTypeReference named => $"{named.AssemblyName}:{named.FullName}",
             NestedTypeReference nested => GetInterfaceStableId(nested.DeclaringType) + "+" + nested.NestedName,
-            _ => ifaceRef.ToString() ?? "unknown"
+            _ => ifaceRef.ToString() ?? "<opaque>"
         };
     }
 }

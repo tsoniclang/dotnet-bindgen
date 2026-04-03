@@ -64,6 +64,7 @@ package-lock.json
 .tests/
 .analysis/
 .codespin/
+.temp/
 
 # npm package lib (built artifact)
 lib/

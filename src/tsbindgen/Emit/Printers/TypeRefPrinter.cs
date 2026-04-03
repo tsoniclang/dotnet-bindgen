@@ -12,6 +12,17 @@ namespace tsbindgen.Emit.Printers;
 /// </summary>
 public static class TypeRefPrinter
 {
+    public static string EmitOpaqueType(string reason, string detail)
+    {
+        return $"__OpaqueClrType<\"{EscapeOpaqueTypeText($"{reason}:{detail}")}\">";
+    }
+
+    public static bool IsOpaqueTypeText(string typeText) =>
+        typeText.StartsWith("__OpaqueClrType<", StringComparison.Ordinal);
+
+    private static string EscapeOpaqueTypeText(string text) =>
+        text.Replace("\\", "\\\\").Replace("\"", "\\\"");
+
     private static string DemoteLiftedPrimitivesForFacade(string typeText, TypeNameResolver resolver)
     {
         // Facade surfaces should never leak internal lifted primitive names like `System_Internal.Int32`.
@@ -47,8 +58,8 @@ public static class TypeRefPrinter
     /// </summary>
     /// <param name="allowedTypeParameterNames">
     /// TS2304 FIX: Optional set of allowed generic parameter names (class + method level).
-    /// If provided, any GenericParameterReference NOT in this set will be demoted to 'unknown'.
-    /// This prevents "free type variables" from leaking into signatures.
+    /// If provided, any GenericParameterReference NOT in this set will be turned into an explicit
+    /// opaque placeholder. This prevents free type variables from leaking into signatures.
     /// </param>
     /// <param name="forValuePosition">
     /// If true, this is for extends/implements (value position).
@@ -71,7 +82,8 @@ public static class TypeRefPrinter
             PointerTypeReference ptr => PrintPointer(ptr, resolver, ctx, allowedTypeParameterNames, forValuePosition),
             ByRefTypeReference byref => PrintByRef(byref, resolver, ctx, allowedTypeParameterNames, forValuePosition),
             NestedTypeReference nested => PrintNested(nested, resolver, ctx, allowedTypeParameterNames, forValuePosition),
-            _ => "unknown" // Fallback for unknown types (never use 'any' - breaks type safety)
+            FunctionPointerTypeReference fnptr => PrintFunctionPointer(fnptr, resolver, ctx, allowedTypeParameterNames, forValuePosition),
+            _ => EmitOpaqueType("unhandled-type-ref", typeRef.ToString() ?? "<null>")
         };
     }
 
@@ -82,9 +94,9 @@ public static class TypeRefPrinter
         ctx.Diagnostics.Warning(
             Core.Diagnostics.DiagnosticCodes.UnresolvedType,
             $"Placeholder type reached output: {placeholder.DebugName}. " +
-            $"This indicates a cycle that wasn't resolved. Emitting 'unknown'.");
+            $"This indicates a cycle that wasn't resolved. Emitting an explicit opaque placeholder.");
 
-        return "unknown";
+        return EmitOpaqueType("placeholder", placeholder.DebugName);
     }
 
     private static string PrintNamed(
@@ -102,15 +114,9 @@ public static class TypeRefPrinter
             // Only value types can skip nullability check
             if (named.Nullability == NrtState.Nullable && !named.IsValueType)
             {
-                return $"{primitiveType} | undefined";
+                return $"{primitiveType} | null";
             }
             return primitiveType;
-        }
-
-        // Handle TypeScript built-in types that we synthesize (not from CLR)
-        if (named.FullName == "unknown")
-        {
-            return "unknown";
         }
 
         // CRITICAL: Get final TypeScript name from Renamer via resolver
@@ -126,8 +132,8 @@ public static class TypeRefPrinter
             ctx.Diagnostics.Warning(
                 Core.Diagnostics.DiagnosticCodes.UnresolvedType,
                 $"Empty type name for {named.AssemblyName}:{named.FullName}. " +
-                $"Emitting 'unknown' as fallback.");
-            return "unknown";
+                $"Emitting an explicit opaque placeholder.");
+            return EmitOpaqueType("empty-type-name", $"{named.AssemblyName}:{named.FullName}");
         }
 
         // LIBRARY MODE (InternalIndex): Multi-arity family base names must be lowered to arity-stable internal names.
@@ -231,12 +237,12 @@ public static class TypeRefPrinter
             }
         }
 
-        // NRT: Append | undefined for explicitly nullable REFERENCE types only
-        // Value types use Nullable<T> (emitted separately), never "| undefined"
+        // NRT: Append | null for explicitly nullable REFERENCE types only
+        // Value types use Nullable<T> (emitted separately), never "| null"
         // Guard: even if a bug sets Nullability=Nullable on a value type, don't emit union
         if (named.Nullability == NrtState.Nullable && !named.IsValueType)
         {
-            return $"{DemoteLiftedPrimitivesForFacade(result, resolver)} | undefined";
+            return $"{DemoteLiftedPrimitivesForFacade(result, resolver)} | null";
         }
 
         return DemoteLiftedPrimitivesForFacade(result, resolver);
@@ -250,25 +256,20 @@ public static class TypeRefPrinter
         // TS2304 FIX: Check if this generic parameter is allowed in current scope
         // If allowedTypeParameterNames is provided and this parameter is NOT in the set,
         // it's a "free type variable" that leaked from an interface implementation.
-        // Demote to 'unknown' to prevent TS2304 errors.
+        // Emit an explicit opaque placeholder instead of weakening to a top type.
         if (allowedTypeParameterNames != null && !allowedTypeParameterNames.Contains(gp.Name))
         {
-            ctx.Log("TS2304Fix", $"Demoting unbound generic parameter '{gp.Name}' to 'unknown'");
-            return "unknown";
+            ctx.Log("TS2304Fix", $"Replacing unbound generic parameter '{gp.Name}' with explicit opaque placeholder");
+            return EmitOpaqueType("free-type-param", gp.Name);
         }
 
         // Generic parameters use their declared name: T, U, TKey, TValue
         var result = gp.Name;
 
-        // NRT: Emit T | undefined for nullable generic parameters in OUTPUT positions
-        // Since parameters no longer read NRT (always Oblivious), this only triggers for:
-        // - Return types
-        // - Property types (getters)
-        // - Field types
-        // This is correct per Alice's analysis: outputs respect NRT, inputs are strict
+        // NRT: Emit T | null for nullable generic parameters.
         if (gp.Nullability == NrtState.Nullable)
         {
-            return $"{result} | undefined";
+            return $"{result} | null";
         }
 
         return result;
@@ -285,8 +286,8 @@ public static class TypeRefPrinter
 
         // FIX 7: Model-driven parenthesis decision
         // Check if element type will render as a union (requires parentheses for correct precedence)
-        // Without this: "T | undefined[]" parses as "T | (undefined[])" - WRONG
-        // With this: "(T | undefined)[]" - CORRECT
+        // Without this: "T | null[]" parses as "T | (null[])" - WRONG
+        // With this: "(T | null)[]" - CORRECT
         if (RequiresParenthesesForArrayElement(arr.ElementType))
         {
             elementType = $"({elementType})";
@@ -308,10 +309,10 @@ public static class TypeRefPrinter
                 result = $"Array<{result}>";
         }
 
-        // NRT: Append | undefined for explicitly nullable array references (T[]?)
+        // NRT: Append | null for explicitly nullable array references (T[]?)
         if (arr.Nullability == NrtState.Nullable)
         {
-            return $"{result} | undefined";
+            return $"{result} | null";
         }
 
         return result;
@@ -325,8 +326,7 @@ public static class TypeRefPrinter
         bool forValuePosition = false)
     {
         // TypeScript has no pointer types
-        // Use ptr<T> from @tsonic/core/types.js (branded as unknown)
-        // This preserves type information while being type-safe (forces explicit handling)
+        // Use ptr<T> from @tsonic/core/types.js.
         var pointeeType = Print(ptr.PointeeType, resolver, ctx, allowedTypeParameterNames, forValuePosition);
         return $"ptr<{pointeeType}>";
     }
@@ -353,6 +353,42 @@ public static class TypeRefPrinter
         // CRITICAL: Nested types use resolver just like named types
         // The FullReference is a NamedTypeReference that the resolver will handle correctly
         return PrintNamed(nested.FullReference, resolver, ctx, allowedTypeParameterNames, forValuePosition);
+    }
+
+    private static string PrintFunctionPointer(
+        FunctionPointerTypeReference fnptr,
+        TypeNameResolver resolver,
+        BuildContext ctx,
+        HashSet<string>? allowedTypeParameterNames,
+        bool forValuePosition = false)
+    {
+        var parameterList = string.Join(
+            ", ",
+            fnptr.ParameterTypes.Select(parameterType =>
+                Print(parameterType, resolver, ctx, allowedTypeParameterNames, forValuePosition)));
+        var returnType = Print(fnptr.ReturnType, resolver, ctx, allowedTypeParameterNames, forValuePosition);
+
+        if (fnptr.CallingConventionTypes.Count == 0)
+        {
+            return $"fnptr<[{parameterList}], {returnType}>";
+        }
+
+        var callingConventions = string.Join(
+            ", ",
+            fnptr.CallingConventionTypes.Select(PrintFunctionPointerCallingConventionLiteral));
+        return $"fnptr<[{parameterList}], {returnType}, [{callingConventions}]>";
+    }
+
+    private static string PrintFunctionPointerCallingConventionLiteral(TypeReference typeRef)
+    {
+        var fullName = typeRef switch
+        {
+            NamedTypeReference named => named.FullName,
+            NestedTypeReference nested => nested.FullReference.FullName,
+            _ => throw new InvalidOperationException(
+                $"Function pointer calling convention must be a named CLR type, got {typeRef.GetType().Name}.")
+        };
+        return $"\"{fullName}\"";
     }
 
     /// <summary>
@@ -489,7 +525,7 @@ public static class TypeRefPrinter
     /// </summary>
     private static bool RequiresParenthesesForArrayElement(TypeReference elementType)
     {
-        // Check if element type has nullable NRT annotation (will render as " | undefined")
+        // Check if element type has nullable NRT annotation (will render as " | null")
         return elementType switch
         {
             NamedTypeReference named => named.Nullability == NrtState.Nullable && !named.IsValueType,

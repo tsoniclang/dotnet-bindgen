@@ -99,12 +99,12 @@ internal static class AliasEmit
         {
             // Collect type constraints (interfaces/classes)
             var typeConstraints = gp.Constraints
-                .Where(c => c is not null && !IsSpecialConstraint(c))
+                .Where(c => c is not null && !IsSuppressedTypeConstraint(c))
                 .ToList();
 
             if (typeConstraints.Count == 0)
             {
-                parts.Add(gp.Name);
+                parts.Add($"{gp.Name} extends {BuildConstraintText(gp, Array.Empty<string>())}");
             }
             else
             {
@@ -119,7 +119,7 @@ internal static class AliasEmit
                         // This fixes TS2344 errors where unconstrained facade type params don't satisfy
                         // internal type constraints. Example:
                         // export type IFoo<TSelf extends Internal.IFoo_1<TSelf>> = Internal.IFoo_1<TSelf>;
-                        if (facadeMode)
+                        if (facadeMode && RequiresFacadeInternalQualification(printed))
                         {
                             printed = "Internal." + printed;
                         }
@@ -131,9 +131,9 @@ internal static class AliasEmit
                         }
                         return printed;
                     })
+                    .Where(c => c != "any" && !Printers.TypeRefPrinter.IsOpaqueTypeText(c))
                     .ToArray();
-                var constraintList = string.Join(" & ", constraintStrings);
-                parts.Add($"{gp.Name} extends {constraintList}");
+                parts.Add($"{gp.Name} extends {BuildConstraintText(gp, constraintStrings)}");
             }
         }
 
@@ -158,16 +158,99 @@ internal static class AliasEmit
     /// Checks if a constraint is a special C# constraint that doesn't translate to TypeScript.
     /// Special constraints: struct (System.ValueType), class (System.Object), new()
     /// </summary>
-    private static bool IsSpecialConstraint(Model.Types.TypeReference constraint)
+    private static bool IsSuppressedTypeConstraint(Model.Types.TypeReference constraint)
     {
-        // Filter out C# special constraints: struct, class, new()
-        // These don't translate to TypeScript extends clauses
+        // The CLR "class" special constraint can surface as System.Object.
+        // Suppress it here so generic parameters can use the more precise TS-side
+        // reference-like fallback from GetImplicitConstraintText().
         if (constraint is Model.Types.NamedTypeReference named)
         {
-            return named.FullName is "System.ValueType" or "System.Object"
+            return named.FullName is "System.Object"
                 && named.TypeArguments.Count == 0;
         }
         return false;
+    }
+
+    internal static string GetImplicitConstraintText(GenericParameterSymbol gp)
+    {
+        var special = gp.SpecialConstraints;
+
+        if ((special & GenericParameterConstraints.ValueType) != 0)
+            return "NonNullable<JsValue>";
+
+        if ((special & GenericParameterConstraints.ReferenceType) != 0)
+        {
+            return (special & GenericParameterConstraints.NotNullable) != 0
+                ? "object"
+                : "object | null";
+        }
+
+        if ((special & GenericParameterConstraints.NotNullable) != 0)
+            return "NonNullable<JsValue>";
+
+        return "JsValue";
+    }
+
+    internal static string BuildConstraintText(
+        GenericParameterSymbol gp,
+        IEnumerable<string> explicitConstraints)
+    {
+        var normalized = new List<string>();
+        var seen = new HashSet<string>(StringComparer.Ordinal);
+
+        void AddPart(string value)
+        {
+            var trimmed = value.Trim();
+            if (trimmed.Length == 0)
+                return;
+
+            var wrapped = WrapConstraintIfNeeded(trimmed);
+            if (seen.Add(wrapped))
+                normalized.Add(wrapped);
+        }
+
+        AddPart(GetImplicitConstraintText(gp));
+
+        foreach (var explicitConstraint in explicitConstraints)
+            AddPart(explicitConstraint);
+
+        return string.Join(" & ", normalized);
+    }
+
+    internal static string WrapConstraintIfNeeded(string text)
+    {
+        if (text.IndexOf('|') >= 0 && !(text.StartsWith("(") && text.EndsWith(")")))
+            return $"({text})";
+
+        return text;
+    }
+
+    internal static bool RequiresFacadeInternalQualification(string printedConstraint)
+    {
+        if (string.IsNullOrWhiteSpace(printedConstraint))
+            return false;
+
+        if (printedConstraint.StartsWith("Internal.", StringComparison.Ordinal))
+            return false;
+
+        if (printedConstraint.Contains('.', StringComparison.Ordinal))
+            return false;
+
+        if (printedConstraint.StartsWith("__OpaqueClrType<", StringComparison.Ordinal))
+            return false;
+
+        if (printedConstraint.StartsWith("ptr<", StringComparison.Ordinal) ||
+            printedConstraint.StartsWith("fnptr<", StringComparison.Ordinal) ||
+            printedConstraint.StartsWith("JsValue", StringComparison.Ordinal) ||
+            printedConstraint.StartsWith("NonNullable<", StringComparison.Ordinal))
+        {
+            return false;
+        }
+
+        if (PrimitiveLift.GetTsCarrierKinds().Contains(printedConstraint, StringComparer.Ordinal))
+            return false;
+
+        return true;
     }
 
     /// <summary>

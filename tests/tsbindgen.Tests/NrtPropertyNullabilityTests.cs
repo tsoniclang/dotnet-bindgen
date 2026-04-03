@@ -45,12 +45,12 @@ public sealed class NrtPropertyNullabilityTests
 
         // BuildRequest.baseURL is nullable and MUST stay nullable even though SiteConfig.baseURL is non-nullable.
         Assert.Contains("export interface BuildRequest$instance", dts);
-        Assert.Contains("get baseURL(): string | undefined;", dts);
-        Assert.Contains("set baseURL(value: string | undefined);", dts);
+        Assert.Contains("get baseURL(): string | null;", dts);
+        Assert.Contains("set baseURL(value: string | null);", dts);
 
         // themesDir: also nullable (and setter should accept nullable too).
-        Assert.Contains("get themesDir(): string | undefined;", dts);
-        Assert.Contains("set themesDir(value: string | undefined);", dts);
+        Assert.Contains("get themesDir(): string | null;", dts);
+        Assert.Contains("set themesDir(value: string | null);", dts);
 
         // SiteConfig.baseURL is non-nullable.
         Assert.Contains("export interface SiteConfig$instance", dts);

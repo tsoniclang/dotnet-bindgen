@@ -375,6 +375,13 @@ public static class BaseOverloadAdder
         if (TypeRefEqualsForOverloadMatch(derivedReturn, baseReturn))
             return true;
 
+        // Task/ValueTask thenables gain alias-level PromiseLike intersections in emitted TS.
+        // CLR covariance from Task<TResult> -> Task (and ValueTask<TResult> -> ValueTask) is
+        // therefore not enough to preserve TypeScript interface inheritance. Keep the base
+        // overload instead of collapsing it.
+        if (HasThenableCovarianceHazard(derivedReturn, baseReturn))
+            return false;
+
         // Everything is assignable to object
         if (baseReturn is NamedTypeReference bnr && bnr.FullName == "System.Object")
             return true;
@@ -408,6 +415,18 @@ public static class BaseOverloadAdder
         }
 
         return false;
+    }
+
+    private static bool HasThenableCovarianceHazard(TypeReference derivedReturn, TypeReference baseReturn)
+    {
+        static bool IsNamedType(TypeReference typeRef, string fullName) =>
+            typeRef is NamedTypeReference named && named.FullName == fullName;
+
+        return
+            (IsNamedType(derivedReturn, "System.Threading.Tasks.Task`1") &&
+             IsNamedType(baseReturn, "System.Threading.Tasks.Task")) ||
+            (IsNamedType(derivedReturn, "System.Threading.Tasks.ValueTask`1") &&
+             IsNamedType(baseReturn, "System.Threading.Tasks.ValueTask"));
     }
 
     private static Dictionary<GenericParameterId, TypeReference> BuildInheritanceSubstitutionMap(SymbolGraph graph, TypeSymbol derivedType)

@@ -205,8 +205,8 @@ public static class SignatureNormalization
                 return "?placeholder";
 
             default:
-                // Fallback for unknown types
-                return type.ToString()?.Replace(" ", "").Replace('`', '_') ?? "unknown";
+                // Fallback for opaque/unhandled types
+                return type.ToString()?.Replace(" ", "").Replace('`', '_') ?? "<opaque>";
         }
     }
 

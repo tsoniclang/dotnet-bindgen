@@ -96,7 +96,7 @@ internal static class Shared
             ByRefTypeReference byref => $"{GetTypeFullName(byref.ReferencedType)}&",
             NestedTypeReference nested => nested.FullReference.FullName,
             PlaceholderTypeReference placeholder => placeholder.DebugName,
-            _ => "unknown"
+            _ => "<opaque>"
         };
     }
 }

@@ -5,6 +5,7 @@ using tsbindgen.Core;
 using tsbindgen.Model;
 using tsbindgen.Model.Symbols;
 using tsbindgen.Model.Symbols.MemberSymbols;
+using tsbindgen.Model.Types;
 using tsbindgen.Renaming;
 
 namespace tsbindgen.Emit.Printers;
@@ -91,11 +92,26 @@ public static class MethodPrinter
     /// <param name="emitAbstract">Optional: override whether to emit abstract keyword (for TS2512 fix)</param>
     public static string PrintWithName(MethodSymbol method, TypeSymbol declaringType, string methodName, TypeNameResolver resolver, BuildContext ctx, bool? emitAbstract = null)
     {
+        return PrintWithNameVariants(method, declaringType, methodName, resolver, ctx, emitAbstract).First();
+    }
+
+    public static IEnumerable<string> PrintWithNameVariants(MethodSymbol method, TypeSymbol declaringType, string methodName, TypeNameResolver resolver, BuildContext ctx, bool? emitAbstract = null)
+    {
+        yield return PrintWithNameCore(method, declaringType, methodName, resolver, ctx, emitAbstract, emitParamsAsRest: true);
+
+        if (HasNullableParamsArray(method))
+        {
+            yield return PrintWithNameCore(method, declaringType, methodName, resolver, ctx, emitAbstract, emitParamsAsRest: false);
+        }
+    }
+
+    private static string PrintWithNameCore(MethodSymbol method, TypeSymbol declaringType, string methodName, TypeNameResolver resolver, BuildContext ctx, bool? emitAbstract, bool emitParamsAsRest)
+    {
         var sb = new StringBuilder();
 
         // TS2304 FIX: Compute allowed type parameters for this method signature
         // Include both class-level and method-level generic parameters
-        // Any GenericParameterReference NOT in this set will be demoted to 'unknown'
+        // Any GenericParameterReference NOT in this set will be turned into an explicit opaque placeholder
         var allowedTypeParams = new HashSet<string>();
         foreach (var gp in declaringType.GenericParameters)
         {
@@ -136,7 +152,13 @@ public static class MethodPrinter
         // Parameters: (a: int, b: string)
         // TS2304 FIX: Pass allowed type parameters to catch free type variables
         sb.Append('(');
-        sb.Append(string.Join(", ", method.Parameters.Select(p => PrintParameter(p, resolver, ctx, allowedTypeParams))));
+        sb.Append(string.Join(", ", method.Parameters.Select((p, index) => PrintParameter(
+            p,
+            resolver,
+            ctx,
+            allowedTypeParams,
+            emitParamsAsRest: emitParamsAsRest,
+            isLastParameter: index == method.Parameters.Length - 1))));
         sb.Append(')');
 
         // Return type: : int
@@ -152,6 +174,21 @@ public static class MethodPrinter
     /// Used in object literal types: { methodName(args): ReturnType; }
     /// </summary>
     public static string PrintSignatureOnly(MethodSymbol method, TypeSymbol declaringType, string methodName, TypeNameResolver resolver, BuildContext ctx)
+    {
+        return PrintSignatureOnlyVariants(method, declaringType, methodName, resolver, ctx).First();
+    }
+
+    public static IEnumerable<string> PrintSignatureOnlyVariants(MethodSymbol method, TypeSymbol declaringType, string methodName, TypeNameResolver resolver, BuildContext ctx)
+    {
+        yield return PrintSignatureOnlyCore(method, declaringType, methodName, resolver, ctx, emitParamsAsRest: true);
+
+        if (HasNullableParamsArray(method))
+        {
+            yield return PrintSignatureOnlyCore(method, declaringType, methodName, resolver, ctx, emitParamsAsRest: false);
+        }
+    }
+
+    private static string PrintSignatureOnlyCore(MethodSymbol method, TypeSymbol declaringType, string methodName, TypeNameResolver resolver, BuildContext ctx, bool emitParamsAsRest)
     {
         var sb = new StringBuilder();
 
@@ -182,7 +219,13 @@ public static class MethodPrinter
 
         // Parameters: (a: int, b: string)
         sb.Append('(');
-        sb.Append(string.Join(", ", method.Parameters.Select(p => PrintParameter(p, resolver, ctx, allowedTypeParams))));
+        sb.Append(string.Join(", ", method.Parameters.Select((p, index) => PrintParameter(
+            p,
+            resolver,
+            ctx,
+            allowedTypeParams,
+            emitParamsAsRest: emitParamsAsRest,
+            isLastParameter: index == method.Parameters.Length - 1))));
         sb.Append(')');
 
         // Return type: : int
@@ -207,23 +250,15 @@ public static class MethodPrinter
             // "any & IFoo" is invalid - just use "IFoo"
             var printedConstraints = gp.Constraints
                 .Select(c => TypeRefPrinter.Print(c, resolver, ctx))
-                .Where(c => c != "any" && c != "unknown")  // Filter out fallback types
+                .Where(c => c != "any" && !TypeRefPrinter.IsOpaqueTypeText(c))
                 .ToArray();
 
-            if (printedConstraints.Length == 0)
-            {
-                // All constraints were unrepresentable - use "unknown" (never "any")
-                sb.Append("unknown");
-            }
-            else if (printedConstraints.Length == 1)
-            {
-                sb.Append(printedConstraints[0]);
-            }
-            else
-            {
-                // Multiple constraints: T extends IFoo & IBar
-                sb.Append(string.Join(" & ", printedConstraints));
-            }
+            sb.Append(AliasEmit.BuildConstraintText(gp, printedConstraints));
+        }
+        else
+        {
+            sb.Append(" extends ");
+            sb.Append(AliasEmit.BuildConstraintText(gp, Array.Empty<string>()));
         }
 
         return sb.ToString();
@@ -233,19 +268,21 @@ public static class MethodPrinter
         ParameterSymbol param,
         TypeNameResolver resolver,
         BuildContext ctx,
-        HashSet<string>? allowedTypeParams = null)
+        HashSet<string>? allowedTypeParams = null,
+        bool emitParamsAsRest = true,
+        bool isLastParameter = true)
     {
         var sb = new StringBuilder();
 
         // TS1016 FIX: Handle params arrays as TypeScript rest parameters
         // C# params T[] → TypeScript ...name: T[]
         // Rest params MUST be last and are implicitly optional, avoiding "required after optional" error
-        if (param.IsParams)
+        if (param.IsParams && emitParamsAsRest && isLastParameter)
         {
             sb.Append("...");
             sb.Append(TypeScriptReservedWords.SanitizeParameterName(param.Name));
             sb.Append(": ");
-            sb.Append(TypeRefPrinter.Print(param.Type, resolver, ctx, allowedTypeParams));
+            sb.Append(PrintParamsRestType(param.Type, resolver, ctx, allowedTypeParams));
             return sb.ToString();
         }
 
@@ -264,6 +301,29 @@ public static class MethodPrinter
         sb.Append(TypeRefPrinter.Print(param.Type, resolver, ctx, allowedTypeParams));
 
         return sb.ToString();
+    }
+
+    private static bool HasNullableParamsArray(MethodSymbol method) =>
+        method.Parameters.Length > 0 &&
+        method.Parameters[^1].IsParams &&
+        method.Parameters[^1].Type is ArrayTypeReference { Nullability: NrtState.Nullable };
+
+    private static string PrintParamsRestType(
+        TypeReference typeRef,
+        TypeNameResolver resolver,
+        BuildContext ctx,
+        HashSet<string>? allowedTypeParams)
+    {
+        if (typeRef is ArrayTypeReference arrayType && arrayType.Nullability == NrtState.Nullable)
+        {
+            return TypeRefPrinter.Print(
+                arrayType with { Nullability = NrtState.Oblivious },
+                resolver,
+                ctx,
+                allowedTypeParams);
+        }
+
+        return TypeRefPrinter.Print(typeRef, resolver, ctx, allowedTypeParams);
     }
 
     /// <summary>
@@ -333,7 +393,7 @@ public static class MethodPrinter
         sb.Append("...");
         sb.Append(TypeScriptReservedWords.SanitizeParameterName(paramsParam.Name));
         sb.Append(": ");
-        sb.Append(TypeRefPrinter.Print(paramsParam.Type, resolver, ctx, allowedTypeParams));
+        sb.Append(PrintParamsRestType(paramsParam.Type, resolver, ctx, allowedTypeParams));
 
         sb.Append(')');
 
@@ -401,7 +461,7 @@ public static class MethodPrinter
             if (method.Parameters.Length > 0)
                 sb.Append(TypeRefPrinter.Print(method.Parameters[0].Type, resolver, ctx, allowedTypeParams));
             else
-                sb.Append("unknown"); // Fallback (never use 'any')
+                sb.Append(TypeRefPrinter.EmitOpaqueType("missing-setter-param", propertyName));
         }
 
         return sb.ToString();

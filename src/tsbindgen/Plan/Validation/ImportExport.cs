@@ -31,7 +31,7 @@ internal static class ImportExport
         // Helper: Check if a type will be emitted
         bool IsEmitted(TypeSymbol type)
         {
-            return type.Accessibility == Accessibility.Public;
+            return TypeEmissionAccessibility.IsEmittable(type);
         }
 
         // Helper: Check if a type is exported from its namespace
@@ -194,12 +194,8 @@ internal static class ImportExport
         // Helper: Check if type is declared locally AND will be emitted
         bool IsDeclaredAndEmitted(NamespaceSymbol ns, string clrFullName)
         {
-            var type = ns.Types.FirstOrDefault(t => t.ClrFullName == clrFullName);
-            if (type == null) return false;
-
-            // Type must be public and not omitted to be emitted
-            // Internal/private types won't be in the output even if they're in the namespace
-            return type.Accessibility == Accessibility.Public;
+            return TypeEmissionAccessibility.EnumerateEmittableNamespaceTypes(ns)
+                .Any(type => type.ClrFullName == clrFullName);
         }
 
         // Helper: Walk type references and check imports
@@ -269,7 +265,7 @@ internal static class ImportExport
         // Walk all namespaces and check type references
         foreach (var ns in graph.Namespaces)
         {
-            foreach (var type in ns.Types)
+            foreach (var type in TypeEmissionAccessibility.EnumerateEmittableNamespaceTypes(ns))
             {
                 var typeId = $"{ns.Name}.{type.ClrFullName}";
 
@@ -403,7 +399,7 @@ internal static class ImportExport
 
         foreach (var ns in graph.Namespaces)
         {
-            foreach (var type in ns.Types)
+            foreach (var type in TypeEmissionAccessibility.EnumerateEmittableNamespaceTypes(ns))
             {
                 // Helper: Check if a heritage type reference is imported as value
                 void CheckHeritageReference(TypeReference? tr, string kind)

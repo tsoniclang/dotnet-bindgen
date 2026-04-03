@@ -20,11 +20,12 @@ public static class InternalIndexEmitter
 {
     /// <summary>
     /// Determines if a type should be emitted to .d.ts files.
-    /// Only public types are emitted (EmitScope is for members, not types).
+    /// Top-level types stay public-only; nested protected/protected-internal types
+    /// are also emitted when they are externally nameable from emitted signatures.
     /// </summary>
     public static bool ShouldEmit(TypeSymbol type)
     {
-        return type.Accessibility == Accessibility.Public;
+        return TypeEmissionAccessibility.IsEmittable(type);
     }
 
     public static void Emit(BuildContext ctx, EmissionPlan plan, string outputDirectory)
@@ -97,18 +98,8 @@ public static class InternalIndexEmitter
         sb.AppendLine($"// Assembly: {string.Join(", ", nsOrder.Namespace.ContributingAssemblies.OrderBy(a => a))}");
         sb.AppendLine();
 
-        // Primitive type aliases from @tsonic/core
-        EmitBrandedPrimitiveImports(sb);
-
-        // Check if namespace uses pointer types and emit support import if needed
-        // Note: ref/out/in modifiers are ABI semantics tracked in metadata, not TS types
-        var needsSupportTypes = NamespaceUsesSupportTypes(nsOrder.Namespace);
-        if (needsSupportTypes)
-        {
-            sb.AppendLine("// Import support types from @tsonic/core");
-            sb.AppendLine("import type { ptr } from \"@tsonic/core/types.js\";");
-            sb.AppendLine();
-        }
+        SupportTypePreamble.EmitCoreTypeImports(sb);
+        SupportTypePreamble.EmitOpaqueTypeSupportMarker(sb);
 
         // Emit import statements for cross-namespace type references
         var imports = importPlan.GetImportsFor(nsOrder.Namespace.Name);
@@ -205,8 +196,21 @@ public static class InternalIndexEmitter
         // Track types that lost generics during emission (used for diagnostics/aliases)
         var typesWithoutGenerics = new HashSet<string>();
 
+        static IEnumerable<TypeEmitOrder> EnumerateTypeOrders(IEnumerable<TypeEmitOrder> orders)
+        {
+            foreach (var order in orders)
+            {
+                yield return order;
+
+                foreach (var nested in EnumerateTypeOrders(order.OrderedNestedTypes))
+                {
+                    yield return nested;
+                }
+            }
+        }
+
         // Emit types in order (PUBLIC ONLY - internal types should not appear in .d.ts)
-	        foreach (var typeOrder in nsOrder.OrderedTypes.Where(to => ShouldEmit(to.Type)))
+	        foreach (var typeOrder in EnumerateTypeOrders(nsOrder.OrderedTypes).Where(to => ShouldEmit(to.Type)))
 	        {
 	            // Check if type has explicit views (attached by ViewPlanner)
 	            var views = typeOrder.Type.ExplicitViews;
@@ -222,7 +226,7 @@ public static class InternalIndexEmitter
 	                var mergedInterface = EmitMergedInterfaceExtends(typeOrder.Type, resolver, ctx, graph, safeToExtend);
 
 	                // Emit class with $instance suffix - PUBLIC TYPES GET export KEYWORD
-	                var instanceClass = ClassPrinter.PrintInstance(typeOrder.Type, resolver, ctx, graph, bindingsProvider, staticFlattening, staticConflicts, overrideConflicts, propertyOverrides, honestEmission);
+	                var instanceClass = ClassPrinter.PrintInstance(typeOrder.Type, resolver, ctx, graph, bindingsProvider, staticFlattening, staticConflicts, overrideConflicts, propertyOverrides, honestEmission, safeToExtend);
 	                if (!string.IsNullOrEmpty(mergedInterface))
 	                {
 	                    instanceClass = InlineMergedInterfaceExtendsIntoInstance(instanceClass, mergedInterface);
@@ -265,7 +269,7 @@ public static class InternalIndexEmitter
 	            else
 	            {
                 // Normal emission (no views) - PUBLIC TYPES GET export KEYWORD
-                var typeDecl = ClassPrinter.Print(typeOrder.Type, resolver, ctx, graph, typesWithoutGenerics, bindingsProvider, staticFlattening, staticConflicts, overrideConflicts, propertyOverrides, honestEmission);
+                var typeDecl = ClassPrinter.Print(typeOrder.Type, resolver, ctx, graph, typesWithoutGenerics, bindingsProvider, staticFlattening, staticConflicts, overrideConflicts, propertyOverrides, honestEmission, safeToExtend);
                 var indented = Indent(typeDecl, indent);
 
                 // PUBLIC TYPES: Always export (both root and namespaces)
@@ -393,8 +397,8 @@ public static class InternalIndexEmitter
             }
         }
 
-	        return sb.ToString();
-	    }
+        return SupportTypePreamble.FinalizeOpaqueTypeSupport(sb.ToString());
+    }
 
 	    private static string InlineMergedInterfaceExtendsIntoInstance(string instanceDecl, string mergedInterfaceDecl)
 	    {
@@ -592,8 +596,7 @@ public static class InternalIndexEmitter
 
             if (typeConstraints.Count == 0)
             {
-                // No constraints: just the parameter name
-                parts.Add(gp.Name);
+                parts.Add($"{gp.Name} extends {AliasEmit.BuildConstraintText(gp, Array.Empty<string>())}");
             }
             else
             {
@@ -610,11 +613,10 @@ public static class InternalIndexEmitter
                         }
                         return printed;
                     })
+                    .Where(c => c != "any" && !Printers.TypeRefPrinter.IsOpaqueTypeText(c))
                     .ToArray();
 
-                // Join multiple constraints with & (intersection type)
-                var constraintList = string.Join(" & ", constraintStrings);
-                parts.Add($"{gp.Name} extends {constraintList}");
+                parts.Add($"{gp.Name} extends {AliasEmit.BuildConstraintText(gp, constraintStrings)}");
             }
         }
 
@@ -635,9 +637,7 @@ public static class InternalIndexEmitter
 
     private static void EmitBrandedPrimitiveImports(StringBuilder sb)
     {
-        sb.AppendLine("// Primitive type aliases from @tsonic/core");
-        sb.AppendLine("import type { sbyte, byte, short, ushort, int, uint, long, ulong, int128, uint128, half, float, double, decimal, nint, nuint, char } from '@tsonic/core/types.js';");
-        sb.AppendLine();
+        SupportTypePreamble.EmitCoreTypeImports(sb);
     }
 
 
@@ -1018,7 +1018,7 @@ public static class InternalIndexEmitter
         // IComparable.CompareTo
         if (numericInterfaces.Contains("IComparable"))
         {
-            sb.AppendLine($"    CompareTo(obj: unknown): int;");
+            sb.AppendLine($"    CompareTo(obj: JsValue): int;");
         }
 
         // INumberBase<TSelf>, INumber<TSelf>, IBinaryInteger<TSelf>, IFloatingPoint<TSelf>, etc.
@@ -1098,8 +1098,15 @@ public static class InternalIndexEmitter
                     return AliasEmit.RelaxConstraintForPrimitives(printed, gp.Name);
                 }
                 return printed;
-            });
-            sb.Append(string.Join(" & ", constraints));
+            })
+            .Where(c => c != "any" && !Printers.TypeRefPrinter.IsOpaqueTypeText(c))
+            .ToArray();
+            sb.Append(AliasEmit.BuildConstraintText(gp, constraints));
+        }
+        else
+        {
+            sb.Append(" extends ");
+            sb.Append(AliasEmit.BuildConstraintText(gp, Array.Empty<string>()));
         }
 
         return sb.ToString();
@@ -1279,22 +1286,24 @@ public static class InternalIndexEmitter
         //
         // For generic Task<TResult>/ValueTask<TResult>, we include:
         // - awaited (TResult): so Awaited<Task<TResult>> infers TResult
-        // - unknown: a broad overload used by various TS inference paths.
+        // - JsValue: a broad overload used by various TS inference paths.
         //
-        // For Task<TResult> specifically, we ALSO include an `any` overload so that
-        // Task<TResult> remains assignable to non-generic Task in TypeScript.
+        // For Task<TResult> specifically, we ALSO include an `TResult | void`
+        // compatibility overload so Task<TResult> remains assignable to non-generic
+        // Task in TypeScript without weakening to `any`.
         //
         // Rationale: in the CLR, Task<TResult> : Task, but TypeScript's structural
         // typing for thenables would otherwise reject the assignment because
         // PromiseLike<TResult> is not assignable to PromiseLike<void>.
         //
-        // IMPORTANT: We do NOT add a `void` overload for generic forms, because it causes
+        // IMPORTANT: We do NOT add a raw `void` overload for generic forms, because it causes
         // TS's Awaited<> helper to infer `never` (contravariant intersection of overload
-        // parameter types like TResult & void & unknown).
+        // parameter types like TResult & void & JsValue). The `TResult | void`
+        // compatibility overload keeps the intersection anchored on TResult.
         //
         // For non-generic Task/ValueTask, we include:
         // - void (Awaited<Task> is void)
-        // - unknown (broad overload)
+        // - JsValue (broad overload)
         var isTask =
             type.ClrFullName == "System.Threading.Tasks.Task" ||
             type.ClrFullName.StartsWith("System.Threading.Tasks.Task`", StringComparison.Ordinal) ||
@@ -1325,23 +1334,23 @@ public static class InternalIndexEmitter
             sb.Append("onfulfilled?: ((value: ");
             sb.Append(valueType);
             sb.Append(") => TResult1 | PromiseLike<TResult1>) | undefined | null, ");
-            sb.Append("onrejected?: ((reason: any) => TResult2 | PromiseLike<TResult2>) | undefined | null");
+            sb.Append("onrejected?: ((reason: JsValue) => TResult2 | PromiseLike<TResult2>) | undefined | null");
             sb.AppendLine("): PromiseLike<TResult1 | TResult2>;");
         }
 
         if (type.GenericParameters.Length == 1)
         {
             EmitThenOverload(awaitedType, awaitedType);
-            EmitThenOverload("unknown", "unknown");
+            EmitThenOverload("JsValue", "JsValue");
             if (isTask)
             {
-                EmitThenOverload("any", "unknown");
+                EmitThenOverload($"{awaitedType} | void", awaitedType);
             }
         }
         else
         {
             EmitThenOverload("void", "void");
-            EmitThenOverload("unknown", "unknown");
+            EmitThenOverload("JsValue", "JsValue");
         }
 
         sb.Append("}");
@@ -1457,7 +1466,7 @@ public static class InternalIndexEmitter
     /// </summary>
     private static bool NamespaceUsesSupportTypes(NamespaceSymbol ns)
     {
-        foreach (var type in ns.Types.Where(t => t.Accessibility == Accessibility.Public))
+        foreach (var type in TypeEmissionAccessibility.EnumerateEmittableNamespaceTypes(ns))
         {
             // TS2304 FIX: Check constructors for unsafe types
             foreach (var ctor in type.Members.Constructors)

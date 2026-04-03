@@ -209,7 +209,7 @@ public static class ImportPlanner
 
                 // If localName collides with a local type declaration, disambiguate deterministically.
                 // Example: System.Reflection imports AssemblyHashAlgorithm but also has local enum AssemblyHashAlgorithm
-                var hasLocalCollision = ns.Types.Any(localType =>
+                var hasLocalCollision = TypeEmissionAccessibility.EnumerateEmittableNamespaceTypes(ns).Any(localType =>
                 {
                     var localTypeName = ctx.Renamer.GetFinalTypeName(localType);
                     return localTypeName == candidateLocalName;
@@ -383,18 +383,15 @@ public static class ImportPlanner
         var exports = new List<ExportStatement>();
 
         // Create namespace scope for name resolution
-        // Export all public types in the namespace
-        foreach (var type in ns.Types)
+        // Export all emittable types in the namespace.
+        foreach (var type in TypeEmissionAccessibility.EnumerateEmittableNamespaceTypes(ns))
         {
-            if (type.Accessibility == Model.Symbols.Accessibility.Public)
-            {
-                var finalName = ctx.Renamer.GetFinalTypeName(type);
-                exports.Add(new ExportStatement(
-                    ExportName: finalName,
-                    ExportKind: DetermineExportKind(type),
-                    Arity: type.Arity, // TS2314 FIX: Capture generic arity
-                    SourceType: type)); // FACADE CONSTRAINTS: Store source type for constraint propagation
-            }
+            var finalName = ctx.Renamer.GetFinalTypeName(type);
+            exports.Add(new ExportStatement(
+                ExportName: finalName,
+                ExportKind: DetermineExportKind(type),
+                Arity: type.Arity, // TS2314 FIX: Capture generic arity
+                SourceType: type)); // FACADE CONSTRAINTS: Store source type for constraint propagation
         }
 
         if (exports.Count > 0)
@@ -595,7 +592,7 @@ public static class ImportPlanner
         var sanitized = simpleName.Replace('`', '_');
 
         // Handle nested types
-        sanitized = sanitized.Replace('+', '$');
+        sanitized = sanitized.Replace('+', '_');
 
         // CRITICAL: Check if sanitized name is a TypeScript reserved word
         // Example: "Type" → "Type_", "Object" → "Object_"

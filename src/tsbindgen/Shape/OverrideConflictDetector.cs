@@ -117,7 +117,7 @@ public static class OverrideConflictDetector
             ByRefTypeReference byRef => $"ByRef:{GetClrTypeKey(byRef.ReferencedType)}",
             NestedTypeReference nested => $"Nested:{GetClrTypeKey(nested.FullReference)}",
             PlaceholderTypeReference placeholder => $"Placeholder:{placeholder.DebugName}",
-            _ => typeRef.ToString() ?? "unknown"
+            _ => typeRef.ToString() ?? "<opaque>"
         };
     }
 

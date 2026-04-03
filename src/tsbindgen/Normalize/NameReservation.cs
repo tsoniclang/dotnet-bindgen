@@ -43,7 +43,7 @@ public static class NameReservation
         {
             var nsScope = ScopeFactory.Namespace(ns.Name, NamespaceArea.Internal);
 
-            foreach (var type in ns.Types.OrderBy(t => t.ClrFullName))
+            foreach (var type in TypeEmissionAccessibility.EnumerateNamespaceTypes(ns).OrderBy(t => t.ClrFullName))
             {
                 if (Shared.IsCompilerGenerated(type.ClrName))
                 {
