@@ -32,7 +32,7 @@ internal static class Audit
         {
             var nsScope = ScopeFactory.Namespace(ns.Name, NamespaceArea.Internal);
 
-            foreach (var type in ns.Types)
+            foreach (var type in TypeEmissionAccessibility.EnumerateNamespaceTypes(ns))
             {
                 if (Shared.IsCompilerGenerated(type.ClrName))
                     continue;

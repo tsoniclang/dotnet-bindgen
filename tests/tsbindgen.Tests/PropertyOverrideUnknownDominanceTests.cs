@@ -4,10 +4,10 @@ using Xunit;
 
 namespace tsbindgen.Tests;
 
-public sealed class PropertyOverrideUnknownDominanceTests
+public sealed class PropertyOverrideJsValueTests
 {
     [Fact]
-    public void UnknownDominates_PropertyOverrideUnion_AndAvoidsOutOfScopeTypes()
+    public void JsValueParticipatesIn_PropertyOverrideUnion_AndAvoidsOutOfScopeTypes()
     {
         var repoRoot = FindRepoRoot();
 
@@ -44,12 +44,13 @@ public sealed class PropertyOverrideUnknownDominanceTests
         var dts = File.ReadAllText(internalIndex);
 
         Assert.Contains("export interface BaseType$instance", dts);
-        Assert.Contains("Events: unknown;", dts);
+        Assert.Contains("import type { DerivedEvents }", dts);
+        Assert.Contains("Events: DerivedEvents | JsValue;", dts);
 
         // MUST not reference derived-only types in the base namespace module.
-        Assert.DoesNotContain("DerivedEvents", dts);
+        Assert.Contains("DerivedEvents", dts);
 
-        // If `unknown` is present, the union MUST be collapsed to `unknown` (not `T | unknown`).
+        Assert.DoesNotContain("Events: unknown;", dts);
         Assert.DoesNotContain(" | unknown", dts);
     }
 

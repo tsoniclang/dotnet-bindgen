@@ -129,6 +129,22 @@ run_tsc() {
 # BCL Generation Cache
 # ============================================================
 
+compute_bcl_cache_key() {
+    local mode="$1"
+
+    (
+        cd "$PROJECT_ROOT"
+
+        {
+            echo "mode=$mode"
+            echo "runtime=$DOTNET_RUNTIME"
+            find src/tsbindgen -type f \( -name '*.cs' -o -name '*.csproj' -o -name '*.json' \) -print0 \
+                | sort -z \
+                | xargs -0 sha256sum
+        } | sha256sum | awk '{print $1}'
+    )
+}
+
 # Ensure BCL is generated.
 # Usage: ensure_bcl [default]
 # Returns: path to the BCL output directory
@@ -147,16 +163,22 @@ ensure_bcl() {
             ;;
     esac
 
-    # Check if cache exists and is valid
-    if [ -d "$out_dir" ] && [ -f "$out_dir/System/internal/index.d.ts" ]; then
+    init_runtime
+
+    local cache_key_file="$out_dir/.cache-key"
+    local current_cache_key
+    current_cache_key="$(compute_bcl_cache_key "$mode")"
+
+    if [ -d "$out_dir" ] &&
+        [ -f "$out_dir/System/internal/index.d.ts" ] &&
+        [ -f "$cache_key_file" ] &&
+        [ "$(cat "$cache_key_file")" = "$current_cache_key" ]; then
         echo "$out_dir"
         return 0
     fi
 
-    # Need to generate
-    init_runtime
-
     echo "Generating BCL cache ($mode)..." >&2
+    rm -rf "$out_dir"
     mkdir -p "$out_dir"
 
     if ! dotnet run --project "$PROJECT_ROOT/src/tsbindgen/tsbindgen.csproj" -- \
@@ -168,7 +190,35 @@ ensure_bcl() {
         return 1
     fi
 
+    printf '%s\n' "$current_cache_key" > "$cache_key_file"
+
     echo "$out_dir"
+}
+
+prepare_local_core_dependency() {
+    local target_dir="$1"
+
+    init_runtime
+
+    local dotnet_major
+    dotnet_major="$(basename "$DOTNET_RUNTIME" | cut -d. -f1)"
+    local core_dir="$PROJECT_ROOT/../core/versions/$dotnet_major"
+
+    if [ ! -d "$core_dir" ]; then
+        echo -e "${RED}ERROR: Local @tsonic/core package not found: $core_dir${NC}" >&2
+        return 1
+    fi
+
+    rm -rf "$target_dir/node_modules" "$target_dir/package-lock.json"
+
+    cat > "$target_dir/package.json" <<EOF
+{ "dependencies": { "@tsonic/core": "file:$core_dir" } }
+EOF
+
+    (
+        cd "$target_dir"
+        npm install --silent --legacy-peer-deps 2>/dev/null || npm install --legacy-peer-deps
+    )
 }
 
 # Generate a single assembly (for tests that need specific assemblies)

@@ -250,10 +250,8 @@ public static class ExtensionsEmitter
             sb.AppendLine();
         }
 
-        // Import primitive type aliases from @tsonic/core
-        sb.AppendLine("// Import primitive type aliases");
-        sb.AppendLine("import type { sbyte, byte, short, ushort, int, uint, long, ulong, int128, uint128, half, float, double, decimal, nint, nuint, char } from '@tsonic/core/types.js';");
-        sb.AppendLine();
+        SupportTypePreamble.EmitCoreTypeImports(sb);
+        SupportTypePreamble.EmitOpaqueTypeSupportMarker(sb);
 
         // Import Rewrap helper from @tsonic/core (sticky extension scopes across fluent chains)
         sb.AppendLine("// Import sticky extension scope helper");
@@ -281,12 +279,6 @@ public static class ExtensionsEmitter
 
             sb.AppendLine($"import * as System_Internal from \"{systemImportPath}\";");
         }
-        sb.AppendLine();
-
-        // Import ptr from @tsonic/core (needed for pointer types)
-        // Note: ref/out/in modifiers are ABI semantics tracked in metadata, not TS types
-        sb.AppendLine("// Import unsafe type markers");
-        sb.AppendLine("import type { ptr } from '@tsonic/core/types.js';");
         sb.AppendLine();
 
         // Create TypeNameResolver for this file
@@ -321,7 +313,7 @@ public static class ExtensionsEmitter
             EmitExtensionMethodsHelper(sb, declaringNamespace, buckets);
         }
 
-        return sb.ToString();
+        return SupportTypePreamble.FinalizeOpaqueTypeSupport(sb.ToString());
     }
 
     private static string GetNamespaceAlias(string ns) =>
@@ -759,33 +751,23 @@ public static class ExtensionsEmitter
         var sb = new StringBuilder();
         sb.Append(gp.Name);
 
-        // Print constraints from the IReadOnlyList<TypeReference>.
-        // Airplane-grade: method generic constraints must be emitted, otherwise constrained generic
-        // types used in the signature (e.g., SearchValues_1<T>) can cause TS2344 errors in the
-        // extension method table itself.
-        if (gp.Constraints.Length > 0)
-        {
-            sb.Append(" extends ");
+        sb.Append(" extends ");
 
-            // Filter out unrepresentable constraints ("any"/"unknown") - never emit "any" in constraints.
-            var printedConstraints = gp.Constraints
-                .Select(c => TypeRefPrinter.Print(c, resolver, ctx))
-                .Where(c => c != "any" && c != "unknown")
-                .ToArray();
+        // Extension generic parameters must carry the same broad-value closure as the
+        // generic receiver/return surfaces they reference.
+        var printedConstraints = gp.Constraints
+            .Select(c =>
+            {
+                var printed = TypeRefPrinter.Print(c, resolver, ctx);
+                if (AliasEmit.IsValueSemanticsConstraint(c, gp.Name))
+                    return AliasEmit.RelaxConstraintForPrimitives(printed, gp.Name);
 
-            if (printedConstraints.Length == 0)
-            {
-                sb.Append("unknown");
-            }
-            else if (printedConstraints.Length == 1)
-            {
-                sb.Append(printedConstraints[0]);
-            }
-            else
-            {
-                sb.Append(string.Join(" & ", printedConstraints));
-            }
-        }
+                return printed;
+            })
+            .Where(c => c != "any" && !TypeRefPrinter.IsOpaqueTypeText(c))
+            .ToArray();
+
+        sb.Append(AliasEmit.BuildConstraintText(gp, printedConstraints));
 
         return sb.ToString();
     }
@@ -808,7 +790,7 @@ public static class ExtensionsEmitter
         // The HKT encoding forces exact substitution via intersection:
         //   __TsonicApplyApplier<A, Shape> = (A & { __tsonic_shape: Shape })[\"__tsonic_type\"]
         sb.AppendLine($"interface {extApplierTypeName} {{");
-        sb.AppendLine("  __tsonic_shape: unknown;");
+        sb.AppendLine("  __tsonic_shape: JsValue;");
         sb.AppendLine($"  __tsonic_type: {methodsTableName};");
         sb.AppendLine("}");
         sb.AppendLine();
@@ -826,7 +808,7 @@ public static class ExtensionsEmitter
 
         if (hasIEnumerable1Bucket)
         {
-            sb.AppendLine($"  : TShape extends (infer T)[] ? (TShape & System_Collections_Generic.IEnumerable_1<T> & __TsonicWithExt<TShape, \"{extKey}\", {extApplierTypeName}> & {methodsTableName})");
+            sb.AppendLine($"  : TShape extends (infer T extends JsValue)[] ? (TShape & System_Collections_Generic.IEnumerable_1<T> & __TsonicWithExt<TShape, \"{extKey}\", {extApplierTypeName}> & {methodsTableName})");
             sb.AppendLine($"  : TShape & __TsonicWithExt<TShape, \"{extKey}\", {extApplierTypeName}> & {methodsTableName};");
         }
         else

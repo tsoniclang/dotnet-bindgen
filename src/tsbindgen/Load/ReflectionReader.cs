@@ -55,9 +55,14 @@ public sealed class ReflectionReader
                     continue;
                 }
 
-                // Only process public types (correctly handling nested types)
+                // Namespace groups only own top-level declarations.
+                // Nested types are attached through their declaring type and indexed recursively.
+                if (type.IsNested)
+                    continue;
+
+                // Only process emittable types (correctly handling nested types)
                 var accessibility = ComputeAccessibility(type);
-                if (accessibility != Accessibility.Public)
+                if (!TypeEmissionAccessibility.IsEmittable(accessibility, type.IsNested))
                     continue;
 
                 var typeSymbol = ReadType(type);
@@ -122,18 +127,12 @@ public sealed class ReflectionReader
         // Read members
         var members = ReadMembers(type);
 
-        // Read nested types (filter out compiler-generated)
-        var nestedTypes = type.GetNestedTypes(BindingFlags.Public)
-            .Where(t => !IsCompilerGenerated(t.Name))
-            .Select(ReadType)
-            .ToImmutableArray();
-
         // Tsonic module container marker (emitted by Tsonic for module-level static containers).
         // Detect by full attribute name to remain robust under MetadataLoadContext.
         var isTsonicModuleContainer = type.GetCustomAttributesData().Any(a =>
             a.AttributeType.FullName == "Tsonic.Internal.ModuleContainerAttribute");
 
-        return new TypeSymbol
+        var typeSymbol = new TypeSymbol
         {
             StableId = stableId,
             ClrFullName = _ctx.Intern(type.FullName ?? type.Name),
@@ -146,12 +145,24 @@ public sealed class ReflectionReader
             BaseType = baseType,
             Interfaces = interfaces,
             Members = members,
-            NestedTypes = nestedTypes,
+            NestedTypes = ImmutableArray<TypeSymbol>.Empty,
             IsValueType = type.IsValueType,
             IsAbstract = type.IsAbstract,
             IsSealed = type.IsSealed,
             IsStatic = type.IsAbstract && type.IsSealed && !type.IsValueType,
             IsTsonicModuleContainer = isTsonicModuleContainer
+        };
+
+        var nestedTypes = type.GetNestedTypes(BindingFlags.Public | BindingFlags.NonPublic)
+            .Where(t => !IsCompilerGenerated(t.Name))
+            .Where(t => TypeEmissionAccessibility.IsEmittable(ComputeAccessibility(t), isNested: true))
+            .Select(ReadType)
+            .Select(nested => AttachDeclaringType(nested, typeSymbol))
+            .ToImmutableArray();
+
+        return typeSymbol with
+        {
+            NestedTypes = nestedTypes
         };
     }
 
@@ -168,19 +179,44 @@ public sealed class ReflectionReader
             return type.IsPublic ? Accessibility.Public : Accessibility.Internal;
         }
 
-        // Nested types: combine declaring type's accessibility with nested visibility
-        // A nested public type is only truly public if its declaring type is also public
-        if (type.IsNestedPublic)
+        var declaringAccessibility = ComputeAccessibility(type.DeclaringType!);
+        if (!TypeEmissionAccessibility.IsEmittable(
+                declaringAccessibility,
+                type.DeclaringType!.IsNested))
         {
-            var declaringAccessibility = ComputeAccessibility(type.DeclaringType!);
-            return declaringAccessibility == Accessibility.Public
-                ? Accessibility.Public
-                : Accessibility.Internal;
+            return Accessibility.Internal;
         }
 
-        // Any other nested visibility (family, assembly, famandassem, famorassem, private)
-        // is not public - mark as Internal
+        if (type.IsNestedPublic) return Accessibility.Public;
+        if (type.IsNestedFamily) return Accessibility.Protected;
+        if (type.IsNestedFamORAssem) return Accessibility.ProtectedInternal;
+        if (type.IsNestedFamANDAssem) return Accessibility.PrivateProtected;
+        if (type.IsNestedAssembly) return Accessibility.Internal;
+        if (type.IsNestedPrivate) return Accessibility.Private;
+
         return Accessibility.Internal;
+    }
+
+    private static TypeSymbol AttachDeclaringType(TypeSymbol nestedType, TypeSymbol declaringType)
+    {
+        var updatedType = nestedType with
+        {
+            DeclaringType = declaringType
+        };
+
+        if (updatedType.NestedTypes.Length == 0)
+        {
+            return updatedType;
+        }
+
+        var updatedNestedTypes = updatedType.NestedTypes
+            .Select(child => AttachDeclaringType(child, updatedType))
+            .ToImmutableArray();
+
+        return updatedType with
+        {
+            NestedTypes = updatedNestedTypes
+        };
     }
 
     private TypeKind DetermineTypeKind(Type type)
@@ -358,7 +394,9 @@ public sealed class ReflectionReader
             MetadataToken = method.MetadataToken
         };
 
-        var parameters = method.GetParameters().Select(ReadParameter).ToImmutableArray();
+        var parameters = method.GetParameters()
+            .Select((parameter) => ReadParameter(parameter, method.CustomAttributes, declaringType))
+            .ToImmutableArray();
         var genericParams = method.IsGenericMethod
             ? method.GetGenericArguments().Select(_typeFactory.CreateGenericParameterSymbol).ToImmutableArray()
             : ImmutableArray<GenericParameterSymbol>.Empty;
@@ -434,7 +472,9 @@ public sealed class ReflectionReader
         var setter = property.GetSetMethod(true);
         // For indexer parameters, get the accessor to check if property is static
         var accessor = getter ?? setter;
-        var indexParams = property.GetIndexParameters().Select(ReadParameter).ToImmutableArray();
+        var indexParams = property.GetIndexParameters()
+            .Select((parameter) => ReadParameter(parameter, property.CustomAttributes, declaringType))
+            .ToImmutableArray();
 
         // Read property type with NRT nullability
         var propertyType = CreateTypeWithNullabilityFromProperty(property, declaringType);
@@ -542,13 +582,18 @@ public sealed class ReflectionReader
         return new ConstructorSymbol
         {
             StableId = stableId,
-            Parameters = ctor.GetParameters().Select(ReadParameter).ToImmutableArray(),
+            Parameters = ctor.GetParameters()
+                .Select((parameter) => ReadParameter(parameter, ctor.CustomAttributes, declaringType))
+                .ToImmutableArray(),
             IsStatic = ctor.IsStatic,
             Visibility = GetConstructorVisibility(ctor)
         };
     }
 
-    private ParameterSymbol ReadParameter(ParameterInfo param)
+    private ParameterSymbol ReadParameter(
+        ParameterInfo param,
+        IEnumerable<CustomAttributeData>? memberContextAttributes,
+        Type declaringType)
     {
         // Sanitize parameter name for TypeScript reserved words
         var paramName = param.Name ?? $"arg{param.Position}";
@@ -605,11 +650,15 @@ public sealed class ReflectionReader
         var isParams = param.GetCustomAttributesData()
             .Any(attr => attr.AttributeType.Name == "ParamArrayAttribute");
 
-        // NRT SIMPLIFICATION: Parameters are always non-nullable in TypeScript
-        // Per Alice's analysis: dropping `| undefined` from parameters is sound
-        // (TS rejects more calls than CLR would accept - stricter is safe)
-        // Only OUTPUTS (returns, properties, fields) respect NRT metadata
-        var paramType = _typeFactory.Create(param.ParameterType);
+        var (nullabilityFlags, singleNullability) = GetNullabilityMetadata(
+            param.CustomAttributes,
+            memberContextAttributes,
+            nullableAttributeFallbackAttributes: null,
+            declaringType);
+        var paramType = _typeFactory.CreateWithNullability(
+            param.ParameterType,
+            nullabilityFlags,
+            singleNullability);
 
         return new ParameterSymbol
         {

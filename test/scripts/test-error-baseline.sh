@@ -32,17 +32,9 @@ fi
 echo "[1/4] Running TypeScript validation..."
 cd "$BCL_DIR"
 
-# Ensure we're not pinned to a stale @tsonic/core patch via an old lockfile.
-rm -rf node_modules package-lock.json
-
-# Install @tsonic/core for primitive type imports
-# Determine .NET major from the detected runtime path so we install the matching core major.
-# Example DOTNET_RUNTIME: /usr/share/dotnet/shared/Microsoft.NETCore.App/10.0.1 → 10
-DOTNET_MAJOR="$(basename "$DOTNET_RUNTIME" | cut -d. -f1)"
-cat > package.json <<EOF
-{ "dependencies": { "@tsonic/core": "^${DOTNET_MAJOR}.0.0" } }
-EOF
-npm install --silent --legacy-peer-deps 2>/dev/null || npm install --legacy-peer-deps
+# Install the local sibling @tsonic/core package for the active wave.
+# Repo verification must validate against the current workspace contract, not an older npm publish.
+prepare_local_core_dependency "$BCL_DIR"
 
 # Create tsconfig with skipLibCheck: false to actually check .d.ts files
 # Override any existing tsconfig

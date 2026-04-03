@@ -21,9 +21,10 @@ public static class TsAssignability
         if (source.Equals(target))
             return true;
 
-        // Unknown types are compatible with anything (conservative for validation)
-        if (source is TsTypeShape.Unknown || target is TsTypeShape.Unknown)
-            return true;
+        // Explicit opaque placeholders must stay explicit.
+        // If we cannot prove assignability structurally, do not silently widen them.
+        if (source is TsTypeShape.Opaque || target is TsTypeShape.Opaque)
+            return false;
 
         // Type parameters with same name are compatible
         if (source is TsTypeShape.TypeParameter sourceParam &&

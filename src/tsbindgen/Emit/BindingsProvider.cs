@@ -385,7 +385,7 @@ public sealed class BindingsProvider
             ByRefTypeReference byRef => $"ByRef:{NormalizeTypeKey(byRef.ReferencedType)}",
             NestedTypeReference nested => $"Nested:{NormalizeTypeKey(nested.FullReference)}",
             PlaceholderTypeReference placeholder => $"Placeholder:{placeholder.DebugName}",
-            _ => typeRef.ToString() ?? "unknown"
+            _ => typeRef.ToString() ?? "<opaque>"
         };
     }
 

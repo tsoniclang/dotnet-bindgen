@@ -110,7 +110,7 @@ public static class SignatureFormatter
                 $"ref {FormatTypeReference(byRef.ReferencedType)}",
             Model.Types.GenericParameterReference genericParam =>
                 genericParam.Name,
-            _ => typeRef.ToString() ?? "unknown"
+            _ => typeRef.ToString() ?? "<opaque>"
         };
     }
 }

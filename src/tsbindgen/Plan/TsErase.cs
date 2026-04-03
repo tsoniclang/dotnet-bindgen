@@ -63,12 +63,18 @@ public static class TsErase
             // Array types - erase to readonly array
             ArrayTypeReference arr => new TsTypeShape.Array(EraseType(arr.ElementType)),
 
-            // Pointer/ByRef types - erase to element type (TS doesn't support these)
-            PointerTypeReference ptr => EraseType(ptr.PointeeType),
+            // Pointer types have an explicit TS support type and must not collapse
+            // to the pointee during validation.
+            PointerTypeReference ptr => new TsTypeShape.GenericApplication(
+                new TsTypeShape.Named("ptr"),
+                new List<TsTypeShape> { EraseType(ptr.PointeeType) }),
+
+            // ByRef types erase to the referenced type; ref/out/in semantics are
+            // carried separately in binding metadata, not in TS types.
             ByRefTypeReference byref => EraseType(byref.ReferencedType),
 
             // Fallback - use string representation
-            _ => new TsTypeShape.Unknown(typeRef.ToString() ?? "unknown")
+            _ => new TsTypeShape.Opaque(typeRef.ToString() ?? "<null>")
         };
     }
 }
@@ -99,5 +105,5 @@ public abstract record TsTypeShape
     public sealed record TypeParameter(string Name) : TsTypeShape;
     public sealed record Array(TsTypeShape ElementType) : TsTypeShape;
     public sealed record GenericApplication(TsTypeShape GenericType, List<TsTypeShape> TypeArguments) : TsTypeShape;
-    public sealed record Unknown(string Description) : TsTypeShape;
+    public sealed record Opaque(string Description) : TsTypeShape;
 }

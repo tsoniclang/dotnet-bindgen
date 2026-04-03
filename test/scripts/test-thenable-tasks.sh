@@ -5,8 +5,9 @@
 # Generic Task<TResult>/ValueTask<TResult> must NOT include void overload (Awaited<> would infer never).
 #
 # Additional requirement (CLR faithfulness): Task<TResult> : Task, so Task_1<TResult> must remain
-# assignable to Task in TypeScript. We achieve that by including an extra `then(value: any)` overload
-# on generic Task_1 only (NOT on ValueTask_1, which has no inheritance relation in the CLR).
+# assignable to Task in TypeScript. We achieve that by including an extra
+# `then(value: TResult | void)` compatibility overload on generic Task_1 only
+# (NOT on ValueTask_1, which has no inheritance relation in the CLR).
 
 set -euo pipefail
 
@@ -29,14 +30,14 @@ echo "Using BCL: $BCL_DIR"
 echo "File: $FILE"
 echo ""
 
-# Non-generic Task / ValueTask must include void + unknown overloads.
+# Non-generic Task / ValueTask must include void + JsValue overloads.
 assert_grep 'export type Task = Task$instance & __Task$views & {' "$FILE" "Task type alias exists"
 assert_grep "then<TResult1 = void" "$FILE" "Task includes void then overload"
-assert_grep "then<TResult1 = unknown" "$FILE" "Task includes unknown then overload"
+assert_grep "then<TResult1 = JsValue" "$FILE" "Task includes JsValue then overload"
 
 assert_grep 'export type ValueTask = ValueTask$instance & __ValueTask$views & {' "$FILE" "ValueTask type alias exists"
 assert_grep "then<TResult1 = void" "$FILE" "ValueTask includes void then overload"
-assert_grep "then<TResult1 = unknown" "$FILE" "ValueTask includes unknown then overload"
+assert_grep "then<TResult1 = JsValue" "$FILE" "ValueTask includes JsValue then overload"
 
 # Generic forms must not include a void overload (Awaited<Task_1<T>> should not collapse to never).
 task1_start="$(grep -n "export type Task_1" "$FILE" | head -1 | cut -d: -f1 || true)"
@@ -48,12 +49,12 @@ if [ -n "$task1_start" ]; then
         exit 1
     fi
     test_result PASS "Task_1<TResult> does not include void then overload"
-    if ! echo "$task1_block" | grep -Fq "value: any"; then
-        echo -e "${RED}[FAIL]${NC} Task_1<TResult> must include an any overload for Task<TResult> : Task assignability" >&2
+    if ! echo "$task1_block" | grep -Fq "value: TResult | void"; then
+        echo -e "${RED}[FAIL]${NC} Task_1<TResult> must include a TResult | void compatibility overload for Task<TResult> : Task assignability" >&2
         echo "$task1_block" >&2
         exit 1
     fi
-    test_result PASS "Task_1<TResult> includes any then overload (Task<TResult> : Task)"
+    test_result PASS "Task_1<TResult> includes TResult | void compatibility overload (Task<TResult> : Task)"
 else
     echo -e "${RED}❌ FAILED: Could not locate Task_1 alias${NC}" >&2
     exit 1

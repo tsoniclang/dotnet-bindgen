@@ -254,7 +254,7 @@ public static class ViewPlanner
             ArrayTypeReference arr => GetTypeArgumentName(arr.ElementType) + "_array",
             PointerTypeReference ptr => GetTypeArgumentName(ptr.PointeeType) + "_ptr",
             ByRefTypeReference byref => GetTypeArgumentName(byref.ReferencedType) + "_ref",
-            _ => "unknown"
+            _ => "opaque"
         };
 
         return result;

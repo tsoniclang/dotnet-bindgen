@@ -62,7 +62,7 @@ public static class BindingEmitter
     {
         var typeBindings = new List<TypeBinding>();
 
-        foreach (var typeOrder in nsOrder.OrderedTypes)
+        foreach (var typeOrder in EnumerateTypeOrders(nsOrder.OrderedTypes))
         {
             typeBindings.Add(GenerateTypeBinding(typeOrder.Type, ctx));
         }
@@ -90,14 +90,15 @@ public static class BindingEmitter
     {
         var exports = new Dictionary<string, ExportBinding>();
         var flattenedClasses = ctx.Policy.Emission.FlattenedClasses;
+        var orderedTypes = EnumerateTypeOrders(nsOrder.OrderedTypes).ToList();
 
         // Module containers are always eligible, even if no explicit --flatten-class is set.
         var hasAnyFlattening = flattenedClasses.Count > 0 ||
-                               nsOrder.OrderedTypes.Any(t => t.Type.IsTsonicModuleContainer);
+                               orderedTypes.Any(t => t.Type.IsTsonicModuleContainer);
         if (!hasAnyFlattening)
             return exports;
 
-        foreach (var typeOrder in nsOrder.OrderedTypes)
+        foreach (var typeOrder in orderedTypes)
         {
             var type = typeOrder.Type;
 
@@ -197,6 +198,19 @@ public static class BindingEmitter
         }
 
         return exports;
+    }
+
+    private static IEnumerable<TypeEmitOrder> EnumerateTypeOrders(IEnumerable<TypeEmitOrder> orders)
+    {
+        foreach (var order in orders)
+        {
+            yield return order;
+
+            foreach (var nested in EnumerateTypeOrders(order.OrderedNestedTypes))
+            {
+                yield return nested;
+            }
+        }
     }
 
     private static TypeBinding GenerateTypeBinding(TypeSymbol type, BuildContext ctx)
@@ -310,6 +324,17 @@ public static class BindingEmitter
     {
         // Generate normalized signature for universal matching
         var normalizedSignature = SignatureNormalization.NormalizeProperty(property);
+        var emitSemantics =
+            property.IsStatic &&
+            !property.HasSetter &&
+            StaticGenericMemberSupport.RequiresCallableAccessor(
+                property.PropertyType,
+                declaringType.GenericParameters)
+                ? new EmitSemanticsSpec
+                {
+                    CallableStaticAccessorKind = "property"
+                }
+                : null;
 
         return new PropertyBinding
         {
@@ -331,7 +356,8 @@ public static class BindingEmitter
             SourceInterface = property.SourceInterface != null ? GetTypeRefName(property.SourceInterface) : null,
             // V2: Add declaring type information from StableId
             DeclaringClrType = property.StableId.DeclaringClrFullName,
-            DeclaringAssemblyName = property.StableId.AssemblyName
+            DeclaringAssemblyName = property.StableId.AssemblyName,
+            EmitSemantics = emitSemantics
         };
     }
 
@@ -339,6 +365,17 @@ public static class BindingEmitter
     {
         // Generate normalized signature for universal matching
         var normalizedSignature = SignatureNormalization.NormalizeField(field);
+        var emitSemantics =
+            field.IsStatic &&
+            (field.IsReadOnly || field.IsConst) &&
+            StaticGenericMemberSupport.RequiresCallableAccessor(
+                field.FieldType,
+                declaringType.GenericParameters)
+                ? new EmitSemanticsSpec
+                {
+                    CallableStaticAccessorKind = "field"
+                }
+                : null;
 
         return new FieldBinding
         {
@@ -352,7 +389,8 @@ public static class BindingEmitter
             Visibility = field.Visibility.ToString(),
             // V2: Add declaring type information from StableId
             DeclaringClrType = field.StableId.DeclaringClrFullName,
-            DeclaringAssemblyName = field.StableId.AssemblyName
+            DeclaringAssemblyName = field.StableId.AssemblyName,
+            EmitSemantics = emitSemantics
         };
     }
 
@@ -862,7 +900,7 @@ public static class BindingEmitter
             tsbindgen.Model.Types.ArrayTypeReference arr => $"{EncodeHeritageTypeArgument(arr.ElementType)}[]",
             tsbindgen.Model.Types.PointerTypeReference ptr => $"{EncodeHeritageTypeArgument(ptr.PointeeType)}*",
             tsbindgen.Model.Types.ByRefTypeReference byref => EncodeHeritageTypeArgument(byref.ReferencedType),
-            _ => typeRef.ToString() ?? "unknown"
+            _ => typeRef.ToString() ?? "<opaque>"
         };
     }
 
@@ -1028,6 +1066,7 @@ public sealed record PropertyBinding
     // V2: Declaring type information
     public string? DeclaringClrType { get; init; }
     public string? DeclaringAssemblyName { get; init; }
+    public EmitSemanticsSpec? EmitSemantics { get; init; }
 }
 
 /// <summary>
@@ -1047,6 +1086,7 @@ public sealed record FieldBinding
     // V2: Declaring type information
     public string? DeclaringClrType { get; init; }
     public string? DeclaringAssemblyName { get; init; }
+    public EmitSemanticsSpec? EmitSemantics { get; init; }
 }
 
 /// <summary>

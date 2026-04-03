@@ -34,7 +34,7 @@ public sealed class SymbolRenamer
             // For now, store by string key
             _explicitOverrides[new TypeStableId
             {
-                AssemblyName = "unknown",
+                AssemblyName = "<explicit-override>",
                 ClrFullName = clrPath
             }] = targetName;
         }

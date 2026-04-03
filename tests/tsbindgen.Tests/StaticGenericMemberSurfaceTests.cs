@@ -1,19 +1,18 @@
 using System.Diagnostics;
-using System.Text.RegularExpressions;
 using tsbindgen;
 using Xunit;
 
 namespace tsbindgen.Tests;
 
-public sealed class GenericReceiverPreferenceTests
+public sealed class StaticGenericMemberSurfaceTests
 {
     [Fact]
-    public void ExtensionIndex_PrefersGenericReceiverBucketsOverArity0Bases()
+    public void StaticGenericMembers_UseCallableAccessors_OrExplicitOpaquePlaceholders()
     {
         var repoRoot = FindRepoRoot();
 
-        var fixtureDir = Path.Combine(repoRoot, "tests", "fixtures", "extension-scopes-fixture");
-        var fixtureProj = Path.Combine(fixtureDir, "ExtensionScopesFixture.csproj");
+        var fixtureDir = Path.Combine(repoRoot, "tests", "fixtures", "static-generic-member-fixture");
+        var fixtureProj = Path.Combine(fixtureDir, "StaticGenericMemberFixture.csproj");
 
         var scratch = Path.Combine(Path.GetTempPath(), "tsbindgen-tests", Guid.NewGuid().ToString("n"));
         Directory.CreateDirectory(scratch);
@@ -23,7 +22,7 @@ public sealed class GenericReceiverPreferenceTests
 
         DotnetBuild(fixtureProj, buildOut);
 
-        var assemblyPath = Path.Combine(buildOut, "ExtensionScopesFixture.dll");
+        var assemblyPath = Path.Combine(buildOut, "StaticGenericMemberFixture.dll");
         Assert.True(File.Exists(assemblyPath), $"Fixture assembly not found: {assemblyPath}");
 
         var emitOut = Path.Combine(scratch, "emit-out");
@@ -38,35 +37,16 @@ public sealed class GenericReceiverPreferenceTests
 
         Assert.True(result.Success, $"tsbindgen build failed: {string.Join("\n", result.Diagnostics.Select(d => d.ToString()))}");
 
-        var extensionIndex = Path.Combine(emitOut, "__internal", "extensions", "index.d.ts");
-        Assert.True(File.Exists(extensionIndex), $"Missing extension index: {extensionIndex}");
+        var internalIndex = Path.Combine(emitOut, "StaticGenericMemberFixture", "internal", "index.d.ts");
+        Assert.True(File.Exists(internalIndex), $"Missing internal index: {internalIndex}");
 
-        var dts = File.ReadAllText(extensionIndex);
+        var dts = File.ReadAllText(internalIndex);
 
-        // Fixture: ISeq (arity 0) + ISeq<T> : ISeq (arity 1) both define AsParallel.
-        //
-        // Airplane-grade: the more specific receiver overload (ISeq<T>) must appear BEFORE
-        // the base receiver overload (ISeq). TS overload resolution picks the first
-        // matching signature, so order is semantic.
-        var methodsTable = Regex.Match(
-            dts,
-            @"interface __TsonicExtMethods_ExtensionScopesFixture\s*\{([\s\S]*?)\n\}",
-            RegexOptions.Singleline);
-        Assert.True(methodsTable.Success, "Failed to locate method-table interface for ExtensionScopesFixture in extension index output.");
-
-        var body = methodsTable.Groups[1].Value;
-
-        Assert.Contains("BaseOnly(this: ExtensionScopesFixture.ISeq)", body);
-        Assert.Contains("AsParallel<T extends JsValue>(this: ExtensionScopesFixture.ISeq_1<T>)", body);
-        Assert.Contains("AsParallel(this: ExtensionScopesFixture.ISeq)", body);
-
-        var genericIdx = body.IndexOf("AsParallel<T extends JsValue>(this: ExtensionScopesFixture.ISeq_1<T>)", StringComparison.Ordinal);
-        var baseIdx = body.IndexOf("AsParallel(this: ExtensionScopesFixture.ISeq)", StringComparison.Ordinal);
-        Assert.True(genericIdx >= 0 && baseIdx >= 0, "Failed to locate both AsParallel overloads in method table.");
-        Assert.True(genericIdx < baseIdx, "Expected generic receiver overload to appear before base receiver overload.");
-
-        Assert.Contains("AsParallel<T extends JsValue>(this: ExtensionScopesFixture.ISeq_1<T>): Rewrap<this, ExtensionScopesFixture.ISeq_1<T>>;", body);
-        Assert.Contains("AsParallel(this: ExtensionScopesFixture.ISeq): Rewrap<this, ExtensionScopesFixture.ISeq>;", body);
+        Assert.Contains("readonly Seed: <T extends JsValue>() => T;", dts);
+        Assert.Contains("readonly Default: <T extends JsValue>() => T;", dts);
+        Assert.Contains("Mutable: __OpaqueClrType<\"unsupported-static-generic-field:StaticGenericMemberFixture.Box`1.Mutable\">;", dts);
+        Assert.Contains("Current: __OpaqueClrType<\"unsupported-static-generic-property:StaticGenericMemberFixture.Box`1.Current\">;", dts);
+        Assert.DoesNotContain("unknown", dts);
     }
 
     private static string FindRepoRoot()
@@ -87,7 +67,6 @@ public sealed class GenericReceiverPreferenceTests
         var psi = new ProcessStartInfo
         {
             FileName = "dotnet",
-            // Avoid hangs in CI/redirected output scenarios due to MSBuild node reuse keeping stdout/stderr handles open.
             Arguments = $"build \"{projectFile}\" -c Release -o \"{outputDir}\" /nodeReuse:false",
             RedirectStandardOutput = true,
             RedirectStandardError = true,

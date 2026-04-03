@@ -44,7 +44,7 @@ public static class TypeSignatureCanon
             ArrayTypeReference arr => $"ReadonlyArray<{CanonicalizeType(arr.ElementType, isGenericArg: true)}>",
             PointerTypeReference ptr => $"ptr<{CanonicalizeType(ptr.PointeeType, isGenericArg: true)}>",
             ByRefTypeReference byref => $"ref<{CanonicalizeType(byref.ReferencedType, isGenericArg: true)}>",
-            _ => "unknown"
+            _ => "__OpaqueClrType<\"unhandled-type-ref\">"
         };
     }
 
@@ -92,7 +92,7 @@ public static class TypeSignatureCanon
             "System.String" => "string",
 
             // Object
-            "System.Object" => "unknown",
+            "System.Object" => "JsValue",
 
             // Signed integers (branded types)
             "System.SByte" => "sbyte",
@@ -120,7 +120,7 @@ public static class TypeSignatureCanon
             "System.Char" => "char",
 
             // Value type base
-            "System.ValueType" => "unknown",
+            "System.ValueType" => "NonNullable<JsValue>",
 
             // Enum base
             "System.Enum" => "number",

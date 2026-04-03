@@ -46,25 +46,21 @@ public static class SafeToExtendAnalyzer
         var totalAssignable = 0;
         var totalNonAssignable = 0;
 
-        foreach (var ns in graph.Namespaces)
+        foreach (var type in graph.Namespaces.SelectMany(ns => ns.Types).SelectMany(EnumerateTypesRecursive))
         {
-            foreach (var type in ns.Types)
-            {
-                // Analyze classes, structs, and interfaces
-                if (type.Kind != TypeKind.Class &&
-                    type.Kind != TypeKind.Struct &&
-                    type.Kind != TypeKind.Interface)
-                    continue;
+            if (type.Kind != TypeKind.Class &&
+                type.Kind != TypeKind.Struct &&
+                type.Kind != TypeKind.Interface)
+                continue;
 
-                if (type.Interfaces.Length == 0)
-                    continue;
+            if (type.Interfaces.Length == 0)
+                continue;
 
-                var result = AnalyzeType(ctx, graph, resolver, type);
-                results[type.StableId.ToString()] = result;
+            var result = AnalyzeType(ctx, graph, resolver, type);
+            results[type.StableId.ToString()] = result;
 
-                totalAssignable += result.AssignableInterfaces.Count;
-                totalNonAssignable += result.NonAssignableInterfaces.Count;
-            }
+            totalAssignable += result.AssignableInterfaces.Count;
+            totalNonAssignable += result.NonAssignableInterfaces.Count;
         }
 
         ctx.Log("SafeToExtendAnalyzer",
@@ -260,7 +256,10 @@ public static class SafeToExtendAnalyzer
 
         // Then add the type's own ClassSurface members (override base if present)
         // Methods - only ClassSurface, use TsEmitName for accurate matching with emitted output
-        foreach (var method in type.Members.Methods.Where(m => m.EmitScope == EmitScope.ClassSurface && !m.IsStatic))
+        foreach (var method in type.Members.Methods.Where(m =>
+                     m.EmitScope == EmitScope.ClassSurface &&
+                     !m.IsStatic &&
+                     ShouldExposeMethod(m)))
         {
             // Use TsEmitName to match what's actually emitted, not ClrName
             var emitName = string.IsNullOrEmpty(method.TsEmitName) ? method.ClrName : method.TsEmitName;
@@ -276,7 +275,10 @@ public static class SafeToExtendAnalyzer
         }
 
         // Properties - only ClassSurface, use TsEmitName for accurate matching
-        foreach (var prop in type.Members.Properties.Where(p => p.EmitScope == EmitScope.ClassSurface && !p.IsStatic))
+        foreach (var prop in type.Members.Properties.Where(p =>
+                     p.EmitScope == EmitScope.ClassSurface &&
+                     !p.IsStatic &&
+                     ShouldExposeProperty(p)))
         {
             var emitName = string.IsNullOrEmpty(prop.TsEmitName) ? prop.ClrName : prop.TsEmitName;
             var key = $"{emitName}:property";
@@ -329,7 +331,10 @@ public static class SafeToExtendAnalyzer
         var substitutionMap = BuildBaseTypeSubstitutionMap(baseSymbol, baseTypeRef);
 
         // Add base's ClassSurface members (with generic substitution), use TsEmitName
-        foreach (var method in baseSymbol.Members.Methods.Where(m => m.EmitScope == EmitScope.ClassSurface && !m.IsStatic))
+        foreach (var method in baseSymbol.Members.Methods.Where(m =>
+                     m.EmitScope == EmitScope.ClassSurface &&
+                     !m.IsStatic &&
+                     ShouldExposeMethod(m)))
         {
             var emitName = string.IsNullOrEmpty(method.TsEmitName) ? method.ClrName : method.TsEmitName;
             var key = $"{emitName}:method";
@@ -343,7 +348,10 @@ public static class SafeToExtendAnalyzer
             list.Add(sig);
         }
 
-        foreach (var prop in baseSymbol.Members.Properties.Where(p => p.EmitScope == EmitScope.ClassSurface && !p.IsStatic))
+        foreach (var prop in baseSymbol.Members.Properties.Where(p =>
+                     p.EmitScope == EmitScope.ClassSurface &&
+                     !p.IsStatic &&
+                     ShouldExposeProperty(p)))
         {
             var emitName = string.IsNullOrEmpty(prop.TsEmitName) ? prop.ClrName : prop.TsEmitName;
             var key = $"{emitName}:property";
@@ -861,4 +869,22 @@ public static class SafeToExtendAnalyzer
             .SelectMany(ns => ns.Types)
             .FirstOrDefault(t => t.ClrFullName == fullName && t.Kind == TypeKind.Interface);
     }
+
+    private static IEnumerable<TypeSymbol> EnumerateTypesRecursive(TypeSymbol type)
+    {
+        yield return type;
+
+        foreach (var nested in type.NestedTypes.SelectMany(EnumerateTypesRecursive))
+            yield return nested;
+    }
+
+    private static bool ShouldExposeMethod(MethodSymbol method) =>
+        method.Visibility == Visibility.Public ||
+        ((method.Visibility == Visibility.Protected || method.Visibility == Visibility.ProtectedInternal) &&
+         (method.IsVirtual || method.IsAbstract || method.IsOverride));
+
+    private static bool ShouldExposeProperty(PropertySymbol property) =>
+        property.Visibility == Visibility.Public ||
+        ((property.Visibility == Visibility.Protected || property.Visibility == Visibility.ProtectedInternal) &&
+         (property.IsVirtual || property.IsAbstract || property.IsOverride));
 }

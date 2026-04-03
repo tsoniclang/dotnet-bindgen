@@ -856,7 +856,7 @@ public static class NrtContractNormalizer
     private static NrtState MergeNullability(NrtState a, NrtState b)
     {
         // Contract-source rule: NotNull is the strictest and is always safe for TS structural compatibility
-        // when multiple base/interface declarations disagree (string is assignable to string|undefined).
+        // when multiple base/interface declarations disagree (string is assignable to string|null).
         if (a == NrtState.NotNull || b == NrtState.NotNull)
             return NrtState.NotNull;
 

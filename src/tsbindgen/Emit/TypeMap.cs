@@ -1,4 +1,3 @@
-using System;
 using System.Collections.Generic;
 
 namespace tsbindgen.Emit;
@@ -33,9 +32,9 @@ public static class TypeMap
                 tsType = "string";
                 return true;
 
-            // Object (map to unknown - safer than any, forces explicit type narrowing)
+            // Object
             case "System.Object":
-                tsType = "unknown";
+                tsType = "JsValue";
                 return true;
 
             // Signed integers (branded types)
@@ -99,7 +98,7 @@ public static class TypeMap
 
             // Value type base
             case "System.ValueType":
-                tsType = "unknown";
+                tsType = "NonNullable<JsValue>";
                 return true;
 
             // Enum base
@@ -118,33 +117,6 @@ public static class TypeMap
                 return false;
         }
     }
-
-    /// <summary>
-    /// Checks if a CLR type is an unsupported special form.
-    /// These require special handling or substitution.
-    /// </summary>
-    public static bool IsUnsupportedSpecialForm(string fullName, bool isPointer, bool isByRef, bool isFunctionPointer)
-    {
-        return isPointer || isByRef || isFunctionPointer;
-    }
-
-    /// <summary>
-    /// Gets TypeScript type for an unsupported special form.
-    /// Only call this if IsUnsupportedSpecialForm returns true.
-    /// </summary>
-    public static string MapUnsupportedSpecialForm(string fullName, bool isPointer, bool isByRef, bool isFunctionPointer, bool allowUnsafeMaps)
-    {
-        if (!allowUnsafeMaps)
-        {
-            throw new InvalidOperationException(
-                $"Unsupported special form: {fullName} (isPointer={isPointer}, isByRef={isByRef}, isFunctionPointer={isFunctionPointer}). " +
-                $"Use --allow-unsafe-maps to substitute with 'unknown'.");
-        }
-
-        // When unsafe maps are allowed, substitute with 'unknown'
-        return "unknown";
-    }
-
     /// <summary>
     /// Checks if a type is a known primitive that should use branded type syntax.
     /// These are emitted as type aliases in the preamble of each file.

@@ -73,19 +73,19 @@ public static class MultiArityAliasEmit
             else
             {
                 // For single-member generic families, use extends clause (no sentinel dispatch)
-                var typeArgs = string.Join(", ", Enumerable.Range(1, member.Arity).Select(n => FormatTypeParamWithConstraint(n, constraints, resolver, ctx)));
+                var typeArgs = string.Join(", ", Enumerable.Range(1, member.Arity).Select(n => FormatTypeParamWithConstraint(n, constraints, resolver, ctx, currentNamespace)));
                 sb.AppendLine($"export type {family.PublicStem}<{typeArgs}> = Internal.{member.InternalExportName}<{string.Join(", ", Enumerable.Range(1, member.Arity).Select(n => $"T{n}"))}>;");
             }
             sb.AppendLine();
             return;
         }
 
-        // Type parameters: T1 through TmaxArity, all defaulting to __ (no constraints on facade params)
-        // Constraints are checked via nested conditionals instead of extends clauses
+        // Type parameters: T1 through TmaxArity, all defaulting to __ while still carrying
+        // the same broad-value closure as the selected internal arity member.
         sb.AppendLine($"export type {family.PublicStem}<");
         for (int i = 1; i <= maxArity; i++)
         {
-            sb.AppendLine($"  T{i} = __,");
+            sb.AppendLine($"  {FormatTypeParamWithConstraint(i, constraints, resolver, ctx, currentNamespace)} = __,");
         }
         sb.AppendLine("> =");
 
@@ -153,19 +153,19 @@ public static class MultiArityAliasEmit
             else
             {
                 // For single-member generic families, use extends clause (no sentinel dispatch)
-                var typeArgs = string.Join(", ", Enumerable.Range(1, arity).Select(n => FormatTypeParamWithConstraint(n, constraints, resolver, ctx)));
+                var typeArgs = string.Join(", ", Enumerable.Range(1, arity).Select(n => FormatTypeParamWithConstraint(n, constraints, resolver, ctx, currentNamespace)));
                 sb.AppendLine($"export type {family.PublicStem}<{typeArgs}> = (({callSig}) | Internal.{member.InternalExportName}<{string.Join(", ", Enumerable.Range(1, arity).Select(n => $"T{n}"))}>);");
             }
             sb.AppendLine();
             return;
         }
 
-        // Type parameters: T1 through TmaxArity, all defaulting to __ (no constraints on facade params)
-        // Constraints are checked via nested conditionals instead of extends clauses
+        // Type parameters: T1 through TmaxArity, all defaulting to __ while still carrying
+        // the same broad-value closure as the selected internal arity member.
         sb.AppendLine($"export type {family.PublicStem}<");
         for (int i = 1; i <= maxArity; i++)
         {
-            sb.AppendLine($"  T{i} = __,");
+            sb.AppendLine($"  {FormatTypeParamWithConstraint(i, constraints, resolver, ctx, currentNamespace)} = __,");
         }
         sb.AppendLine("> =");
 
@@ -229,10 +229,11 @@ public static class MultiArityAliasEmit
         int position,
         ImmutableArray<GenericParameterSymbol> constraints,
         TypeNameResolver resolver,
-        BuildContext ctx)
+        BuildContext ctx,
+        string? currentNamespace = null)
     {
         var paramName = $"T{position}";
-        var constraintPart = FormatConstraintForPosition(position, constraints, resolver, ctx);
+        var constraintPart = FormatConstraintForPosition(position, constraints, resolver, ctx, currentNamespace);
         return $"{paramName}{constraintPart}";
     }
 
@@ -246,7 +247,8 @@ public static class MultiArityAliasEmit
         int position,
         ImmutableArray<GenericParameterSymbol> genericParams,
         TypeNameResolver resolver,
-        BuildContext ctx)
+        BuildContext ctx,
+        string? currentNamespace = null)
     {
         // Position is 1-based, array is 0-based
         var index = position - 1;
@@ -255,7 +257,7 @@ public static class MultiArityAliasEmit
 
         var gp = genericParams[index];
         if (gp.Constraints.Length == 0)
-            return "";
+            return $" extends {AliasEmit.WrapConstraintIfNeeded(AliasEmit.BuildConstraintText(gp, Array.Empty<string>()))} | __";
 
         // The facade parameter name is T{position}, need to substitute original param name
         var facadeParamName = $"T{position}";
@@ -273,6 +275,15 @@ public static class MultiArityAliasEmit
                 printed = SubstituteTypeParam(printed, gp.Name, facadeParamName);
             }
 
+            if (currentNamespace != null &&
+                printed != "never" && printed != "any" &&
+                !TypeRefPrinter.IsOpaqueTypeText(printed) &&
+                AliasEmit.RequiresFacadeInternalQualification(printed) &&
+                IsSameNamespace(c, currentNamespace))
+            {
+                printed = $"Internal.{printed}";
+            }
+
             // Relax value semantics constraints for primitives
             if (AliasEmit.IsValueSemanticsConstraint(c, facadeParamName))
             {
@@ -280,11 +291,12 @@ public static class MultiArityAliasEmit
             }
 
             return printed;
-        }).ToList();
+        })
+        .Where(c => c != "any" && !TypeRefPrinter.IsOpaqueTypeText(c))
+        .ToList();
 
-        // Format as " extends Constraint" for use in type parameter declarations
-        var constraintUnion = string.Join(" & ", constraintStrings);
-        return $" extends {constraintUnion}";
+        var constraintText = AliasEmit.BuildConstraintText(gp, constraintStrings);
+        return $" extends {AliasEmit.WrapConstraintIfNeeded(constraintText)} | __";
     }
 
     /// <summary>
@@ -308,9 +320,6 @@ public static class MultiArityAliasEmit
         for (int i = 0; i < arity && i < genericParams.Length; i++)
         {
             var gp = genericParams[i];
-            if (gp.Constraints.Length == 0)
-                continue;
-
             var position = i + 1; // 1-based
             var facadeParamName = $"T{position}";
 
@@ -328,9 +337,11 @@ public static class MultiArityAliasEmit
                 // FACADE FIX: Same-namespace constraint types need Internal. prefix
                 // Re-exported types in facade aren't locally available, but Internal.* is
                 // Only prefix if constraint type is from same namespace
-                // Skip built-in TS types (unknown, never, any)
+                // Skip built-in TS types (never, any) and explicit opaque placeholders
                 if (currentNamespace != null &&
-                    printed != "unknown" && printed != "never" && printed != "any" &&
+                    printed != "never" && printed != "any" &&
+                    !TypeRefPrinter.IsOpaqueTypeText(printed) &&
+                    AliasEmit.RequiresFacadeInternalQualification(printed) &&
                     IsSameNamespace(c, currentNamespace))
                 {
                     printed = $"Internal.{printed}";
@@ -343,10 +354,12 @@ public static class MultiArityAliasEmit
                 }
 
                 return printed;
-            }).ToList();
+            })
+            .Where(c => c != "any" && !TypeRefPrinter.IsOpaqueTypeText(c))
+            .ToList();
 
-            var constraint = string.Join(" & ", constraintStrings);
-            guards.Add($"[{facadeParamName}] extends [{constraint}]");
+            var constraintText = AliasEmit.BuildConstraintText(gp, constraintStrings);
+            guards.Add($"[{facadeParamName}] extends [{constraintText}]");
         }
 
         if (guards.Count == 0)
@@ -371,8 +384,8 @@ public static class MultiArityAliasEmit
         if (typeRef is not Model.Types.NamedTypeReference named)
             return false;
 
-        // Skip TypeScript built-in types (unknown, never, any)
-        if (named.FullName == "unknown" || named.FullName == "never" || named.FullName == "any")
+        // Skip TypeScript built-in types (never, any)
+        if (named.FullName == "never" || named.FullName == "any")
             return false;
 
         // Extract namespace from CLR full name

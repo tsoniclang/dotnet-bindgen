@@ -118,7 +118,7 @@ else
     echo -e "${RED}❌ FAILED: Surface manifest verification failed${NC}"
     echo ""
     echo "The emitted TypeScript API surface has changed."
-    echo "Run: bash scripts/test/test-surface-manifest.sh"
+    echo "Run: bash test/scripts/test-surface-manifest.sh"
     echo ""
     echo "For details and remediation steps."
     exit 1

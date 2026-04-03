@@ -95,7 +95,7 @@ internal static class Types
         // Walk all types and their signatures
         foreach (var ns in graph.Namespaces)
         {
-            foreach (var type in ns.Types)
+            foreach (var type in ns.Types.Where(TypeEmissionAccessibility.IsEmittable))
             {
                 var typeId = $"{ns.Name}.{type.ClrFullName}";
 
@@ -233,7 +233,7 @@ internal static class Types
         // Check all type references in the graph
         foreach (var ns in graph.Namespaces)
         {
-            foreach (var type in ns.Types)
+            foreach (var type in ns.Types.Where(TypeEmissionAccessibility.IsEmittable))
             {
                 var typeId = $"{type.Namespace}.{type.ClrName}";
 
@@ -367,7 +367,7 @@ internal static class Types
         // Check all type references in public API surface
         foreach (var ns in graph.Namespaces)
         {
-            foreach (var type in ns.Types.Where(t => t.Accessibility == Accessibility.Public))
+            foreach (var type in ns.Types.Where(TypeEmissionAccessibility.IsEmittable))
             {
                 var typeId = $"{type.Namespace}.{type.ClrName}";
 
@@ -520,7 +520,7 @@ internal static class Types
         {
             var resolver = new TypeNameResolver(ctx, graph);
 
-            foreach (var type in ns.Types)
+            foreach (var type in ns.Types.Where(TypeEmissionAccessibility.IsEmittable))
             {
                 var typeId = $"{ns.Name}.{type.ClrName}";
 
@@ -593,7 +593,7 @@ internal static class Types
         // Walk all types and check their arity is consistent
         foreach (var ns in graph.Namespaces)
         {
-            foreach (var type in ns.Types)
+            foreach (var type in ns.Types.Where(TypeEmissionAccessibility.IsEmittable))
             {
                 checkedTypes++;
 
