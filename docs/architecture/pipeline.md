@@ -1,86 +1,40 @@
-# Pipeline Flow
+# Pipeline
 
-The tsbindgen pipeline transforms .NET assemblies through six distinct phases.
+## Phases
 
-## Phase 1: Load
+### Load
 
-**File:** `Load/AssemblyLoader.cs`
+Read CLR assemblies and reflect public type information.
 
-Loads .NET assemblies using `MetadataLoadContext` and reflects all type information.
+### Model
 
-**Input:** Assembly file paths
-**Output:** Initial `SymbolGraph` with raw CLR data
+Build type indices and assemble the symbol graph.
 
-**Operations:**
-1. Create `MetadataLoadContext` for isolated assembly inspection
-2. Load each assembly from disk
-3. Reflect all public types and their members
-4. Build `TypeSymbol` for each type
-5. Create `NamespaceSymbol` groupings
+### Shape
 
-## Phase 2: Model (Index Building)
+Transform CLR-oriented symbols into a TypeScript-friendly intermediate form.
 
-**File:** `Builder.cs` (inline)
+### Normalize
 
-Builds indices for fast type lookup and applies library mode filtering.
+Reserve and stabilize TypeScript identifiers.
 
-**Operations:**
-1. Build `TypeIndex` dictionary (CLR full name to TypeSymbol)
-2. Apply `--lib` filtering (exclude types from library package)
-3. Resolve forward references between types
+### Plan
 
-## Phase 3: Shape (23 Transformation Passes)
+Plan imports, exports, aliases, and output package structure.
 
-**File:** `Shape/*.cs`
+### Phasegate
 
-Transforms the symbol graph for TypeScript emission. See [shape.md](shape.md) for all passes.
+Validate invariants before writing files.
 
-## Phase 3.5: Normalize
+### Emit
 
-**File:** `Normalize/NameReservation.cs`
+Write declaration files, facades, and binding metadata.
 
-Reserves all TypeScript identifiers and resolves conflicts. See [normalize.md](normalize.md).
+## Why these phases exist
 
-## Phase 4: Plan
+The pipeline is intentionally split so tsbindgen can:
 
-**File:** `Plan/*.cs`
-
-Plans all import/export statements and validates invariants. See [plan.md](plan.md).
-
-## Phase 5: Emit
-
-**File:** `Emit/*.cs`
-
-Generates TypeScript declaration files. See [emit.md](emit.md).
-
-## Pipeline Orchestration
-
-**File:** `Builder.cs`
-
-```csharp
-public static void Build(BuildContext ctx, GenerateOptions options)
-{
-    // Phase 1: Load
-    var graph = AssemblyLoader.Load(ctx, options.Assemblies);
-
-    // Phase 2: Model
-    graph = BuildIndices(graph);
-
-    // Phase 3: Shape (23 passes)
-    graph = StructuralConformance.Analyze(ctx, graph);
-    graph = ViewPlanner.Plan(ctx, graph);
-    // ... more passes ...
-
-    // Phase 3.5: Normalize
-    NameReservation.ReserveAll(ctx, graph);
-
-    // Phase 4: Plan
-    var emissionPlan = EmissionPlanner.Plan(ctx, graph, ...);
-    PhaseGate.Validate(ctx, emissionPlan);
-
-    // Phase 5: Emit
-    InternalIndexEmitter.Emit(ctx, emissionPlan, options.OutDir);
-    FacadeEmitter.Emit(ctx, emissionPlan, options.OutDir);
-    FamilyIndexEmitter.Emit(ctx, families, options.OutDir);  // families.json
-}
-```
+- preserve CLR identity
+- still emit readable TypeScript
+- catch naming and ownership conflicts before file output
+- keep large binding waves deterministic

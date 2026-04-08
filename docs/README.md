@@ -1,83 +1,55 @@
-# tsbindgen Documentation
+---
+title: tsbindgen
+---
 
-tsbindgen generates TypeScript declaration files from .NET assemblies.
+# tsbindgen
 
-## Table of Contents
+`tsbindgen` generates TypeScript declaration packages from .NET assemblies and
+frameworks.
 
-### Getting Started
-1. [Getting Started](getting-started.md) - Installation and first generation
-2. [CLI Reference](cli.md) - Commands and options
+## Current role in the stack
 
-### Type Generation
-3. [Type Mappings](type-mappings.md) - How CLR types map to TypeScript
-4. [Naming & Identifiers](naming.md) - CLR-faithful names and TS-safe identifiers
-5. [Library Mode](library-mode.md) - Generating for custom assemblies
+`tsbindgen` is the generator for CLR binding packages. It is **not** the
+source-of-truth for first-party authored packages like `@tsonic/js`,
+`@tsonic/nodejs`, or `@tsonic/express`.
 
-### Validation
-6. [Testing](testing.md) - Validation and regression tests
-7. [Troubleshooting](troubleshooting.md) - Common issues
+## Pages
 
-## Quick Links
+- [Getting Started](getting-started.md)
+- [CLI](cli.md)
+- [What tsbindgen Generates](what-tsbindgen-generates.md)
+- [Type Mappings](type-mappings.md)
+- [Naming](naming.md)
+- [Library Mode](library-mode.md)
+- [Testing](testing.md)
+- [Troubleshooting](troubleshooting.md)
+- [Architecture](architecture/)
+- [Workflow and Publish Discipline](workflow.md)
 
-- [Architecture Documentation](architecture/README.md) - For contributors
-- [GitHub Repository](https://github.com/tsoniclang/tsbindgen)
+## Output families
 
-## Overview
+The current generated package families include:
 
-### What is tsbindgen?
+- `@tsonic/dotnet`
+- `@tsonic/aspnetcore`
+- `@tsonic/microsoft-extensions`
+- `@tsonic/efcore`
+- `@tsonic/efcore-sqlite`
+- `@tsonic/efcore-sqlserver`
+- `@tsonic/efcore-npgsql`
 
-tsbindgen generates TypeScript declaration files (.d.ts) from .NET assemblies:
+## What makes it important
 
-```
-.NET Assembly (DLL) -> Reflection -> TypeScript Declarations (.d.ts)
-```
+`tsbindgen` sits at the boundary between CLR ecosystems and Tsonic authoring.
+It is responsible for:
 
-### Why tsbindgen?
+- reflecting CLR assemblies and frameworks
+- generating TypeScript declarations and binding metadata
+- maintaining publishable package structure for binding repos
+- participating in release-wave preflight and publish discipline
 
-- **Complete BCL Coverage**: All 130 namespaces, 4,296 types, 50,675+ members
-- **Type Safety**: Branded primitives, generic constraints preserved
-- **IDE Support**: Full IntelliSense for .NET types in TypeScript
-- **CLR-faithful names**: No casing transforms; names match the CLR surface
+## Why this section exists
 
-### Output Example
-
-```typescript
-// System.Collections.Generic
-export interface List_1<T> {
-    readonly Count: int;
-    Add(item: T): void;
-    Remove(item: T): boolean;
-    Clear(): void;
-}
-
-export declare const List_1: {
-    new <T>(): List_1<T>;
-    new <T>(capacity: int): List_1<T>;
-};
-```
-
-## Prerequisites
-
-- **.NET 10 SDK**: For assembly reflection
-- **Node.js 18+**: For validation scripts
-
-Verify installation:
-
-```bash
-dotnet --version  # 10.0.x
-node --version    # v18.0.0 or higher
-```
-
-## Quick Start
-
-```bash
-# Clone and build
-git clone https://github.com/tsoniclang/tsbindgen
-cd tsbindgen
-dotnet build src/tsbindgen/tsbindgen.csproj
-
-# Generate BCL declarations
-dotnet run --project src/tsbindgen/tsbindgen.csproj -- \
-  generate -d ~/.dotnet/shared/Microsoft.NETCore.App/10.0.0 \
-  -o ./output
-```
+The older site blurred authored packages and generated binding packages
+together. That is now a source of confusion. This section keeps the distinction
+explicit.
