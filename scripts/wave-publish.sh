@@ -111,8 +111,8 @@ package_json_for_repo() {
   case "$repo" in
     tsbindgen) echo "$TSONICLANG_ROOT/tsbindgen/package.json" ;;
     tsonic) echo "$TSONICLANG_ROOT/tsonic/packages/cli/package.json" ;;
-    core|dotnet|globals|js|nodejs|express) echo "$TSONICLANG_ROOT/$repo/versions/10/package.json" ;;
-    aspnetcore|microsoft-extensions|efcore|efcore-sqlite|efcore-sqlserver|efcore-npgsql) echo "$TSONICLANG_ROOT/$repo/package.json" ;;
+    core|dotnet|globals|js|nodejs) echo "$TSONICLANG_ROOT/$repo/versions/10/package.json" ;;
+    express|aspnetcore|microsoft-extensions|efcore|efcore-sqlite|efcore-sqlserver|efcore-npgsql) echo "$TSONICLANG_ROOT/$repo/package.json" ;;
     *)
       echo "Error: unknown npm repo '$repo'" >&2
       exit 1
@@ -125,8 +125,8 @@ package_scope_paths_for_repo() {
   case "$repo" in
     tsbindgen) echo "src test npm/tsbindgen package.json" ;;
     tsonic) echo "packages npm/tsonic test package.json" ;;
-    core|dotnet|globals|js|nodejs|express) echo "versions/10" ;;
-    aspnetcore|microsoft-extensions|efcore|efcore-sqlite|efcore-sqlserver|efcore-npgsql) echo "." ;;
+    core|dotnet|globals|js|nodejs) echo "versions/10" ;;
+    express|aspnetcore|microsoft-extensions|efcore|efcore-sqlite|efcore-sqlserver|efcore-npgsql) echo "." ;;
     runtime) echo "Directory.Build.props src/Tsonic.Runtime" ;;
     js-runtime) echo "Directory.Build.props src/Tsonic.JSRuntime" ;;
     nodejs-clr) echo "src/nodejs" ;;
