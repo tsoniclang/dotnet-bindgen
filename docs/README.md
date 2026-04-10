@@ -38,6 +38,55 @@ The current generated package families include:
 - `@tsonic/efcore-sqlserver`
 - `@tsonic/efcore-npgsql`
 
+## How to use generated binding packages
+
+Use generated packages when you need CLR libraries that are not part of the
+ambient surface or first-party authored source packages.
+
+### ASP.NET Core
+
+```bash
+tsonic add framework Microsoft.AspNetCore.App @tsonic/aspnetcore
+tsonic restore
+```
+
+```ts
+import { WebApplication } from "@tsonic/aspnetcore/Microsoft.AspNetCore.Builder.js";
+import type { ExtensionMethods } from "@tsonic/aspnetcore/Microsoft.AspNetCore.Builder.js";
+
+export function main(): void {
+  const builder = WebApplication.CreateBuilder();
+  const app = builder.Build() as ExtensionMethods<WebApplication>;
+  app.MapGet("/", () => "Hello");
+  app.Run("http://localhost:8080");
+}
+```
+
+### EF Core
+
+```bash
+tsonic add nuget Microsoft.EntityFrameworkCore.Sqlite 10.0.0
+tsonic add npm @tsonic/efcore
+tsonic add npm @tsonic/efcore-sqlite
+tsonic restore
+```
+
+```ts
+import { DbContext } from "@tsonic/efcore/Microsoft.EntityFrameworkCore.js";
+import { SqliteDbContextOptionsBuilderExtensions } from "@tsonic/efcore-sqlite/Microsoft.EntityFrameworkCore.js";
+
+export class AppDbContext extends DbContext {
+}
+
+export function configure(builder: any): void {
+  SqliteDbContextOptionsBuilderExtensions.UseSqlite(builder, "Data Source=app.db");
+}
+```
+
+These repos are generated binding packages, not first-party authored source
+packages, so the docs focus on installation, import shape, and usage patterns
+rather than package-by-package API narration.
+
 ## What makes it important
 
 `tsbindgen` sits at the boundary between CLR ecosystems and Tsonic authoring.

@@ -66,6 +66,41 @@ concepts such as:
 - generic constraints
 - namespace/module ownership
 
+## How generated repos are meant to be consumed
+
+Generated repos such as `aspnetcore` and `efcore*` are not documented like
+first-party source packages. The important user-facing questions are:
+
+- which CLR dependency to add
+- which npm binding package to install
+- which namespace module to import
+- what a minimal working example looks like
+
+### Example: ASP.NET Core
+
+```bash
+tsonic add framework Microsoft.AspNetCore.App @tsonic/aspnetcore
+tsonic restore
+```
+
+```ts
+import { WebApplication } from "@tsonic/aspnetcore/Microsoft.AspNetCore.Builder.js";
+```
+
+### Example: EF Core + SQLite
+
+```bash
+tsonic add nuget Microsoft.EntityFrameworkCore.Sqlite 10.0.0
+tsonic add npm @tsonic/efcore
+tsonic add npm @tsonic/efcore-sqlite
+tsonic restore
+```
+
+```ts
+import { DbContext } from "@tsonic/efcore/Microsoft.EntityFrameworkCore.js";
+import { SqliteDbContextOptionsBuilderExtensions } from "@tsonic/efcore-sqlite/Microsoft.EntityFrameworkCore.js";
+```
+
 ## What it does not generate
 
 The current stack does **not** treat `tsbindgen` as the source generator for:

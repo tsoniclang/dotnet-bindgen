@@ -163,7 +163,7 @@ public sealed record EmissionPolicy
 
     /// <summary>
     /// Set of fully-qualified CLR type names whose static members should be flattened.
-    /// Format: "Namespace.ClassName" (e.g., "Tsonic.JSRuntime.Globals")
+    /// Format: "Namespace.ClassName" (e.g., "Acme.ExternalRuntime.Globals")
     /// Flattened classes have their static methods emitted as top-level function exports.
     /// Both forms are exported: flattened functions AND the original class.
     /// </summary>
