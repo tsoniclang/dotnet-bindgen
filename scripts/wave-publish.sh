@@ -24,9 +24,6 @@ NPM_WAVE_REPOS=(
 
 NUGET_WAVE_REPOS=(
   "runtime"
-  "js-runtime"
-  "nodejs-clr"
-  "express-clr"
 )
 
 WAVE_REPOS=(
@@ -128,9 +125,6 @@ package_scope_paths_for_repo() {
     core|dotnet|globals|js|nodejs) echo "versions/10" ;;
     express|aspnetcore|microsoft-extensions|efcore|efcore-sqlite|efcore-sqlserver|efcore-npgsql) echo "." ;;
     runtime) echo "Directory.Build.props src/Tsonic.Runtime" ;;
-    js-runtime) echo "Directory.Build.props src/Tsonic.JSRuntime" ;;
-    nodejs-clr) echo "src/nodejs" ;;
-    express-clr) echo "src/express" ;;
     *)
       echo "Error: unknown repo '$repo'" >&2
       exit 1
@@ -142,9 +136,6 @@ nuget_project_for_repo() {
   local repo="$1"
   case "$repo" in
     runtime) echo "src/Tsonic.Runtime/Tsonic.Runtime.csproj" ;;
-    js-runtime) echo "src/Tsonic.JSRuntime/Tsonic.JSRuntime.csproj" ;;
-    nodejs-clr) echo "src/nodejs/nodejs.csproj" ;;
-    express-clr) echo "src/express/express.csproj" ;;
     *)
       echo "Error: unknown NuGet repo '$repo'" >&2
       exit 1
@@ -155,9 +146,7 @@ nuget_project_for_repo() {
 xml_version_file_for_repo() {
   local repo="$1"
   case "$repo" in
-    runtime|js-runtime) echo "Directory.Build.props" ;;
-    nodejs-clr) echo "src/nodejs/nodejs.csproj" ;;
-    express-clr) echo "src/express/express.csproj" ;;
+    runtime) echo "Directory.Build.props" ;;
     *)
       echo "Error: unknown NuGet repo '$repo'" >&2
       exit 1
@@ -555,18 +544,6 @@ preflight_repo() {
       echo ">>> preflight $repo: dotnet test"
       (cd "$path" && dotnet test)
       ;;
-    js-runtime)
-      echo ">>> preflight $repo: dotnet test"
-      (cd "$path" && dotnet test)
-      ;;
-    nodejs-clr)
-      echo ">>> preflight $repo: npm run verify:api && dotnet test -c Release"
-      (cd "$path" && npm run verify:api && dotnet test -c Release)
-      ;;
-    express-clr)
-      echo ">>> preflight $repo: dotnet test tests/express.Tests/express.Tests.csproj -c Release"
-      (cd "$path" && dotnet test tests/express.Tests/express.Tests.csproj -c Release)
-      ;;
     tsbindgen)
       echo ">>> preflight $repo: bash test/scripts/run-all.sh"
       (cd "$path" && bash test/scripts/run-all.sh)
@@ -627,9 +604,6 @@ publish_nuget_wave() {
   echo "=== Publish NuGet wave ==="
   local ordered_nuget=(
     "runtime"
-    "js-runtime"
-    "nodejs-clr"
-    "express-clr"
   )
   local repo
   for repo in "${ordered_nuget[@]}"; do

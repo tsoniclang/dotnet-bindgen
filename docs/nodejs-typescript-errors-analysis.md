@@ -161,7 +161,7 @@ nodejs/internal/index.d.ts(2115,36): error TS1016: A required parameter cannot f
 In C#, the `params` keyword allows variadic arguments:
 
 ```csharp
-// nodejs-clr/src/nodejs/console/console.cs (line 24)
+// example console implementation
 public static void assert(bool value, string? message = null, params object[] optionalParams)
 {
     // Can be called as:
@@ -452,4 +452,4 @@ This is tracked as a known limitation and is NOT caused by the library mode chan
 - `tsbindgen/src/tsbindgen/Emit/*.cs` - Type/method emission
 - `nodejs/nodejs/internal/index.d.ts` - Generated output with errors
 - `dotnet/System.d.ts` - Facade exports
-- `nodejs-clr/src/nodejs/console/console.cs` - C# source with params
+- example console implementation - C# source with params

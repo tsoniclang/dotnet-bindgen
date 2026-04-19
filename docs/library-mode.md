@@ -1,163 +1,22 @@
 # Library Mode
 
-Library mode generates declarations for your assembly without duplicating types from existing packages.
+Library mode is for generating bindings for custom CLR assemblies rather than
+the built-in first-party binding repos.
 
-## Use Case
+## Use cases
 
-When building a TypeScript package with .NET bindings:
-- BCL types come from `@tsonic/dotnet` (published package)
-- Runtime primitives come from `@tsonic/core` (installed as a dependency; `@tsonic/dotnet` imports these types)
-- Your types are generated fresh with references to these packages
+- internal company assemblies
+- local experimentation
+- custom libraries that should participate in Tsonic interop
 
-## Workflow
+## Why it exists
 
-### Step 1: Have BCL Types
+Library mode lets your generated package import shared CLR types from existing
+packages instead of re-owning the entire BCL surface.
 
-Either generate BCL or use the published package:
+That is how large generated ecosystems stay composable.
 
-```bash
-# Option A: Generate BCL yourself
-npx tsbindgen generate -d $DOTNET_RUNTIME -o ./bcl-types
+## Typical shape
 
-# Option B: Use published package
-npm install @tsonic/dotnet
-# Types are in node_modules/@tsonic/dotnet
-```
-
-### Step 2: Generate Your Library
-
-```bash
-npx tsbindgen generate \
-  -a ./MyLibrary.dll \
-  -d $DOTNET_RUNTIME \
-  -o ./my-lib-types \
-  --lib ./bcl-types
-```
-
-## What --lib Does
-
-1. **Skips library types** - Types from assemblies in `--lib` packages are not regenerated
-2. **Generates imports** - Cross-references become import statements to the library package
-3. **Validates references** - Ensures all referenced types exist in one of the `--lib` packages
-4. **Merges contracts** - Multiple `--lib` options combine their type registries
-
-## Multiple Library References
-
-You can specify `--lib` multiple times to reference several packages:
-
-```bash
-npx tsbindgen generate \
-  -a ./MyLibrary.dll \
-  -d $DOTNET_RUNTIME \
-  -o ./my-lib-types \
-  --lib ./node_modules/@tsonic/dotnet \
-  --lib ./node_modules/@tsonic/microsoft-extensions
-```
-
-When a type is referenced, tsbindgen checks each library in order and imports from the first one that provides it. This allows layered package structures:
-
-- `@tsonic/dotnet` - .NET BCL types
-- `@tsonic/microsoft-extensions` - Additional shared framework assemblies (e.g., DI/Logging/Config)
-- Your package - Your types (references both)
-
-## Output Structure
-
-Without `--lib`:
-```
-output/
-+-- System.d.ts
-+-- System.js
-+-- System/
-+-- System.Collections.Generic.d.ts
-+-- System.Collections.Generic.js
-+-- System.Collections.Generic/
-+-- MyNamespace.d.ts
-+-- MyNamespace.js
-+-- MyNamespace/
-+-- ... (all emitted namespaces)
-```
-
-With `--lib ./bcl-types`:
-```
-output/
-+-- MyNamespace.d.ts
-+-- MyNamespace.js
-+-- MyNamespace/
-    +-- bindings.json
-    +-- internal/
-        +-- index.d.ts
-```
-
-BCL references become imports:
-
-```typescript
-// In MyNamespace/internal/index.d.ts
-import type { List_1 } from '@tsonic/dotnet/System.Collections.Generic.js';
-import type { Exception } from '@tsonic/dotnet/System.js';
-
-export interface MyClass$instance {
-    GetItems(): List_1<string>;
-    GetError(): Exception;
-}
-```
-
-## Example: Custom Library
-
-### Your C# Library
-
-```csharp
-// MyLibrary/MyClass.cs
-namespace MyCompany.Utils
-{
-    public class DataProcessor
-    {
-        public List<string> Process(string[] items) { ... }
-        public void HandleError(Exception ex) { ... }
-    }
-}
-```
-
-### Generate
-
-```bash
-npx tsbindgen generate \
-  -a ./MyLibrary.dll \
-  -d $DOTNET_RUNTIME \
-  -o ./my-lib-types \
-  --lib ./node_modules/@tsonic/dotnet
-```
-
-### Output
-
-```typescript
-// my-lib-types/MyCompany.Utils/internal/index.d.ts
-import type { List_1 } from '@tsonic/dotnet/System.Collections.Generic.js';
-import type { Exception } from '@tsonic/dotnet/System.js';
-
-export interface DataProcessor$instance {
-    Process(items: string[]): List_1<string>;
-    HandleError(ex: Exception): void;
-}
-
-export declare const DataProcessor: {
-    new (): DataProcessor;
-};
-
-export type DataProcessor = DataProcessor$instance;
-```
-
-## Validation Errors
-
-Library mode performs strict validation:
-
-| Error | Description | Fix |
-|-------|-------------|-----|
-| `LIB001` | Type not found in library | Ensure BCL is complete |
-| `LIB002` | Member signature mismatch | Regenerate with the same inputs |
-| `LIB003` | Generic constraint mismatch | Check constraint compatibility |
-
-## Best Practices
-
-1. **Keep BCL updated** - Regenerate when .NET version changes
-2. **Pin versions** - Use a specific `@tsonic/dotnet` version in `package.json`
-3. **Regenerate together** - Generate your library and its referenced libs with the same dotnet/toolchain inputs
+Generate core framework/BCL packages first, then generate your own assembly
+package against those existing libraries.
