@@ -7,7 +7,7 @@ title: tsbindgen
 `tsbindgen` generates TypeScript declaration packages from .NET assemblies and
 frameworks.
 
-## Current role in the stack
+## Role in the stack
 
 `tsbindgen` is the generator for CLR binding packages. It is **not** the
 source-of-truth for first-party authored packages like `@tsonic/js`,
@@ -28,7 +28,7 @@ source-of-truth for first-party authored packages like `@tsonic/js`,
 
 ## Output families
 
-The current generated package families include:
+Generated package families include:
 
 - `@tsonic/dotnet`
 - `@tsonic/aspnetcore`
@@ -97,8 +97,8 @@ It is responsible for:
 - maintaining publishable package structure for binding repos
 - participating in release-wave preflight and publish discipline
 
-## Why this section exists
+## Ownership boundary
 
-The older site blurred authored packages and generated binding packages
-together. That is now a source of confusion. This section keeps the distinction
-explicit.
+Authored first-party source packages and generated CLR binding packages have
+different owners, inputs, package metadata, and validation gates. This section
+keeps that distinction explicit.

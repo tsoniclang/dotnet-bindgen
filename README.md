@@ -42,12 +42,14 @@ dotnet build src/tsbindgen/tsbindgen.csproj
 ### Generate BCL declarations
 
 ```bash
+DOTNET_RUNTIME=$(dirname "$(dotnet --list-runtimes | awk '/Microsoft.NETCore.App 10\\./ { print $3; exit }')")
+
 # Via npm
-npx tsbindgen generate -d ~/.dotnet/shared/Microsoft.NETCore.App/10.0.0 -o ./output
+npx tsbindgen generate -d "$DOTNET_RUNTIME" -o ./output
 
 # Via dotnet (from source)
 dotnet run --project src/tsbindgen/tsbindgen.csproj -- \
-  generate -d ~/.dotnet/shared/Microsoft.NETCore.App/10.0.0 -o ./output
+  generate -d "$DOTNET_RUNTIME" -o ./output
 ```
 
 ### Generate for a custom assembly
@@ -113,6 +115,8 @@ npx tsbindgen generate -a ./MyLibrary.dll -d $DOTNET_RUNTIME -o ./my-lib \
 Machine-readable dependency resolution for one or more seed assemblies. Useful for:
 - Debugging missing dependencies before generation
 - Tooling integrations (e.g. build systems) that need deterministic closure resolution
+- Source builds and tests that should resolve the installed .NET runtime without
+  assuming a fixed install directory
 
 ```bash
 # Standard SDK/runtime installs usually work with no extra ref dirs
@@ -123,6 +127,16 @@ npx tsbindgen resolve-closure \
   -a ./MyLibrary.dll \
   --ref-dir ./libs
 ```
+
+## .NET runtime discovery
+
+Repo-local test scripts discover the installed `Microsoft.NETCore.App` runtime
+through `dotnet --list-runtimes`. Set `DOTNET_RUNTIME` to override the runtime
+assembly directory explicitly.
+
+Surface-manifest validation is tied to the runtime assembly version. If the
+runtime version and baseline manifest do not match, the validator reports that
+version mismatch directly.
 
 ### Examples
 

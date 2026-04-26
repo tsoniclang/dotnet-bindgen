@@ -33,6 +33,13 @@ Or via npm:
 npx tsbindgen generate -d /path/to/assemblies -o ./output
 ```
 
+For .NET runtime assemblies, derive the runtime path from the installed SDK:
+
+```bash
+DOTNET_RUNTIME=$(dirname "$(dotnet --list-runtimes | awk '/Microsoft.NETCore.App 10\\./ { print $3; exit }')")
+npx tsbindgen generate -d "$DOTNET_RUNTIME" -o ./output
+```
+
 ## Typical output shape
 
 Generated packages normally include:

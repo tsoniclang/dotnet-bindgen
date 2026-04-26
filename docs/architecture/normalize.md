@@ -66,7 +66,8 @@ When a name is already taken in a scope, numeric suffixes are added:
 
 ## Naming Style
 
-tsbindgen emits **CLR-faithful names**. The renamer’s style transforms are identity transforms (no casing changes), and there is no `--naming` option.
+tsbindgen emits **CLR-faithful names**. The renamer’s style transforms are
+identity transforms, and there is no `--naming` option.
 
 ## Reserved Word Handling
 

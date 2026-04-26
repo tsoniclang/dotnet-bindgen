@@ -135,7 +135,8 @@ public static (string Sanitized, bool WasSanitized) Sanitize(string name)
 
 ## Style Transforms
 
-tsbindgen emits CLR-faithful names. Member style transforms are identity transforms (no casing changes).
+tsbindgen emits CLR-faithful names. Member style transforms are identity
+transforms; the generator does not rewrite casing.
 
 ```csharp
 Renamer.AdoptMemberStyleTransform(name => name);

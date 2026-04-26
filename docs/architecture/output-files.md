@@ -111,7 +111,8 @@ The `parameterModifiers` vector tracks C# `ref`, `out`, and `in` parameter modif
 - `"out"` - By-reference, assigned by method
 - `"in"` - By-reference, read-only
 
-This metadata is required by the Tsonic compiler for correct C# interop since TypeScript has no concept of by-reference parameters.
+This metadata is required by the Tsonic compiler for correct C# interop because
+TypeScript has no concept of by-reference parameters.
 
 ### families.json
 

@@ -1,6 +1,6 @@
 # Architecture
 
-`tsbindgen` has one job in the current stack: reflect CLR inputs into publishable
+`tsbindgen` has one job in the stack: reflect CLR inputs into publishable
 TypeScript binding packages.
 
 Use this section together with:
