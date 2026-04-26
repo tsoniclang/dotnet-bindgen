@@ -10,14 +10,14 @@ title: Workflow
 
 1. regenerate the affected binding repos
 2. run the relevant repo-local checks
-3. rerun compiler gates when call surfaces or bindings metadata changed
-4. rerun downstream applications when the change can affect real programs
+3. rerun compiler gates for affected call surfaces or bindings metadata
+4. rerun downstream applications for affected real programs
 5. check version drift
 6. publish the coherent wave
 
 ## Why the workflow is strict
 
-A generated binding change can break:
+Generated binding work can break:
 
 - overload selection
 - nullable and generic projection
@@ -31,18 +31,18 @@ It can also fail only after:
 - publish-time version checks
 - cross-package import ownership checks
 
-That is why the stack now treats regen and publish as part of a verified wave.
+That is why regen and publish are part of a verified wave.
 
 ## Repo-local scripts matter
 
 In the generated binding repos, prefer the repo-local scripts over ad hoc manual
-publishing. In the current stack that usually means:
+publishing. The stack uses:
 
 - repo-local generation scripts for each binding family
-- `tsbindgen` test suites for generator changes
+- `tsbindgen` test suites for generator work
 - `tsbindgen/scripts/wave-publish.sh` for release-wave preflight and publish
 
-Those scripts enforce the current release rules:
+Those scripts enforce the release rules:
 
 - clean `main`
 - latest `origin/main`

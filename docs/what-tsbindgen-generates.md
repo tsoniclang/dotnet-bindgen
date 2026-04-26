@@ -103,7 +103,7 @@ import { SqliteDbContextOptionsBuilderExtensions } from "@tsonic/efcore-sqlite/M
 
 ## What it does not generate
 
-The current stack does **not** treat `tsbindgen` as the source generator for:
+The stack does **not** treat `tsbindgen` as the source generator for:
 
 - `@tsonic/js`
 - `@tsonic/nodejs`

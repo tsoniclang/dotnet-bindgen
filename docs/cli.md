@@ -40,6 +40,19 @@ npx tsbindgen resolve-closure -a ./MyLibrary.dll
 
 Use this to inspect the resolved assembly closure without generating output.
 
+## Runtime discovery
+
+The CLI works with any installed .NET runtime path. For framework generation,
+use `dotnet --list-runtimes` to locate `Microsoft.NETCore.App`:
+
+```bash
+DOTNET_RUNTIME=$(dirname "$(dotnet --list-runtimes | awk '/Microsoft.NETCore.App 10\\./ { print $3; exit }')")
+npx tsbindgen generate -d "$DOTNET_RUNTIME" -o ./output
+```
+
+Repo-local test scripts perform the same discovery and accept `DOTNET_RUNTIME`
+as an explicit override.
+
 ## When `--lib` matters
 
 Use `--lib` when you are generating a library package that should import
