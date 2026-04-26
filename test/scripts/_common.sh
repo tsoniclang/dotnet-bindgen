@@ -27,18 +27,99 @@ NC='\033[0m' # No Color
 # Runtime Detection
 # ============================================================
 
+sort_dotnet_runtime_records() {
+    awk -F '\t' '
+        {
+            split($1, parts, /[.-]/)
+            key = ""
+            for (i = 1; i <= 8; i++) {
+                n = (parts[i] ~ /^[0-9]+$/) ? parts[i] + 0 : 0
+                key = key sprintf("%010d.", n)
+            }
+            stable = ($1 !~ /-/) ? 1 : 0
+            print key stable "\t" $0
+        }
+    ' | sort | cut -f2-
+}
+
+latest_dotnet_runtime_directory() {
+    local base_path="$1"
+
+    if [ -z "$base_path" ] || [ ! -d "$base_path" ]; then
+        return 1
+    fi
+
+    local runtime_path=""
+    runtime_path=$(
+        for candidate in "$base_path"/*; do
+            if [ -d "$candidate" ]; then
+                printf '%s\t%s\n' "$(basename "$candidate")" "$candidate"
+            fi
+        done | sort_dotnet_runtime_records | tail -n 1 | cut -f2-
+    )
+
+    if [ -n "$runtime_path" ]; then
+        echo "$runtime_path"
+        return 0
+    fi
+
+    return 1
+}
+
 detect_runtime() {
     if [ -n "${DOTNET_RUNTIME:-}" ]; then
         # Use explicit path if set via environment
-        echo "$DOTNET_RUNTIME"
-        return 0
+        if [ -d "$DOTNET_RUNTIME" ]; then
+            echo "$DOTNET_RUNTIME"
+            return 0
+        fi
+
+        echo "ERROR: DOTNET_RUNTIME is set but does not exist: $DOTNET_RUNTIME" >&2
+        return 1
     fi
 
     local runtime_path=""
 
+    if command -v dotnet &> /dev/null; then
+        runtime_path=$(
+            dotnet --list-runtimes 2>/dev/null \
+                | awk '$1 == "Microsoft.NETCore.App" {
+                    path = $3
+                    gsub(/^\[/, "", path)
+                    gsub(/\]$/, "", path)
+                    print $2 "\t" path "/" $2
+                }' \
+                | sort_dotnet_runtime_records \
+                | tail -n 1 \
+                | cut -f2-
+        )
+
+        if [ -n "$runtime_path" ] && [ -d "$runtime_path" ]; then
+            echo "$runtime_path"
+            return 0
+        fi
+
+        local dotnet_bin dotnet_root
+        dotnet_bin="$(command -v dotnet)"
+        if command -v readlink &> /dev/null; then
+            dotnet_bin="$(readlink -f "$dotnet_bin" 2>/dev/null || echo "$dotnet_bin")"
+        fi
+        dotnet_root="$(cd "$(dirname "$dotnet_bin")" && pwd)"
+        if [ -d "$dotnet_root/shared/Microsoft.NETCore.App" ]; then
+            runtime_path=$(latest_dotnet_runtime_directory "$dotnet_root/shared/Microsoft.NETCore.App" || true)
+            if [ -n "$runtime_path" ]; then
+                echo "$runtime_path"
+                return 0
+            fi
+        fi
+    fi
+
     # Check known .NET runtime locations
     local known_paths=(
+        "${DOTNET_ROOT:-}/shared/Microsoft.NETCore.App"
+        "/usr/lib/dotnet/shared/Microsoft.NETCore.App"
         "/usr/share/dotnet/shared/Microsoft.NETCore.App"
+        "/usr/local/lib/dotnet/shared/Microsoft.NETCore.App"
         "/usr/local/share/dotnet/shared/Microsoft.NETCore.App"
         "$HOME/.dotnet/shared/Microsoft.NETCore.App"
     )
@@ -46,7 +127,7 @@ detect_runtime() {
     for base_path in "${known_paths[@]}"; do
         if [ -d "$base_path" ]; then
             # Get the latest version directory
-            runtime_path=$(ls -d "$base_path"/*/ 2>/dev/null | sort -V | tail -1)
+            runtime_path=$(latest_dotnet_runtime_directory "$base_path" || true)
             if [ -n "$runtime_path" ]; then
                 break
             fi
@@ -56,7 +137,7 @@ detect_runtime() {
     if [ -z "$runtime_path" ]; then
         echo "ERROR: Could not auto-detect .NET runtime." >&2
         echo "Set DOTNET_RUNTIME environment variable to your runtime path." >&2
-        echo "Example: export DOTNET_RUNTIME=/usr/share/dotnet/shared/Microsoft.NETCore.App/8.0.0" >&2
+        echo "Run 'dotnet --list-runtimes' and set DOTNET_RUNTIME to the Microsoft.NETCore.App version directory." >&2
         return 1
     fi
 

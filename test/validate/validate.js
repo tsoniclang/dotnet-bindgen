@@ -25,13 +25,84 @@ import { fileURLToPath } from 'url';
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
-// Configuration
-const DOTNET_VERSION = '10.0.0-rc.1.25451.107';
-const DOTNET_HOME = os.homedir() + '/dotnet';
-const DOTNET_RUNTIME_PATH = `${DOTNET_HOME}/shared/Microsoft.NETCore.App/${DOTNET_VERSION}`;
-
 const PROJECT_ROOT = path.join(__dirname, '..', '..');  // Go up two levels: validate/ -> scripts/ -> project root
 const VALIDATION_DIR = path.join(PROJECT_ROOT, '.tests', 'validate');
+
+function latestVersionDirectory(basePath) {
+    if (!basePath || !fs.existsSync(basePath)) {
+        return null;
+    }
+
+    const entries = fs.readdirSync(basePath, { withFileTypes: true })
+        .filter((entry) => entry.isDirectory())
+        .map((entry) => entry.name)
+        .sort((left, right) => left.localeCompare(right, undefined, { numeric: true, sensitivity: 'base' }));
+
+    if (entries.length === 0) {
+        return null;
+    }
+
+    return path.join(basePath, entries[entries.length - 1]);
+}
+
+function detectRuntimeFromDotnetHost() {
+    try {
+        const output = execSync('dotnet --list-runtimes', { encoding: 'utf8' });
+        const candidates = output
+            .split(/\r?\n/)
+            .map((line) => {
+                const match = /^Microsoft\.NETCore\.App\s+(\S+)\s+\[(.+)\]$/.exec(line.trim());
+                if (!match) {
+                    return null;
+                }
+                return {
+                    version: match[1],
+                    runtimePath: path.join(match[2], match[1])
+                };
+            })
+            .filter((candidate) => candidate && fs.existsSync(candidate.runtimePath))
+            .sort((left, right) => left.version.localeCompare(right.version, undefined, { numeric: true, sensitivity: 'base' }));
+
+        return candidates.length > 0 ? candidates[candidates.length - 1].runtimePath : null;
+    } catch {
+        return null;
+    }
+}
+
+function detectDotnetRuntimePath() {
+    if (process.env.DOTNET_RUNTIME) {
+        if (fs.existsSync(process.env.DOTNET_RUNTIME)) {
+            return process.env.DOTNET_RUNTIME;
+        }
+        throw new Error(`DOTNET_RUNTIME is set but does not exist: ${process.env.DOTNET_RUNTIME}`);
+    }
+
+    const fromHost = detectRuntimeFromDotnetHost();
+    if (fromHost) {
+        return fromHost;
+    }
+
+    const basePaths = [
+        process.env.DOTNET_ROOT ? path.join(process.env.DOTNET_ROOT, 'shared', 'Microsoft.NETCore.App') : null,
+        '/usr/lib/dotnet/shared/Microsoft.NETCore.App',
+        '/usr/share/dotnet/shared/Microsoft.NETCore.App',
+        '/usr/local/lib/dotnet/shared/Microsoft.NETCore.App',
+        '/usr/local/share/dotnet/shared/Microsoft.NETCore.App',
+        path.join(os.homedir(), '.dotnet', 'shared', 'Microsoft.NETCore.App'),
+        path.join(os.homedir(), 'dotnet', 'shared', 'Microsoft.NETCore.App')
+    ];
+
+    for (const basePath of basePaths) {
+        const runtimePath = latestVersionDirectory(basePath);
+        if (runtimePath) {
+            return runtimePath;
+        }
+    }
+
+    throw new Error('Could not auto-detect Microsoft.NETCore.App runtime. Set DOTNET_RUNTIME to a runtime version directory.');
+}
+
+const DOTNET_RUNTIME_PATH = detectDotnetRuntimePath();
 
 function log(message) {
     console.log(`[validate] ${message}`);

@@ -14,6 +14,8 @@ echo "Surface Manifest Verification"
 echo "================================================"
 echo ""
 
+init_runtime
+
 # Use provided directory or cached BCL
 if [ -n "${SURFACE_VERIFY_DIR:-}" ]; then
     TEMP_OUTPUT="$SURFACE_VERIFY_DIR"
@@ -23,6 +25,7 @@ else
     echo "Using cached BCL: $TEMP_OUTPUT"
 fi
 
+CURRENT_DOTNET_VERSION=$(basename "$DOTNET_RUNTIME")
 BASELINE_MANIFEST="$PROJECT_ROOT/test/baselines/bcl-surface-manifest.json"
 CURRENT_MANIFEST="$TESTS_DIR/surface-current-manifest.json"
 
@@ -62,15 +65,18 @@ for file in $files; do
     file_count=$((file_count + 1))
 done
 
-# Extract stats from output (look for summary file or count directories)
-namespaces=$(find "$TEMP_OUTPUT" -mindepth 1 -maxdepth 1 -type d | wc -l)
+# Extract comparable namespace count from generated package directories.
+namespaces=$(find "$TEMP_OUTPUT" -mindepth 1 -maxdepth 1 -type d \
+    ! -name "node_modules" \
+    ! -name "__internal" \
+    | wc -l)
 # For types/members, we'd need the actual generation output. Use placeholder if not available.
 types="${SURFACE_TYPES:-0}"
 members="${SURFACE_MEMBERS:-0}"
 
 cat > "$CURRENT_MANIFEST" <<EOF
 {
-  "dotnetVersion": "auto-detected",
+  "dotnetVersion": "$CURRENT_DOTNET_VERSION",
   "capturedAt": "$(date -u +"%Y-%m-%dT%H:%M:%SZ")",
   "generation": {
     "namespaces": $namespaces,
@@ -89,7 +95,23 @@ echo ""
 echo "[2/3] Comparing against baseline..."
 
 # Extract baseline stats
-baseline_namespaces=$(jq -r '.generation.namespaces' "$BASELINE_MANIFEST")
+baseline_dotnet_version=$(jq -r '.dotnetVersion' "$BASELINE_MANIFEST")
+
+if [ "$baseline_dotnet_version" != "$CURRENT_DOTNET_VERSION" ]; then
+    echo -e "${RED}❌ SURFACE BASELINE RUNTIME MISMATCH${NC}"
+    echo ""
+    echo "The committed surface baseline was captured for .NET $baseline_dotnet_version,"
+    echo "but the current BCL output was generated from .NET $CURRENT_DOTNET_VERSION."
+    echo ""
+    echo "If the new runtime version is intentional:"
+    echo "  1. Review generated surface changes carefully"
+    echo "  2. Update baseline: bash test/scripts/capture-baseline.sh"
+    echo "  3. Commit the updated baseline"
+    echo ""
+    echo "If it is not intentional, install/use .NET $baseline_dotnet_version or set DOTNET_RUNTIME."
+    echo ""
+    exit 1
+fi
 
 # Extract file lists
 baseline_files=$(jq -r '.files | keys[]' "$BASELINE_MANIFEST" | sort)
