@@ -252,11 +252,11 @@ fi
 
 echo "=== Publishing @tsonic/tsbindgen@$LOCAL_VERSION ==="
 cd "$ROOT_DIR"
-npm publish --access public
+npm publish --access public --ignore-scripts
 
 echo "=== Publishing tsbindgen@$LOCAL_VERSION ==="
 cd "$WRAPPER_DIR"
-npm publish --access public
+npm publish --access public --ignore-scripts
 
 # ============================================================
 # DONE
