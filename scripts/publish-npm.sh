@@ -3,10 +3,12 @@ set -euo pipefail
 
 # Publish @tsonic/tsbindgen and tsbindgen wrapper to npm
 #
-# Usage: ./scripts/publish-npm.sh [--ignore-branches-ahead]
+# Usage: ./scripts/publish-npm.sh [--ignore-branches-ahead] [--dangerously-skip-tests]
 #
 # Options:
-#   --ignore-branches-ahead  Skip check for local branches ahead of main
+#   --ignore-branches-ahead   Skip check for local branches ahead of main
+#   --dangerously-skip-tests  Skip tests. This is intended only for an explicitly
+#                             authorized release wave.
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 ROOT_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
@@ -14,10 +16,18 @@ WRAPPER_DIR="$ROOT_DIR/npm/tsbindgen"
 
 # Parse arguments
 IGNORE_BRANCHES_AHEAD=false
+DANGEROUSLY_SKIP_TESTS=false
 for arg in "$@"; do
     case $arg in
         --ignore-branches-ahead)
             IGNORE_BRANCHES_AHEAD=true
+            ;;
+        --dangerously-skip-tests)
+            DANGEROUSLY_SKIP_TESTS=true
+            ;;
+        *)
+            echo "Error: unknown argument '$arg'"
+            exit 1
             ;;
     esac
 done
@@ -195,9 +205,13 @@ rm -f "$ROOT_DIR/lib/"*.pdb
 # Remove native exe (if any)
 rm -f "$ROOT_DIR/lib/tsbindgen"
 
-echo "=== Running ALL tests ==="
-"$ROOT_DIR/test/scripts/run-all.sh"
-echo "All tests passed"
+if [ "$DANGEROUSLY_SKIP_TESTS" = true ]; then
+    echo "=== DANGEROUSLY skipping tests (--dangerously-skip-tests) ==="
+else
+    echo "=== Running ALL tests ==="
+    "$ROOT_DIR/test/scripts/run-all.sh"
+    echo "All tests passed"
+fi
 
 # ============================================================
 # VERSION BUMP (if needed)
