@@ -39,6 +39,7 @@ usage() {
 Usage:
   ./scripts/wave-publish.sh --push
   ./scripts/wave-publish.sh --publish
+  ./scripts/wave-publish.sh --publish --dangerously-skip-tests
   ./scripts/wave-publish.sh --pub
   ./scripts/wave-publish.sh pub
 
@@ -59,6 +60,8 @@ Safety in --publish:
   - Skips only when registry version matches and there is no content drift
   - Fails if local content changed at the same published version
   - Fails if local version is behind npm or NuGet
+  - --dangerously-skip-tests skips preflight tests and forwards the same flag
+    to repo publish scripts that support it.
 
 Environment:
   - NUGET_API_KEY is required if any NuGet package in the wave needs publishing.
@@ -73,30 +76,42 @@ if [ "$#" -eq 0 ]; then
   exit 0
 fi
 
-if [ "$#" -ne 1 ]; then
-  echo "Error: expected exactly one argument."
+MODE=""
+DANGEROUSLY_SKIP_TESTS=false
+for arg in "$@"; do
+  case "$arg" in
+    --push)
+      MODE="push"
+      ;;
+    --publish|--pub|pub)
+      MODE="publish"
+      ;;
+    --dangerously-skip-tests)
+      DANGEROUSLY_SKIP_TESTS=true
+      ;;
+    -h|--help)
+      usage
+      exit 0
+      ;;
+    *)
+      echo "Error: unknown argument '$arg'"
+      usage
+      exit 1
+      ;;
+  esac
+done
+
+if [ -z "$MODE" ]; then
+  echo "Error: expected --push or --publish."
   usage
   exit 1
 fi
 
-MODE=""
-case "$1" in
-  --push)
-    MODE="push"
-    ;;
-  --publish|--pub|pub)
-    MODE="publish"
-    ;;
-  -h|--help)
-    usage
-    exit 0
-    ;;
-  *)
-    echo "Error: unknown argument '$1'"
-    usage
-    exit 1
-    ;;
-esac
+if [ "$MODE" = "push" ] && [ "$DANGEROUSLY_SKIP_TESTS" = true ]; then
+  echo "Error: --dangerously-skip-tests only applies to --publish."
+  usage
+  exit 1
+fi
 
 repo_path() {
   local repo="$1"
@@ -417,7 +432,11 @@ run_repo_publish_script() {
   assert_clean_main_latest "$repo"
   if should_publish_package "$repo" "$package_json"; then
     echo ">>> $repo: scripts/publish-npm.sh"
-    (cd "$path" && ./scripts/publish-npm.sh)
+    if [ "$DANGEROUSLY_SKIP_TESTS" = true ]; then
+      (cd "$path" && ./scripts/publish-npm.sh --dangerously-skip-tests)
+    else
+      (cd "$path" && ./scripts/publish-npm.sh)
+    fi
   fi
 }
 
@@ -445,6 +464,19 @@ run_repo_direct_publish() {
   if should_publish_package "$repo" "$package_json"; then
     echo ">>> $repo: npm publish --access public"
     (cd "$path" && npm publish --access public)
+  fi
+}
+
+run_repo_direct_publish_package_dir() {
+  local repo="$1"
+  local package_json="$2"
+  local package_dir
+  package_dir="$(dirname "$package_json")"
+
+  assert_clean_main_latest "$repo"
+  if should_publish_package "$repo" "$package_json"; then
+    echo ">>> $repo: npm publish $package_dir --access public"
+    npm publish "$package_dir" --access public
   fi
 }
 
@@ -570,6 +602,12 @@ preflight_repo() {
 preflight_wave() {
   echo "=== Wave preflight ==="
 
+  if [ "$DANGEROUSLY_SKIP_TESTS" = true ]; then
+    echo "DANGEROUSLY skipping wave preflight tests (--dangerously-skip-tests)."
+    echo ""
+    return
+  fi
+
   for repo in "${NUGET_TO_PUBLISH[@]}"; do
     preflight_repo "$repo"
   done
@@ -642,7 +680,11 @@ publish_npm_wave() {
         run_repo_publish_script "$repo" "$(package_json_for_repo "$repo")"
         ;;
       core|dotnet|globals|js|nodejs|express)
-        run_repo_publish_npm_script "$repo" "$(package_json_for_repo "$repo")" "publish:10"
+        if [ "$DANGEROUSLY_SKIP_TESTS" = true ] && [[ "$repo" =~ ^(js|nodejs|express)$ ]]; then
+          run_repo_direct_publish_package_dir "$repo" "$(package_json_for_repo "$repo")"
+        else
+          run_repo_publish_npm_script "$repo" "$(package_json_for_repo "$repo")" "publish:10"
+        fi
         ;;
       aspnetcore|microsoft-extensions|efcore|efcore-sqlite|efcore-sqlserver|efcore-npgsql)
         run_repo_direct_publish "$repo" "$(package_json_for_repo "$repo")"
