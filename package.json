@@ -1,6 +1,6 @@
 {
   "name": "@tsonic/tsbindgen",
-  "version": "0.7.52",
+  "version": "0.7.53",
   "description": "Generate TypeScript declarations from .NET assemblies",
   "type": "module",
   "bin": {
