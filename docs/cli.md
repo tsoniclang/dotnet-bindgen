@@ -32,6 +32,15 @@ dotnet run --project src/tsbindgen/tsbindgen.csproj -- \
 - `--strict`
 - `--verbose`
 
+## Generated type boundaries
+
+The CLI emits strict TypeScript declarations:
+
+- CLR `System.Object` positions become `unknown`
+- value-type constraints become `NonNullable<unknown>`
+- generic parameters carry explicit `extends ...` constraints
+- output is ESM-only with namespace facades and per-namespace metadata
+
 ## `resolve-closure`
 
 ```bash

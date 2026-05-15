@@ -40,7 +40,8 @@ publishing. The stack uses:
 
 - repo-local generation scripts for each binding family
 - `tsbindgen` test suites for generator work
-- `tsbindgen/scripts/wave-publish.sh` for release-wave preflight and publish
+- `tsbindgen/scripts/wave-publish.sh` for release-wave preflight and publish of
+  npm packages and NuGet runtime packages
 
 Those scripts enforce the release rules:
 
@@ -48,6 +49,8 @@ Those scripts enforce the release rules:
 - latest `origin/main`
 - no same-version silent republish
 - preflight across the whole wave before publishing any package
+- content-drift checks since the last version-bump commit
+- NuGet runtime publishing before npm packages that depend on runtime behavior
 
 ## Relationship to first-party source packages
 
@@ -64,3 +67,16 @@ If you are debugging:
 - a CLR namespace import problem -> start in `tsbindgen` or the generated repo
 - a first-party authored package issue -> start in `js`, `nodejs`, or `express`
 - a mixed wave failure -> verify the generated packages and downstreams together
+
+## Wave publish scope
+
+The release wave includes:
+
+- npm packages: `tsbindgen`, `tsonic`, `core`, `dotnet`, `globals`, `js`,
+  `nodejs`, `express`, `aspnetcore`, `microsoft-extensions`, `efcore`,
+  `efcore-sqlite`, `efcore-sqlserver`, and `efcore-npgsql`
+- NuGet packages: `runtime`
+
+`--push` pushes non-main wave branches and prints PR URLs. `--publish` requires
+clean, latest `main` in every wave repo and validates the entire wave before any
+registry write.
