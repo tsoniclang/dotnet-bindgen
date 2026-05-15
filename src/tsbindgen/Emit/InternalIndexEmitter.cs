@@ -1018,7 +1018,7 @@ public static class InternalIndexEmitter
         // IComparable.CompareTo
         if (numericInterfaces.Contains("IComparable"))
         {
-            sb.AppendLine($"    CompareTo(obj: JsValue): int;");
+            sb.AppendLine($"    CompareTo(obj: unknown): int;");
         }
 
         // INumberBase<TSelf>, INumber<TSelf>, IBinaryInteger<TSelf>, IFloatingPoint<TSelf>, etc.
@@ -1286,7 +1286,7 @@ public static class InternalIndexEmitter
         //
         // For generic Task<TResult>/ValueTask<TResult>, we include:
         // - awaited (TResult): so Awaited<Task<TResult>> infers TResult
-        // - JsValue: a broad overload used by various TS inference paths.
+        // - unknown: a broad overload used by various TS inference paths.
         //
         // For Task<TResult> specifically, we ALSO include an `TResult | void`
         // compatibility overload so Task<TResult> remains assignable to non-generic
@@ -1298,12 +1298,12 @@ public static class InternalIndexEmitter
         //
         // IMPORTANT: We do NOT add a raw `void` overload for generic forms, because it causes
         // TS's Awaited<> helper to infer `never` (contravariant intersection of overload
-        // parameter types like TResult & void & JsValue). The `TResult | void`
+        // parameter types like TResult & void & unknown). The `TResult | void`
         // compatibility overload keeps the intersection anchored on TResult.
         //
         // For non-generic Task/ValueTask, we include:
         // - void (Awaited<Task> is void)
-        // - JsValue (broad overload)
+        // - unknown (broad overload)
         var isTask =
             type.ClrFullName == "System.Threading.Tasks.Task" ||
             type.ClrFullName.StartsWith("System.Threading.Tasks.Task`", StringComparison.Ordinal) ||
@@ -1334,14 +1334,14 @@ public static class InternalIndexEmitter
             sb.Append("onfulfilled?: ((value: ");
             sb.Append(valueType);
             sb.Append(") => TResult1 | PromiseLike<TResult1>) | undefined | null, ");
-            sb.Append("onrejected?: ((reason: JsValue) => TResult2 | PromiseLike<TResult2>) | undefined | null");
+            sb.Append("onrejected?: ((reason: unknown) => TResult2 | PromiseLike<TResult2>) | undefined | null");
             sb.AppendLine("): PromiseLike<TResult1 | TResult2>;");
         }
 
         if (type.GenericParameters.Length == 1)
         {
             EmitThenOverload(awaitedType, awaitedType);
-            EmitThenOverload("JsValue", "JsValue");
+            EmitThenOverload("unknown", "unknown");
             if (isTask)
             {
                 EmitThenOverload($"{awaitedType} | void", awaitedType);
@@ -1350,7 +1350,7 @@ public static class InternalIndexEmitter
         else
         {
             EmitThenOverload("void", "void");
-            EmitThenOverload("JsValue", "JsValue");
+            EmitThenOverload("unknown", "unknown");
         }
 
         sb.Append("}");

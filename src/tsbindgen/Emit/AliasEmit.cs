@@ -176,7 +176,7 @@ internal static class AliasEmit
         var special = gp.SpecialConstraints;
 
         if ((special & GenericParameterConstraints.ValueType) != 0)
-            return "NonNullable<JsValue>";
+            return "NonNullable<unknown>";
 
         if ((special & GenericParameterConstraints.ReferenceType) != 0)
         {
@@ -186,9 +186,9 @@ internal static class AliasEmit
         }
 
         if ((special & GenericParameterConstraints.NotNullable) != 0)
-            return "NonNullable<JsValue>";
+            return "NonNullable<unknown>";
 
-        return "JsValue";
+        return "unknown";
     }
 
     internal static string BuildConstraintText(
@@ -239,9 +239,15 @@ internal static class AliasEmit
         if (printedConstraint.StartsWith("__OpaqueClrType<", StringComparison.Ordinal))
             return false;
 
-        if (printedConstraint.StartsWith("ptr<", StringComparison.Ordinal) ||
+        if (printedConstraint == "unknown" ||
+            printedConstraint == "object" ||
+            printedConstraint == "Function" ||
+            printedConstraint == "void" ||
+            printedConstraint == "never" ||
+            printedConstraint == "null" ||
+            printedConstraint == "undefined" ||
+            printedConstraint.StartsWith("ptr<", StringComparison.Ordinal) ||
             printedConstraint.StartsWith("fnptr<", StringComparison.Ordinal) ||
-            printedConstraint.StartsWith("JsValue", StringComparison.Ordinal) ||
             printedConstraint.StartsWith("NonNullable<", StringComparison.Ordinal))
         {
             return false;

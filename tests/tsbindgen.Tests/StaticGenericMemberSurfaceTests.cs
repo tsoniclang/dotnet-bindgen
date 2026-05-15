@@ -42,11 +42,11 @@ public sealed class StaticGenericMemberSurfaceTests
 
         var dts = File.ReadAllText(internalIndex);
 
-        Assert.Contains("readonly Seed: <T extends JsValue>() => T;", dts);
-        Assert.Contains("readonly Default: <T extends JsValue>() => T;", dts);
+        Assert.Contains("readonly Seed: <T extends unknown>() => T;", dts);
+        Assert.Contains("readonly Default: <T extends unknown>() => T;", dts);
         Assert.Contains("Mutable: __OpaqueClrType<\"unsupported-static-generic-field:StaticGenericMemberFixture.Box`1.Mutable\">;", dts);
         Assert.Contains("Current: __OpaqueClrType<\"unsupported-static-generic-property:StaticGenericMemberFixture.Box`1.Current\">;", dts);
-        Assert.DoesNotContain("unknown", dts);
+        Assert.DoesNotContain("JsValue", dts);
     }
 
     private static string FindRepoRoot()

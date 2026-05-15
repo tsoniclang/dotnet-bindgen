@@ -1,6 +1,7 @@
 using System.Reflection;
 using tsbindgen.Normalize;
 using tsbindgen.Plan;
+using tsbindgen.Model.Symbols.MemberSymbols;
 using Xunit;
 
 namespace tsbindgen.Tests;
@@ -37,6 +38,29 @@ public sealed class SafeToExtendTests
         Assert.Contains("System.TimeSpan, System.TimeProvider => System.Threading.Tasks.Task", waitAsync);
         Assert.Contains("System.TimeSpan, System.Threading.CancellationToken => System.Threading.Tasks.Task", waitAsync);
         Assert.Contains("System.TimeSpan, System.TimeProvider, System.Threading.CancellationToken => System.Threading.Tasks.Task", waitAsync);
+    }
+
+    [Fact]
+    public void NestedEnumerator_HasResetAndExtendsGenericIEnumerator()
+    {
+        var fixture = BuildFixture("System.Collections.dll");
+        var listEnumerator = fixture.Plan.Graph.TypeIndex["System.Collections.Generic.List`1+Enumerator"];
+        var result = GetSafeToExtendResult(fixture.Plan, "System.Collections.Generic.List`1+Enumerator");
+
+        Assert.Contains(
+            listEnumerator.Members.Methods,
+            method => method.ClrName == "Reset" &&
+                      method.Parameters.Length == 0 &&
+                      method.EmitScope == EmitScope.ClassSurface);
+
+        Assert.True(
+            result.AssignableInterfaces.Any(iface =>
+                iface is tsbindgen.Model.Types.NamedTypeReference named &&
+                named.FullName == "System.Collections.Generic.IEnumerator`1"),
+            string.Join(
+                "\n",
+                result.NonAssignableInterfaces.Select(item =>
+                    $"{FormatType(item.Interface)}: {item.Reason}")));
     }
 
     private static TestBuildFixture BuildFixture(string assemblyFileName)
