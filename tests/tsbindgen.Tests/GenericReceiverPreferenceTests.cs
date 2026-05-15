@@ -57,15 +57,15 @@ public sealed class GenericReceiverPreferenceTests
         var body = methodsTable.Groups[1].Value;
 
         Assert.Contains("BaseOnly(this: ExtensionScopesFixture.ISeq)", body);
-        Assert.Contains("AsParallel<T extends JsValue>(this: ExtensionScopesFixture.ISeq_1<T>)", body);
+        Assert.Contains("AsParallel<T extends unknown>(this: ExtensionScopesFixture.ISeq_1<T>)", body);
         Assert.Contains("AsParallel(this: ExtensionScopesFixture.ISeq)", body);
 
-        var genericIdx = body.IndexOf("AsParallel<T extends JsValue>(this: ExtensionScopesFixture.ISeq_1<T>)", StringComparison.Ordinal);
+        var genericIdx = body.IndexOf("AsParallel<T extends unknown>(this: ExtensionScopesFixture.ISeq_1<T>)", StringComparison.Ordinal);
         var baseIdx = body.IndexOf("AsParallel(this: ExtensionScopesFixture.ISeq)", StringComparison.Ordinal);
         Assert.True(genericIdx >= 0 && baseIdx >= 0, "Failed to locate both AsParallel overloads in method table.");
         Assert.True(genericIdx < baseIdx, "Expected generic receiver overload to appear before base receiver overload.");
 
-        Assert.Contains("AsParallel<T extends JsValue>(this: ExtensionScopesFixture.ISeq_1<T>): Rewrap<this, ExtensionScopesFixture.ISeq_1<T>>;", body);
+        Assert.Contains("AsParallel<T extends unknown>(this: ExtensionScopesFixture.ISeq_1<T>): Rewrap<this, ExtensionScopesFixture.ISeq_1<T>>;", body);
         Assert.Contains("AsParallel(this: ExtensionScopesFixture.ISeq): Rewrap<this, ExtensionScopesFixture.ISeq>;", body);
     }
 

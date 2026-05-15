@@ -41,20 +41,25 @@ public static class EnumeratorConformancePass
 
         var updatedNamespaces = graph.Namespaces.Select(ns =>
         {
-            var updatedTypes = ns.Types.Select(type =>
+            TypeSymbol ProcessType(TypeSymbol type)
             {
+                var typeWithNested = type with
+                {
+                    NestedTypes = type.NestedTypes.Select(ProcessType).ToImmutableArray()
+                };
+
                 // Only process classes and structs
-                if (type.Kind != TypeKind.Class && type.Kind != TypeKind.Struct)
-                    return type;
+                if (typeWithNested.Kind != TypeKind.Class && typeWithNested.Kind != TypeKind.Struct)
+                    return typeWithNested;
 
                 // Check if type implements IEnumerator or IEnumerator<T>
-                if (!ImplementsEnumerator(type))
-                    return type;
+                if (!ImplementsEnumerator(typeWithNested))
+                    return typeWithNested;
 
-                ctx.Log("EnumeratorConformance", $"Processing enumerator type: {type.ClrFullName}");
+                ctx.Log("EnumeratorConformance", $"Processing enumerator type: {typeWithNested.ClrFullName}");
 
                 // Look for existing Reset() method (may be ViewOnly from explicit impl)
-                var resetMethod = type.Members.Methods
+                var resetMethod = typeWithNested.Members.Methods
                     .FirstOrDefault(m =>
                         m.ClrName == "Reset" &&
                         !m.IsStatic &&
@@ -76,14 +81,14 @@ public static class EnumeratorConformancePass
                         };
 
                         // Replace the method in the type
-                        var updatedMethods = type.Members.Methods
+                        var updatedMethods = typeWithNested.Members.Methods
                             .Select(m => m.StableId.Equals(resetMethod.StableId) ? promotedMethod : m)
                             .ToImmutableArray();
 
                         promotedCount++;
-                        return type with
+                        return typeWithNested with
                         {
-                            Members = type.Members with { Methods = updatedMethods }
+                            Members = typeWithNested.Members with { Methods = updatedMethods }
                         };
                     }
                     else
@@ -101,7 +106,7 @@ public static class EnumeratorConformancePass
                     var resetStableId = new MemberStableId
                     {
                         AssemblyName = assemblyName,
-                        DeclaringClrFullName = type.ClrFullName,
+                        DeclaringClrFullName = typeWithNested.ClrFullName,
                         MemberName = "Reset",
                         CanonicalSignature = ctx.CanonicalizeMethod("Reset", new List<string>(), "System.Void")
                     };
@@ -136,9 +141,11 @@ public static class EnumeratorConformancePass
                     };
 
                     synthesizedCount++;
-                    return type.WithAddedMethods(new[] { synthesizedReset });
+                    return typeWithNested.WithAddedMethods(new[] { synthesizedReset });
                 }
-            }).ToImmutableArray();
+            }
+
+            var updatedTypes = ns.Types.Select(ProcessType).ToImmutableArray();
 
             return ns with { Types = updatedTypes };
         }).ToImmutableArray();

@@ -790,7 +790,7 @@ public static class ExtensionsEmitter
         // The HKT encoding forces exact substitution via intersection:
         //   __TsonicApplyApplier<A, Shape> = (A & { __tsonic_shape: Shape })[\"__tsonic_type\"]
         sb.AppendLine($"interface {extApplierTypeName} {{");
-        sb.AppendLine("  __tsonic_shape: JsValue;");
+        sb.AppendLine("  __tsonic_shape: unknown;");
         sb.AppendLine($"  __tsonic_type: {methodsTableName};");
         sb.AppendLine("}");
         sb.AppendLine();
@@ -808,7 +808,7 @@ public static class ExtensionsEmitter
 
         if (hasIEnumerable1Bucket)
         {
-            sb.AppendLine($"  : TShape extends (infer T extends JsValue)[] ? (TShape & System_Collections_Generic.IEnumerable_1<T> & __TsonicWithExt<TShape, \"{extKey}\", {extApplierTypeName}> & {methodsTableName})");
+            sb.AppendLine($"  : TShape extends (infer T extends unknown)[] ? (TShape & System_Collections_Generic.IEnumerable_1<T> & __TsonicWithExt<TShape, \"{extKey}\", {extApplierTypeName}> & {methodsTableName})");
             sb.AppendLine($"  : TShape & __TsonicWithExt<TShape, \"{extKey}\", {extApplierTypeName}> & {methodsTableName};");
         }
         else

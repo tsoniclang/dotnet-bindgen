@@ -9,7 +9,7 @@ internal static class SupportTypePreamble
     public static void EmitCoreTypeImports(StringBuilder sb)
     {
         sb.AppendLine("// Core type aliases from @tsonic/core");
-        sb.AppendLine("import type { JsValue, fnptr, ptr, sbyte, byte, short, ushort, int, uint, long, ulong, int128, uint128, half, float, double, decimal, nint, nuint, char } from '@tsonic/core/types.js';");
+        sb.AppendLine("import type { fnptr, ptr, sbyte, byte, short, ushort, int, uint, long, ulong, int128, uint128, half, float, double, decimal, nint, nuint, char } from '@tsonic/core/types.js';");
         sb.AppendLine();
     }
 

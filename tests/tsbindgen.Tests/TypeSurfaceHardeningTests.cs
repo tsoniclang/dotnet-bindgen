@@ -12,17 +12,17 @@ namespace tsbindgen.Tests;
 public sealed class TypeSurfaceHardeningTests
 {
     [Fact]
-    public void Builtin_SystemObject_MapsTo_JsValue()
+    public void Builtin_SystemObject_MapsTo_Unknown()
     {
         Assert.True(TypeMap.TryMapBuiltin("System.Object", out var tsType));
-        Assert.Equal("JsValue", tsType);
+        Assert.Equal("unknown", tsType);
     }
 
     [Fact]
-    public void Builtin_SystemValueType_MapsTo_NonNullableJsValue()
+    public void Builtin_SystemValueType_MapsTo_NonNullableUnknown()
     {
         Assert.True(TypeMap.TryMapBuiltin("System.ValueType", out var tsType));
-        Assert.Equal("NonNullable<JsValue>", tsType);
+        Assert.Equal("NonNullable<unknown>", tsType);
     }
 
     [Fact]

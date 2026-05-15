@@ -92,7 +92,7 @@ public static class TypeSignatureCanon
             "System.String" => "string",
 
             // Object
-            "System.Object" => "JsValue",
+            "System.Object" => "unknown",
 
             // Signed integers (branded types)
             "System.SByte" => "sbyte",
@@ -120,7 +120,7 @@ public static class TypeSignatureCanon
             "System.Char" => "char",
 
             // Value type base
-            "System.ValueType" => "NonNullable<JsValue>",
+            "System.ValueType" => "NonNullable<unknown>",
 
             // Enum base
             "System.Enum" => "number",

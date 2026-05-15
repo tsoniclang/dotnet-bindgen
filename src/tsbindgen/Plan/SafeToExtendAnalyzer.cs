@@ -290,8 +290,10 @@ public static class SafeToExtendAnalyzer
         var signatures = new Dictionary<string, string>();
         foreach (var (key, overloads) in methodOverloads)
         {
-            overloads.Sort(StringComparer.Ordinal);
-            signatures[key] = string.Join("|", overloads);
+            var normalizedOverloads = overloads
+                .Distinct(StringComparer.Ordinal)
+                .OrderBy(x => x, StringComparer.Ordinal);
+            signatures[key] = string.Join("|", normalizedOverloads);
         }
         foreach (var (key, sig) in propertySignatures)
         {
@@ -451,8 +453,10 @@ public static class SafeToExtendAnalyzer
         var signatures = new Dictionary<string, string>();
         foreach (var (key, overloads) in methodOverloads)
         {
-            overloads.Sort(StringComparer.Ordinal);
-            signatures[key] = string.Join("|", overloads);
+            var normalizedOverloads = overloads
+                .Distinct(StringComparer.Ordinal)
+                .OrderBy(x => x, StringComparer.Ordinal);
+            signatures[key] = string.Join("|", normalizedOverloads);
         }
         foreach (var (key, sig) in propertySignatures)
         {

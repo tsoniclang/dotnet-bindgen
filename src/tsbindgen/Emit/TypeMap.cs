@@ -34,7 +34,7 @@ public static class TypeMap
 
             // Object
             case "System.Object":
-                tsType = "JsValue";
+                tsType = "unknown";
                 return true;
 
             // Signed integers (branded types)
@@ -98,7 +98,7 @@ public static class TypeMap
 
             // Value type base
             case "System.ValueType":
-                tsType = "NonNullable<JsValue>";
+                tsType = "NonNullable<unknown>";
                 return true;
 
             // Enum base

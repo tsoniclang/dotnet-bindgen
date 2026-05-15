@@ -4,10 +4,10 @@ using Xunit;
 
 namespace tsbindgen.Tests;
 
-public sealed class PropertyOverrideJsValueTests
+public sealed class PropertyOverrideUnknownTests
 {
     [Fact]
-    public void JsValueParticipatesIn_PropertyOverrideUnion_AndAvoidsOutOfScopeTypes()
+    public void UnknownParticipatesIn_PropertyOverrideUnion_AndAvoidsOutOfScopeTypes()
     {
         var repoRoot = FindRepoRoot();
 
@@ -45,13 +45,13 @@ public sealed class PropertyOverrideJsValueTests
 
         Assert.Contains("export interface BaseType$instance", dts);
         Assert.Contains("import type { DerivedEvents }", dts);
-        Assert.Contains("Events: DerivedEvents | JsValue;", dts);
+        Assert.Contains("Events: DerivedEvents | unknown;", dts);
 
         // MUST not reference derived-only types in the base namespace module.
         Assert.Contains("DerivedEvents", dts);
 
-        Assert.DoesNotContain("Events: unknown;", dts);
-        Assert.DoesNotContain(" | unknown", dts);
+        Assert.DoesNotContain("Events: JsValue;", dts);
+        Assert.DoesNotContain(" | JsValue", dts);
     }
 
     private static string FindRepoRoot()
