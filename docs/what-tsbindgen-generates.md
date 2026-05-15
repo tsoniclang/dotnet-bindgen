@@ -64,6 +64,7 @@ concepts such as:
 - extension methods
 - nullable/reference semantics
 - generic constraints
+- broad CLR object positions represented as `unknown`
 - namespace/module ownership
 
 ## How generated repos are meant to be consumed

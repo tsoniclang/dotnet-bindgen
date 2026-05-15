@@ -10,6 +10,7 @@ tsbindgen generates TypeScript declaration files (`.d.ts`) from .NET assemblies 
 - **Zero TypeScript errors** - Output validates cleanly with `tsc --strict`
 - **Nullable reference types** - NRT support for output positions (returns, properties, fields)
 - **CLR primitives** - Numeric type aliases (`int`, `long`, `decimal`, etc.) via `@tsonic/core`
+- **Broad CLR object safety** - `System.Object` projects to TypeScript `unknown`, and value-type constraints project to `NonNullable<unknown>`
 - **CLR-faithful names** - No casing transforms; member names match the CLR surface
 - **Generic type preservation** - Full generic type parameter support with constraints
 - **Unified bindings manifest** - CLR-specific information lives in `<Namespace>/bindings.json` (no metadata sidecars)
@@ -258,6 +259,12 @@ CLR primitive types map to type aliases from `@tsonic/core`:
 | `System.Boolean` | `bool` (branded) |
 | `System.String` | `string` |
 | `System.Char` | `char` (branded) |
+| `System.Object` | `unknown` |
+| `System.ValueType` constraint | `NonNullable<unknown>` |
+
+`unknown` is intentional: it is the TypeScript boundary type for a broad CLR
+object slot. Generated packages do not import a package-specific catch-all value
+type for `System.Object`; callers narrow or adapt broad values explicitly.
 
 ### Generic Types
 
