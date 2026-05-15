@@ -132,6 +132,53 @@ package_json_for_repo() {
   esac
 }
 
+assert_bindings_manifest_version_sync() {
+  local package_json="$1"
+  local package_dir manifest_path
+  package_dir="$(dirname "$package_json")"
+  manifest_path="$package_dir/tsonic.bindings.json"
+
+  if [ ! -f "$manifest_path" ]; then
+    return 0
+  fi
+
+  node - "$package_json" "$manifest_path" <<'NODE'
+const fs = require("node:fs");
+
+const packageJsonPath = process.argv[2];
+const manifestPath = process.argv[3];
+const pkg = JSON.parse(fs.readFileSync(packageJsonPath, "utf8"));
+const manifest = JSON.parse(fs.readFileSync(manifestPath, "utf8"));
+const failures = [];
+
+if (
+  typeof manifest.packageName === "string" &&
+  manifest.packageName !== pkg.name
+) {
+  failures.push(
+    `packageName=${manifest.packageName} does not match package.json name=${pkg.name}`
+  );
+}
+
+if (
+  typeof manifest.packageVersion === "string" &&
+  manifest.packageVersion !== pkg.version
+) {
+  failures.push(
+    `packageVersion=${manifest.packageVersion} does not match package.json version=${pkg.version}`
+  );
+}
+
+if (failures.length > 0) {
+  console.error(
+    `Error: ${manifestPath} is not synchronized with ${packageJsonPath}`
+  );
+  for (const failure of failures) console.error(`  - ${failure}`);
+  process.exit(1);
+}
+NODE
+}
+
 package_scope_paths_for_repo() {
   local repo="$1"
   case "$repo" in
@@ -539,6 +586,7 @@ gather_wave_targets() {
   for repo in "${NPM_WAVE_REPOS[@]}"; do
     package_json="$(package_json_for_repo "$repo")"
     assert_clean_main_latest "$repo"
+    assert_bindings_manifest_version_sync "$package_json"
     if should_publish_package "$repo" "$package_json"; then
       NPM_TO_PUBLISH+=("$repo")
     fi
