@@ -30,14 +30,14 @@ echo "Using BCL: $BCL_DIR"
 echo "File: $FILE"
 echo ""
 
-# Non-generic Task / ValueTask must include void + JsValue overloads.
+# Non-generic Task / ValueTask must include void + unknown overloads.
 assert_grep 'export type Task = Task$instance & __Task$views & {' "$FILE" "Task type alias exists"
 assert_grep "then<TResult1 = void" "$FILE" "Task includes void then overload"
-assert_grep "then<TResult1 = JsValue" "$FILE" "Task includes JsValue then overload"
+assert_grep "then<TResult1 = unknown" "$FILE" "Task includes unknown then overload"
 
 assert_grep 'export type ValueTask = ValueTask$instance & __ValueTask$views & {' "$FILE" "ValueTask type alias exists"
 assert_grep "then<TResult1 = void" "$FILE" "ValueTask includes void then overload"
-assert_grep "then<TResult1 = JsValue" "$FILE" "ValueTask includes JsValue then overload"
+assert_grep "then<TResult1 = unknown" "$FILE" "ValueTask includes unknown then overload"
 
 # Generic forms must not include a void overload (Awaited<Task_1<T>> should not collapse to never).
 task1_start="$(grep -n "export type Task_1" "$FILE" | head -1 | cut -d: -f1 || true)"
