@@ -126,9 +126,9 @@ public static class BindingEmitter
                 {
                     // Allow method overload groups to unify to the same export target.
                     if (existing.Kind == binding.Kind &&
-                        existing.ClrName == binding.ClrName &&
-                        existing.DeclaringClrType == binding.DeclaringClrType &&
-                        existing.DeclaringAssemblyName == binding.DeclaringAssemblyName)
+                        existing.TargetName == binding.TargetName &&
+                        existing.OwnerQualifiedName == binding.OwnerQualifiedName &&
+                        existing.OwnerIdentity == binding.OwnerIdentity)
                     {
                         return;
                     }
@@ -136,7 +136,7 @@ public static class BindingEmitter
                     ctx.Diagnostics.Error(
                         Core.Diagnostics.DiagnosticCodes.NameConflictUnresolved,
                         $"Flattened export name collision '{exportName}' in namespace '{nsOrder.Namespace.Name}'. " +
-                        $"Targets: {existing.DeclaringClrType}.{existing.ClrName} vs {binding.DeclaringClrType}.{binding.ClrName}. " +
+                        $"Targets: {existing.OwnerQualifiedName}.{existing.TargetName} vs {binding.OwnerQualifiedName}.{binding.TargetName}. " +
                         $"Rename one member or remove one flattening source.");
                     return;
                 }
@@ -155,9 +155,9 @@ public static class BindingEmitter
                 AddExport(exportName, new ExportBinding
                 {
                     Kind = NamedExportKind.Method,
-                    ClrName = method.ClrName,
-                    DeclaringClrType = method.StableId.DeclaringClrFullName,
-                    DeclaringAssemblyName = method.StableId.AssemblyName
+                    TargetName = method.ClrName,
+                    OwnerQualifiedName = method.StableId.DeclaringClrFullName,
+                    OwnerIdentity = method.StableId.AssemblyName
                 });
             }
 
@@ -172,9 +172,9 @@ public static class BindingEmitter
                 AddExport(exportName, new ExportBinding
                 {
                     Kind = NamedExportKind.Property,
-                    ClrName = prop.ClrName,
-                    DeclaringClrType = prop.StableId.DeclaringClrFullName,
-                    DeclaringAssemblyName = prop.StableId.AssemblyName
+                    TargetName = prop.ClrName,
+                    OwnerQualifiedName = prop.StableId.DeclaringClrFullName,
+                    OwnerIdentity = prop.StableId.AssemblyName
                 });
             }
 
@@ -188,9 +188,9 @@ public static class BindingEmitter
                 AddExport(exportName, new ExportBinding
                 {
                     Kind = NamedExportKind.Field,
-                    ClrName = field.ClrName,
-                    DeclaringClrType = field.StableId.DeclaringClrFullName,
-                    DeclaringAssemblyName = field.StableId.AssemblyName
+                    TargetName = field.ClrName,
+                    OwnerQualifiedName = field.StableId.DeclaringClrFullName,
+                    OwnerIdentity = field.StableId.AssemblyName
                 });
             }
 
@@ -235,8 +235,8 @@ public static class BindingEmitter
         return new TypeBinding
         {
             StableId = type.StableId.ToString(),
-            ClrName = type.ClrFullName,
-            AssemblyName = type.StableId.AssemblyName,
+            TargetName = type.ClrFullName,
+            OwnerIdentity = type.StableId.AssemblyName,
             MetadataToken = 0, // Types don't have metadata tokens
             Kind = type.Kind.ToString(),
             Accessibility = type.Accessibility.ToString(),
@@ -279,7 +279,7 @@ public static class BindingEmitter
         return new MethodBinding
         {
             StableId = method.StableId.ToString(),
-            ClrName = method.ClrName,
+            TargetName = method.ClrName,
             MetadataToken = method.StableId.MetadataToken ?? 0,
             CanonicalSignature = method.StableId.CanonicalSignature,
             NormalizedSignature = normalizedSignature,
@@ -294,8 +294,8 @@ public static class BindingEmitter
             IsSealed = method.IsSealed,
             Visibility = method.Visibility.ToString(),
             // V2: Add declaring type information from StableId
-            DeclaringClrType = method.StableId.DeclaringClrFullName,
-            DeclaringAssemblyName = method.StableId.AssemblyName,
+            OwnerQualifiedName = method.StableId.DeclaringClrFullName,
+            OwnerIdentity = method.StableId.AssemblyName,
             IsExtensionMethod = method.IsExtensionMethod,
             SourceInterface = method.SourceInterface != null ? GetTypeRefName(method.SourceInterface) : null,
             ParameterModifiers = modifiers.Count > 0 ? modifiers : null,
@@ -339,7 +339,7 @@ public static class BindingEmitter
         return new PropertyBinding
         {
             StableId = property.StableId.ToString(),
-            ClrName = property.ClrName,
+            TargetName = property.ClrName,
             MetadataToken = property.StableId.MetadataToken ?? 0,
             CanonicalSignature = property.StableId.CanonicalSignature,
             NormalizedSignature = normalizedSignature,
@@ -355,8 +355,8 @@ public static class BindingEmitter
             Visibility = property.Visibility.ToString(),
             SourceInterface = property.SourceInterface != null ? GetTypeRefName(property.SourceInterface) : null,
             // V2: Add declaring type information from StableId
-            DeclaringClrType = property.StableId.DeclaringClrFullName,
-            DeclaringAssemblyName = property.StableId.AssemblyName,
+            OwnerQualifiedName = property.StableId.DeclaringClrFullName,
+            OwnerIdentity = property.StableId.AssemblyName,
             EmitSemantics = emitSemantics
         };
     }
@@ -380,7 +380,7 @@ public static class BindingEmitter
         return new FieldBinding
         {
             StableId = field.StableId.ToString(),
-            ClrName = field.ClrName,
+            TargetName = field.ClrName,
             MetadataToken = field.StableId.MetadataToken ?? 0,
             NormalizedSignature = normalizedSignature,
             IsStatic = field.IsStatic,
@@ -388,8 +388,8 @@ public static class BindingEmitter
             IsLiteral = field.IsConst,
             Visibility = field.Visibility.ToString(),
             // V2: Add declaring type information from StableId
-            DeclaringClrType = field.StableId.DeclaringClrFullName,
-            DeclaringAssemblyName = field.StableId.AssemblyName,
+            OwnerQualifiedName = field.StableId.DeclaringClrFullName,
+            OwnerIdentity = field.StableId.AssemblyName,
             EmitSemantics = emitSemantics
         };
     }
@@ -402,14 +402,14 @@ public static class BindingEmitter
         return new EventBinding
         {
             StableId = evt.StableId.ToString(),
-            ClrName = evt.ClrName,
+            TargetName = evt.ClrName,
             MetadataToken = evt.StableId.MetadataToken ?? 0,
             NormalizedSignature = normalizedSignature,
             IsStatic = evt.IsStatic,
             Visibility = evt.Visibility.ToString(),
             // V2: Add declaring type information from StableId
-            DeclaringClrType = evt.StableId.DeclaringClrFullName,
-            DeclaringAssemblyName = evt.StableId.AssemblyName
+            OwnerQualifiedName = evt.StableId.DeclaringClrFullName,
+            OwnerIdentity = evt.StableId.AssemblyName
         };
     }
 
@@ -439,8 +439,8 @@ public static class BindingEmitter
             ParameterCount = ctor.Parameters.Length,
             Visibility = ctor.Visibility.ToString(),
             // V2: Add declaring type information from StableId
-            DeclaringClrType = ctor.StableId.DeclaringClrFullName,
-            DeclaringAssemblyName = ctor.StableId.AssemblyName,
+            OwnerQualifiedName = ctor.StableId.DeclaringClrFullName,
+            OwnerIdentity = ctor.StableId.AssemblyName,
             ParameterModifiers = modifiers.Count > 0 ? modifiers : null
         };
     }
@@ -872,7 +872,7 @@ public static class BindingEmitter
             return new HeritageTypeBinding
             {
                 StableId = $"Unknown:{fallbackName}",
-                ClrName = fallbackName
+                TargetName = fallbackName
             };
         }
 
@@ -885,7 +885,7 @@ public static class BindingEmitter
         return new HeritageTypeBinding
         {
             StableId = stableId,
-            ClrName = named.FullName,
+            TargetName = named.FullName,
             TypeArguments = typeArgs
         };
     }
@@ -960,9 +960,9 @@ public enum NamedExportKind
 public sealed record ExportBinding
 {
     public required NamedExportKind Kind { get; init; }
-    public required string ClrName { get; init; }
-    public required string DeclaringClrType { get; init; }
-    public required string DeclaringAssemblyName { get; init; }
+    public required string TargetName { get; init; }
+    public required string OwnerQualifiedName { get; init; }
+    public required string OwnerIdentity { get; init; }
 }
 
 /// <summary>
@@ -971,8 +971,8 @@ public sealed record ExportBinding
 public sealed record TypeBinding
 {
     public required string StableId { get; init; }
-    public required string ClrName { get; init; }
-    public required string AssemblyName { get; init; }
+    public required string TargetName { get; init; }
+    public required string OwnerIdentity { get; init; }
     public required int MetadataToken { get; init; }
 
     public required string Kind { get; init; }
@@ -1011,7 +1011,7 @@ public sealed record TypeBinding
 public sealed record MethodBinding
 {
     public required string StableId { get; init; }
-    public required string ClrName { get; init; }
+    public required string TargetName { get; init; }
     public required int MetadataToken { get; init; }
     public required string CanonicalSignature { get; init; }
     public required string NormalizedSignature { get; init; }
@@ -1027,8 +1027,8 @@ public sealed record MethodBinding
     public required string Visibility { get; init; }
 
     // V2: Declaring type information
-    public string? DeclaringClrType { get; init; }
-    public string? DeclaringAssemblyName { get; init; }
+    public string? OwnerQualifiedName { get; init; }
+    public string? OwnerIdentity { get; init; }
     public bool IsExtensionMethod { get; init; }
     public string? SourceInterface { get; init; }
     public EmitSemanticsSpec? EmitSemantics { get; init; }
@@ -1047,7 +1047,7 @@ public sealed record MethodBinding
 public sealed record PropertyBinding
 {
     public required string StableId { get; init; }
-    public required string ClrName { get; init; }
+    public required string TargetName { get; init; }
     public required int MetadataToken { get; init; }
     public required string CanonicalSignature { get; init; }
     public required string NormalizedSignature { get; init; }
@@ -1064,8 +1064,8 @@ public sealed record PropertyBinding
     public string? SourceInterface { get; init; }
 
     // V2: Declaring type information
-    public string? DeclaringClrType { get; init; }
-    public string? DeclaringAssemblyName { get; init; }
+    public string? OwnerQualifiedName { get; init; }
+    public string? OwnerIdentity { get; init; }
     public EmitSemanticsSpec? EmitSemantics { get; init; }
 }
 
@@ -1075,7 +1075,7 @@ public sealed record PropertyBinding
 public sealed record FieldBinding
 {
     public required string StableId { get; init; }
-    public required string ClrName { get; init; }
+    public required string TargetName { get; init; }
     public required int MetadataToken { get; init; }
     public required string NormalizedSignature { get; init; }
     public required bool IsStatic { get; init; }
@@ -1084,8 +1084,8 @@ public sealed record FieldBinding
     public required string Visibility { get; init; }
 
     // V2: Declaring type information
-    public string? DeclaringClrType { get; init; }
-    public string? DeclaringAssemblyName { get; init; }
+    public string? OwnerQualifiedName { get; init; }
+    public string? OwnerIdentity { get; init; }
     public EmitSemanticsSpec? EmitSemantics { get; init; }
 }
 
@@ -1095,15 +1095,15 @@ public sealed record FieldBinding
 public sealed record EventBinding
 {
     public required string StableId { get; init; }
-    public required string ClrName { get; init; }
+    public required string TargetName { get; init; }
     public required int MetadataToken { get; init; }
     public required string NormalizedSignature { get; init; }
     public required bool IsStatic { get; init; }
     public required string Visibility { get; init; }
 
     // V2: Declaring type information
-    public string? DeclaringClrType { get; init; }
-    public string? DeclaringAssemblyName { get; init; }
+    public string? OwnerQualifiedName { get; init; }
+    public string? OwnerIdentity { get; init; }
 }
 
 /// <summary>
@@ -1120,8 +1120,8 @@ public sealed record ConstructorBinding
     public required string Visibility { get; init; }
 
     // V2: Declaring type information
-    public string? DeclaringClrType { get; init; }
-    public string? DeclaringAssemblyName { get; init; }
+    public string? OwnerQualifiedName { get; init; }
+    public string? OwnerIdentity { get; init; }
 
     /// <summary>
     /// Parameter modifier vector for ref/out/in semantics.
@@ -1150,7 +1150,7 @@ public sealed record ParameterModifierMetadata
 public sealed record HeritageTypeBinding
 {
     public required string StableId { get; init; }
-    public required string ClrName { get; init; }
+    public required string TargetName { get; init; }
     public List<string>? TypeArguments { get; init; }
 }
 
