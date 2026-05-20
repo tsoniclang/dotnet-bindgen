@@ -14,6 +14,9 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 ROOT_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
 WRAPPER_DIR="$ROOT_DIR/npm/tsbindgen"
 
+# shellcheck source=scripts/publish-auth.sh
+source "$SCRIPT_DIR/publish-auth.sh"
+
 # Parse arguments
 IGNORE_BRANCHES_AHEAD=false
 DANGEROUSLY_SKIP_TESTS=false
@@ -167,6 +170,9 @@ elif [ "$WRAPPER_CMP" = "0" ]; then
     NEEDS_BUMP=true
 fi
 
+echo ""
+
+ensure_npm_publish_auth "@tsonic/tsbindgen" "tsbindgen"
 echo ""
 
 # ============================================================

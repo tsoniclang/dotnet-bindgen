@@ -5,6 +5,9 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 TSBINDGEN_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 TSONICLANG_ROOT="$(cd "$TSBINDGEN_ROOT/.." && pwd)"
 
+# shellcheck source=scripts/publish-auth.sh
+source "$SCRIPT_DIR/publish-auth.sh"
+
 NPM_WAVE_REPOS=(
   "tsbindgen"
   "tsonic"
@@ -64,6 +67,8 @@ Safety in --publish:
     to repo publish scripts that support it.
 
 Environment:
+  - NPM_TOKEN is required if any npm package in the wave needs publishing.
+    It must be a valid package-write token with bypass_2fa/automation publish capability.
   - NUGET_API_KEY is required if any NuGet package in the wave needs publishing.
 
 No args:
@@ -566,6 +571,7 @@ publish_wave() {
   echo ""
 
   gather_wave_targets
+  validate_publish_auth
   preflight_wave
 
   publish_nuget_wave
@@ -573,6 +579,27 @@ publish_wave() {
 
   echo ""
   echo "Wave publish complete."
+}
+
+validate_publish_auth() {
+  local repo package_json pkg_name package_id
+  local npm_package_names=()
+  local nuget_package_ids=()
+
+  for repo in "${NPM_TO_PUBLISH[@]}"; do
+    package_json="$(package_json_for_repo "$repo")"
+    pkg_name="$(node -p "require('$package_json').name")"
+    npm_package_names+=("$pkg_name")
+  done
+
+  for repo in "${NUGET_TO_PUBLISH[@]}"; do
+    package_id="$(nuget_package_id_for_repo "$repo")"
+    nuget_package_ids+=("$package_id")
+  done
+
+  ensure_npm_publish_auth "${npm_package_names[@]}"
+  ensure_nuget_publish_auth "${nuget_package_ids[@]}"
+  echo ""
 }
 
 gather_wave_targets() {
