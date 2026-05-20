@@ -4,7 +4,7 @@
   "description": "Generate TypeScript declarations from .NET assemblies",
   "type": "module",
   "bin": {
-    "tsbindgen": "./bin.js"
+    "tsbindgen": "bin.js"
   },
   "dependencies": {
     "@tsonic/tsbindgen": "0.7.54"
