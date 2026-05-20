@@ -68,7 +68,7 @@ fi
 BINDINGS_FILE="$BINDINGS_FILE" node <<'NODE'
 const fs = require('fs');
 const data = JSON.parse(fs.readFileSync(process.env.BINDINGS_FILE, 'utf8'));
-const derived = data.types.find(t => t.clrName === 'MyCompany.Utils.DerivedWriter');
+const derived = data.types.find(t => t.targetName === 'MyCompany.Utils.DerivedWriter');
 if (!derived) {
   console.error('❌ FAILED: DerivedWriter type not found in bindings.json');
   process.exit(1);
