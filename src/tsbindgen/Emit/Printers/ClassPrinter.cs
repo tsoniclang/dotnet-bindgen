@@ -25,7 +25,7 @@ public static class ClassPrinter
      /// GUARD: Only prints emittable types.
      /// </summary>
     /// <param name="typesWithoutGenerics">Optional set to track types that had generics in CLR but were emitted without them (e.g., static classes)</param>
-    /// <param name="bindingsProvider">Optional bindings provider for V2 inherited member exposure (if null, falls back to V1 behavior)</param>
+    /// <param name="bindingsProvider">Optional bindings provider for canonical inherited member exposure (required for inherited member exposure)</param>
     /// <param name="staticFlattening">D1: Plan for flattening static-only type hierarchies (if null, no flattening)</param>
     /// <param name="staticConflicts">D2: Plan for suppressing conflicting static members (if null, no suppression)</param>
     public static string Print(TypeSymbol type, TypeNameResolver resolver, BuildContext ctx, Model.SymbolGraph graph, HashSet<string>? typesWithoutGenerics = null, BindingsProvider? bindingsProvider = null, Shape.StaticFlatteningPlan? staticFlattening = null, Shape.StaticConflictPlan? staticConflicts = null, Shape.OverrideConflictPlan? overrideConflicts = null, Plan.PropertyOverridePlan? propertyOverrides = null, Plan.HonestEmissionPlan? honestEmission = null, Dictionary<string, Plan.SafeToExtendAnalyzer.SafeToExtendResult>? safeToExtend = null)
@@ -844,11 +844,11 @@ public static class ClassPrinter
             sb.AppendLine(";");
         }
 
-        // Properties - V2: Use ExposedProperties from bindings if available (own + inherited)
+        // Properties - Use ExposedProperties from bindings if available (own + inherited)
         var exposedProperties = bindingsProvider?.GetExposedProperties(type);
         if (exposedProperties != null)
         {
-            // V2 path: Use ExposedProperties (complete property sets including inherited)
+            // Use ExposedProperties (complete property sets including inherited)
             // Group by CLR name and use TsName from OWN properties for emission
             var propertyGroups = exposedProperties
                 .GroupBy(e => e.Property.ClrName)  // Group by CLR name
@@ -915,14 +915,14 @@ public static class ClassPrinter
         // Methods - only emit ClassSurface members
         // TS2416/TS2420 FIX: Emit methods as TypeScript overload sets (grouped by CLR name)
         // TS2512 FIX: Ensure all overloads in a group have consistent abstract/non-abstract status
-        // V2 FIX: Use ExposedMethods from bindings if available (includes inherited methods)
+        // Use ExposedMethods from bindings if available (includes inherited methods)
         var shouldSkipAbstract = !type.IsAbstract;
 
-        // V2: Use ExposedMethods from bindings if available (own + inherited)
+        // Use ExposedMethods from bindings if available (own + inherited)
         var exposedMethods = bindingsProvider?.GetExposedMethods(type);
         if (exposedMethods != null)
         {
-            // V2 path: Use ExposedMethods (complete overload sets including inherited)
+            // Use ExposedMethods (complete overload sets including inherited)
             // CRITICAL: Group by CLR name to unify overload sets across inheritance
             // But use TsName from OWN methods for emission (inherited methods may have different disambiguation)
             var methodGroups = exposedMethods
@@ -977,7 +977,7 @@ public static class ClassPrinter
                     // FIX D EXTENSION: Substitute generic parameters if needed
                     var methodToEmit = SubstituteMemberIfNeeded(type, exposure.Method, ctx, graph);
 
-                    // V2: Use unified TsName from derived type's own methods
+                    // Use unified TsName from derived type's own methods
                     foreach (var signature in MethodPrinter.PrintWithNameVariants(methodToEmit, type, tsName, resolver, ctx, emitAbstract: groupIsAbstract))
                     {
                         sb.Append("    ");
@@ -989,7 +989,7 @@ public static class ClassPrinter
         }
         else
         {
-            // V1 fallback path: Use only type's own methods
+            // Direct member path: Use only type's own methods
             var instanceMethods = members.Methods
                 .Where(m => !m.IsStatic && m.EmitScope == EmitScope.ClassSurface)
                 .ToList();
@@ -1081,11 +1081,11 @@ public static class ClassPrinter
             sb.AppendLine(";");
         }
 
-        // Properties - V2: Use ExposedProperties from bindings if available (own + inherited)
+        // Properties - Use ExposedProperties from bindings if available (own + inherited)
         var exposedProperties = bindingsProvider?.GetExposedProperties(type);
         if (exposedProperties != null)
         {
-            // V2 path: Use ExposedProperties (complete property sets including inherited)
+            // Use ExposedProperties (complete property sets including inherited)
             var propertyGroups = exposedProperties
                 .GroupBy(e => e.Property.ClrName)
                 .OrderBy(g => g.Key);
@@ -1159,7 +1159,7 @@ public static class ClassPrinter
         // Methods - only emit ClassSurface members, no static methods
         var shouldSkipAbstract = !type.IsAbstract;
 
-        // V2: Use ExposedMethods from bindings if available (own + inherited)
+        // Use ExposedMethods from bindings if available (own + inherited)
         var exposedMethods = bindingsProvider?.GetExposedMethods(type);
         if (exposedMethods != null)
         {
@@ -1233,7 +1233,7 @@ public static class ClassPrinter
         }
         else
         {
-            // V1 fallback path: Use only type's own methods
+            // Direct member path: Use only type's own methods
             var instanceMethods = members.Methods
                 .Where(m =>
                     !m.IsStatic &&

@@ -33,9 +33,9 @@
   "simpleBindings": {
     "Map": {
       "kind": "global",
-      "assembly": "Example.Runtime",
+      "ownerIdentity": "Example.Runtime",
       "type": "Example.Runtime.Map`2",
-      "csharpName": "Map"
+      "providerMemberName": "Map"
     }
   },
   "bindingsManifest": {

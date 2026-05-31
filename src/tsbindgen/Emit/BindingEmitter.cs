@@ -58,7 +58,7 @@ public static class BindingEmitter
         ctx.Log("BindingEmitter", $"Generated {emittedCount} binding files");
     }
 
-    private static NamespaceBindings GenerateBindings(BuildContext ctx, EmissionPlan plan, NamespaceEmitOrder nsOrder)
+    private static TsonicBindingsFile GenerateBindings(BuildContext ctx, EmissionPlan plan, NamespaceEmitOrder nsOrder)
     {
         var typeBindings = new List<TypeBinding>();
 
@@ -70,14 +70,20 @@ public static class BindingEmitter
         // Collect flattened named exports (module containers + explicit --flatten-class).
         var exports = CollectNamedExports(ctx, nsOrder);
 
-        return new NamespaceBindings
+        return new TsonicBindingsFile
         {
-            Namespace = nsOrder.Namespace.Name,
-            ContributingAssemblies = nsOrder.Namespace.ContributingAssemblies
-                .OrderBy(a => a)
-                .ToList(),
-            Types = typeBindings,
-            Exports = exports.Count > 0 ? exports : null
+            Provider = new BindingProviderDescriptor
+            {
+                Namespace = nsOrder.Namespace.Name,
+                OwnerIdentities = nsOrder.Namespace.ContributingAssemblies
+                    .OrderBy(a => a)
+                    .ToList()
+            },
+            TargetSurface = new BindingTargetSurface
+            {
+                Types = typeBindings,
+                Exports = exports.Count > 0 ? exports : null
+            }
         };
     }
 
@@ -215,7 +221,7 @@ public static class BindingEmitter
 
     private static TypeBinding GenerateTypeBinding(TypeSymbol type, BuildContext ctx)
     {
-        // V1: Generate definitions (what CLR declares on this type)
+        // Declared member metadata: Generate definitions (what CLR declares on this type)
         var methodDefinitions = type.Members.Methods
             .Select(m => GenerateMethodBinding(m, type, ctx))
             .ToList();
@@ -252,7 +258,7 @@ public static class BindingEmitter
                 ? type.GenericParameters.Select(p => p.Name).ToList()
                 : null,
 
-            // V1: Definitions
+            // Declared member metadata: Definitions
             Methods = methodDefinitions,
             Properties = propertyDefinitions,
             Fields = fieldDefinitions,
@@ -293,7 +299,7 @@ public static class BindingEmitter
             IsOverride = method.IsOverride,
             IsSealed = method.IsSealed,
             Visibility = method.Visibility.ToString(),
-            // V2: Add declaring type information from StableId
+            // Add declaring type information from StableId
             OwnerQualifiedName = method.StableId.DeclaringClrFullName,
             OwnerIdentity = method.StableId.AssemblyName,
             IsExtensionMethod = method.IsExtensionMethod,
@@ -354,7 +360,7 @@ public static class BindingEmitter
             IsOverride = property.IsOverride,
             Visibility = property.Visibility.ToString(),
             SourceInterface = property.SourceInterface != null ? GetTypeRefName(property.SourceInterface) : null,
-            // V2: Add declaring type information from StableId
+            // Add declaring type information from StableId
             OwnerQualifiedName = property.StableId.DeclaringClrFullName,
             OwnerIdentity = property.StableId.AssemblyName,
             EmitSemantics = emitSemantics
@@ -387,7 +393,7 @@ public static class BindingEmitter
             IsReadOnly = field.IsReadOnly,
             IsLiteral = field.IsConst,
             Visibility = field.Visibility.ToString(),
-            // V2: Add declaring type information from StableId
+            // Add declaring type information from StableId
             OwnerQualifiedName = field.StableId.DeclaringClrFullName,
             OwnerIdentity = field.StableId.AssemblyName,
             EmitSemantics = emitSemantics
@@ -407,7 +413,7 @@ public static class BindingEmitter
             NormalizedSignature = normalizedSignature,
             IsStatic = evt.IsStatic,
             Visibility = evt.Visibility.ToString(),
-            // V2: Add declaring type information from StableId
+            // Add declaring type information from StableId
             OwnerQualifiedName = evt.StableId.DeclaringClrFullName,
             OwnerIdentity = evt.StableId.AssemblyName
         };
@@ -438,7 +444,7 @@ public static class BindingEmitter
             IsStatic = ctor.IsStatic,
             ParameterCount = ctor.Parameters.Length,
             Visibility = ctor.Visibility.ToString(),
-            // V2: Add declaring type information from StableId
+            // Add declaring type information from StableId
             OwnerQualifiedName = ctor.StableId.DeclaringClrFullName,
             OwnerIdentity = ctor.StableId.AssemblyName,
             ParameterModifiers = modifiers.Count > 0 ? modifiers : null
@@ -446,7 +452,7 @@ public static class BindingEmitter
     }
 
     // ============================================================================
-    // V2 EXPOSURE COLLECTION (own + inherited members)
+    // EXPOSURE COLLECTION (own + inherited members)
     // ============================================================================
 
     private static List<MethodExposure> CollectMethodExposures(TypeSymbol type, BuildContext ctx, EmissionPlan plan)
@@ -628,7 +634,7 @@ public static class BindingEmitter
     }
 
     // ============================================================================
-    // V2 EXPOSURE GENERATION (for own members)
+    // EXPOSURE GENERATION (for own members)
     // ============================================================================
 
     private static MethodExposure GenerateMethodExposure(MethodSymbol method, TypeSymbol ownerType, BuildContext ctx)
@@ -754,7 +760,7 @@ public static class BindingEmitter
     }
 
     // ============================================================================
-    // V2 INHERITED EXPOSURE GENERATION
+    // INHERITED EXPOSURE GENERATION
     // (Use declaring type's scope for TS name lookup)
     // ============================================================================
 
@@ -918,13 +924,28 @@ public static class BindingEmitter
     }
 }
 
-/// <summary>
-/// Bindings for a namespace.
-/// </summary>
-public sealed record NamespaceBindings
+public sealed record TsonicBindingsFile
+{
+    public string Schema { get; init; } = "tsonic.bindings";
+    public required BindingProviderDescriptor Provider { get; init; }
+    public BindingSourceSurface? SourceSurface { get; init; }
+    public required BindingTargetSurface TargetSurface { get; init; }
+}
+
+public sealed record BindingProviderDescriptor
 {
     public required string Namespace { get; init; }
-    public required List<string> ContributingAssemblies { get; init; }
+    public List<string>? OwnerIdentities { get; init; }
+    public string? TargetRuntimeVersion { get; init; }
+}
+
+public sealed record BindingSourceSurface
+{
+    public Dictionary<string, object>? Bindings { get; init; }
+}
+
+public sealed record BindingTargetSurface
+{
     public required List<TypeBinding> Types { get; init; }
 
     /// <summary>
@@ -934,7 +955,7 @@ public sealed record NamespaceBindings
     /// - Tsonic module containers (marked with ModuleContainerAttribute), and
     /// - Explicit static classes listed via --flatten-class.
     ///
-    /// Used by Tsonic to bind ESM named imports to CLR static members:
+    /// Used by Tsonic to bind ESM named imports to target static members:
     ///   import { foo } from "@pkg/Namespace.js";
     ///   foo(...); // emits as global::<DeclaringType>.<member>(...)
     /// </summary>
@@ -997,7 +1018,7 @@ public sealed record TypeBinding
     /// </summary>
     public List<string>? TypeParameters { get; init; }
 
-    // V1: Definitions (what CLR declares on this type)
+    // Declared member metadata: Definitions (what CLR declares on this type)
     public required List<MethodBinding> Methods { get; init; }
     public required List<PropertyBinding> Properties { get; init; }
     public required List<FieldBinding> Fields { get; init; }
@@ -1026,7 +1047,7 @@ public sealed record MethodBinding
     public required bool IsSealed { get; init; }
     public required string Visibility { get; init; }
 
-    // V2: Declaring type information
+    // Declaring type information
     public string? OwnerQualifiedName { get; init; }
     public string? OwnerIdentity { get; init; }
     public bool IsExtensionMethod { get; init; }
@@ -1063,7 +1084,7 @@ public sealed record PropertyBinding
     public required string Visibility { get; init; }
     public string? SourceInterface { get; init; }
 
-    // V2: Declaring type information
+    // Declaring type information
     public string? OwnerQualifiedName { get; init; }
     public string? OwnerIdentity { get; init; }
     public EmitSemanticsSpec? EmitSemantics { get; init; }
@@ -1083,7 +1104,7 @@ public sealed record FieldBinding
     public required bool IsLiteral { get; init; }
     public required string Visibility { get; init; }
 
-    // V2: Declaring type information
+    // Declaring type information
     public string? OwnerQualifiedName { get; init; }
     public string? OwnerIdentity { get; init; }
     public EmitSemanticsSpec? EmitSemantics { get; init; }
@@ -1101,7 +1122,7 @@ public sealed record EventBinding
     public required bool IsStatic { get; init; }
     public required string Visibility { get; init; }
 
-    // V2: Declaring type information
+    // Declaring type information
     public string? OwnerQualifiedName { get; init; }
     public string? OwnerIdentity { get; init; }
 }
@@ -1119,7 +1140,7 @@ public sealed record ConstructorBinding
     public required int ParameterCount { get; init; }
     public required string Visibility { get; init; }
 
-    // V2: Declaring type information
+    // Declaring type information
     public string? OwnerQualifiedName { get; init; }
     public string? OwnerIdentity { get; init; }
 
@@ -1155,7 +1176,7 @@ public sealed record HeritageTypeBinding
 }
 
 // ============================================================================
-// V2 EXPOSURE TYPES
+// EXPOSURE TYPES
 // ============================================================================
 
 /// <summary>

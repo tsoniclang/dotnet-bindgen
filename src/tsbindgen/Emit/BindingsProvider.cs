@@ -10,7 +10,7 @@ using tsbindgen.Renaming;
 namespace tsbindgen.Emit;
 
 /// <summary>
-/// Provides on-demand access to V2 binding exposures for types.
+/// Provides on-demand access to binding exposures for types.
 /// Generates and caches ExposedMethods/ExposedProperties for use by emitters.
 /// This allows emitters to access complete overload sets (own + inherited members).
 /// </summary>

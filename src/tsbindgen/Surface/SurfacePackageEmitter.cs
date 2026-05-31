@@ -43,17 +43,35 @@ public static class SurfacePackageEmitter
             var bindingsPath = Path.Combine(outputDirectory, "bindings.json");
             var json = JsonSerializer.Serialize(new
             {
-                bindings = spec.SimpleBindings.ToDictionary(
-                    entry => entry.Key,
-                    entry => new
-                    {
-                        kind = entry.Value.Kind,
-                        assembly = entry.Value.Assembly,
-                        type = entry.Value.Type,
-                        staticType = entry.Value.StaticType,
-                        csharpName = entry.Value.CSharpName,
-                        typeSemantics = entry.Value.TypeSemantics
-                    })
+                schema = "tsonic.bindings",
+                provider = new
+                {
+                    @namespace = "sourceSurface",
+                    ownerIdentities = spec.SimpleBindings.Values
+                        .Select(binding => binding.OwnerIdentity)
+                        .Where(ownerIdentity => !string.IsNullOrWhiteSpace(ownerIdentity))
+                        .Distinct(StringComparer.Ordinal)
+                        .OrderBy(ownerIdentity => ownerIdentity)
+                        .ToArray()
+                },
+                sourceSurface = new
+                {
+                    bindings = spec.SimpleBindings.ToDictionary(
+                        entry => entry.Key,
+                        entry => new
+                        {
+                            kind = entry.Value.Kind,
+                            ownerIdentity = entry.Value.OwnerIdentity,
+                            type = entry.Value.Type,
+                            staticType = entry.Value.StaticType,
+                            providerMemberName = entry.Value.ProviderMemberName,
+                            typeSemantics = entry.Value.TypeSemantics
+                        })
+                },
+                targetSurface = new
+                {
+                    types = Array.Empty<object>()
+                }
             }, JsonOptions);
             File.WriteAllText(bindingsPath, json + Environment.NewLine);
         }

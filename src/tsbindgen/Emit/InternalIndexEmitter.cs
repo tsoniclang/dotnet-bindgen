@@ -87,7 +87,7 @@ public static class InternalIndexEmitter
             facadeMode: false,
             libraryImportStyle: Plan.LibraryImportStyle.InternalIndex);
 
-        // V2 FIX: Create BindingsProvider for inherited member exposure (TS2416 fix)
+        // Create BindingsProvider for inherited member exposure (TS2416 fix)
         var bindingsProvider = new BindingsProvider(ctx, graph);
 
         var sb = new StringBuilder();
