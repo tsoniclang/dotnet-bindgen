@@ -178,8 +178,12 @@ ensure_nuget_publish_auth() {
 
   echo "=== Validate NuGet publish auth ==="
 
+  if [ -n "${NUGET_TOKEN:-}" ]; then
+    export NUGET_API_KEY="$NUGET_TOKEN"
+  fi
+
   if [ -z "${NUGET_API_KEY:-}" ]; then
-    publish_auth_fail "NUGET_API_KEY is required before running publish tests."
+    publish_auth_fail "NUGET_TOKEN or NUGET_API_KEY is required before running publish tests."
   fi
 
   python3 - "$@" <<'PY'
