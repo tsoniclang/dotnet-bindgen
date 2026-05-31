@@ -108,9 +108,9 @@ public static class SurfacePackageLoader
             {
                 throw new InvalidOperationException($"{path}: simpleBindings['{name}'].kind must be 'global' or 'module'.");
             }
-            if (string.IsNullOrWhiteSpace(binding.Assembly) || string.IsNullOrWhiteSpace(binding.Type))
+            if (string.IsNullOrWhiteSpace(binding.OwnerIdentity) || string.IsNullOrWhiteSpace(binding.Type))
             {
-                throw new InvalidOperationException($"{path}: simpleBindings['{name}'] must define assembly and type.");
+                throw new InvalidOperationException($"{path}: simpleBindings['{name}'] must define ownerIdentity and type.");
             }
         }
 

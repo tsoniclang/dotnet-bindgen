@@ -173,26 +173,31 @@ public static class LibraryContractLoader
         using var doc = JsonDocument.Parse(json);
         var root = doc.RootElement;
 
-        if (!root.TryGetProperty("namespace", out var nsElement))
+        if (!root.TryGetProperty("schema", out var schemaElement) ||
+            schemaElement.GetString() != "tsonic.bindings")
         {
-            // Surface packages may also ship a package-root bindings.json for ambient/global
-            // lowering metadata. Those files are not namespace contracts and must not
-            // participate in library-contract ownership resolution.
-            if (root.TryGetProperty("bindings", out _)
-                || root.TryGetProperty("bindingVersion", out _)
-                || root.TryGetProperty("surfaceMode", out _))
-            {
-                return;
-            }
+            throw new InvalidOperationException($"Missing canonical schema 'tsonic.bindings' in bindings file: {filePath}");
+        }
 
-            throw new InvalidOperationException($"Missing 'namespace' field in bindings file: {filePath}");
+        if (!root.TryGetProperty("provider", out var providerElement) ||
+            providerElement.ValueKind != JsonValueKind.Object ||
+            !providerElement.TryGetProperty("namespace", out var nsElement))
+        {
+            throw new InvalidOperationException($"Missing 'provider.namespace' field in bindings file: {filePath}");
         }
         var namespaceName = nsElement.GetString() ?? throw new InvalidOperationException($"Null namespace in {filePath}");
 
-        // Get types array
-        if (!root.TryGetProperty("types", out var typesElement) || typesElement.ValueKind != JsonValueKind.Array)
+        if (!root.TryGetProperty("targetSurface", out var targetSurfaceElement) ||
+            targetSurfaceElement.ValueKind != JsonValueKind.Object ||
+            !targetSurfaceElement.TryGetProperty("types", out var typesElement) ||
+            typesElement.ValueKind != JsonValueKind.Array)
         {
-            throw new InvalidOperationException($"Missing or invalid 'types' array in bindings file: {filePath}");
+            throw new InvalidOperationException($"Missing or invalid 'targetSurface.types' array in bindings file: {filePath}");
+        }
+
+        if (typesElement.GetArrayLength() == 0)
+        {
+            return;
         }
 
         var namespaceTypes = namespaceToTypes.TryGetValue(namespaceName, out var existing)

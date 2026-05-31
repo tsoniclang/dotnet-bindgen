@@ -258,8 +258,8 @@ public sealed class SurfaceSimpleBindingSpec
     [JsonPropertyName("kind")]
     public string Kind { get; init; } = "";
 
-    [JsonPropertyName("assembly")]
-    public string Assembly { get; init; } = "";
+    [JsonPropertyName("ownerIdentity")]
+    public string OwnerIdentity { get; init; } = "";
 
     [JsonPropertyName("type")]
     public string Type { get; init; } = "";
@@ -267,8 +267,8 @@ public sealed class SurfaceSimpleBindingSpec
     [JsonPropertyName("staticType")]
     public string? StaticType { get; init; }
 
-    [JsonPropertyName("csharpName")]
-    public string? CSharpName { get; init; }
+    [JsonPropertyName("providerMemberName")]
+    public string? ProviderMemberName { get; init; }
 
     [JsonPropertyName("typeSemantics")]
     public TypeSemanticsSpec? TypeSemantics { get; init; }

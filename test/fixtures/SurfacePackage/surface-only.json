@@ -37,7 +37,7 @@
   "simpleBindings": {
     "String": {
       "kind": "global",
-      "assembly": "Example.Runtime",
+      "ownerIdentity": "Example.Runtime",
       "type": "Example.Runtime.String",
       "typeSemantics": {
         "contributesTypeIdentity": true

@@ -23,10 +23,13 @@ public sealed class LibraryContractLoaderTests
             Path.Combine(ownNsDir, "bindings.json"),
             """
             {
-              "namespace": "Foo",
-              "types": [
-                { "stableId": "Lib:Foo.Bar" }
-              ]
+              "schema": "tsonic.bindings",
+              "provider": { "namespace": "Foo" },
+              "targetSurface": {
+                "types": [
+                  { "stableId": "Lib:Foo.Bar" }
+                ]
+              }
             }
             """);
 
@@ -38,10 +41,13 @@ public sealed class LibraryContractLoaderTests
             Path.Combine(depNsDir, "bindings.json"),
             """
             {
-              "namespace": "Foo",
-              "types": [
-                { "stableId": "Dep:Foo.Baz" }
-              ]
+              "schema": "tsonic.bindings",
+              "provider": { "namespace": "Foo" },
+              "targetSurface": {
+                "types": [
+                  { "stableId": "Dep:Foo.Baz" }
+                ]
+              }
             }
             """);
 
@@ -68,12 +74,22 @@ public sealed class LibraryContractLoaderTests
             Path.Combine(scratch, "bindings.json"),
             """
             {
-              "bindings": {
-                "Date": {
-                  "kind": "global",
-                  "assembly": "Test.Runtime",
-                  "type": "Test.Runtime.Date"
+              "schema": "tsonic.bindings",
+              "provider": {
+                "namespace": "sourceSurface",
+                "ownerIdentities": ["Test.Runtime"]
+              },
+              "sourceSurface": {
+                "bindings": {
+                  "Date": {
+                    "kind": "global",
+                    "ownerIdentity": "Test.Runtime",
+                    "type": "Test.Runtime.Date"
+                  }
                 }
+              },
+              "targetSurface": {
+                "types": []
               }
             }
             """);
@@ -84,10 +100,13 @@ public sealed class LibraryContractLoaderTests
             Path.Combine(ownNsDir, "bindings.json"),
             """
             {
-              "namespace": "Test.Runtime",
-              "types": [
-                { "stableId": "Test.Runtime:Test.Runtime.Date" }
-              ]
+              "schema": "tsonic.bindings",
+              "provider": { "namespace": "Test.Runtime" },
+              "targetSurface": {
+                "types": [
+                  { "stableId": "Test.Runtime:Test.Runtime.Date" }
+                ]
+              }
             }
             """);
 

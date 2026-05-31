@@ -82,20 +82,24 @@ public sealed class ProtectedVirtualMembersTests
 
         // bindings.json includes visibility + base type and interface heritage.
         using var doc = JsonDocument.Parse(File.ReadAllText(bindingsJson));
-        var types = doc.RootElement.GetProperty("types").EnumerateArray().ToList();
+        var types = doc.RootElement
+            .GetProperty("targetSurface")
+            .GetProperty("types")
+            .EnumerateArray()
+            .ToList();
 
-        var baseType = types.Single(t => t.GetProperty("clrName").GetString() == "ProtectedVirtualFixture.Base");
+        var baseType = types.Single(t => t.GetProperty("targetName").GetString() == "ProtectedVirtualFixture.Base");
         Assert.True(baseType.TryGetProperty("baseType", out _), "Expected baseType in bindings.json");
 
         var methods = baseType.GetProperty("methods").EnumerateArray().ToList();
-        var foo = methods.Single(m => m.GetProperty("clrName").GetString() == "Foo");
+        var foo = methods.Single(m => m.GetProperty("targetName").GetString() == "Foo");
         Assert.Equal("Protected", foo.GetProperty("visibility").GetString());
 
-        var bar = methods.Single(m => m.GetProperty("clrName").GetString() == "Bar");
+        var bar = methods.Single(m => m.GetProperty("targetName").GetString() == "Bar");
         Assert.Equal("ProtectedInternal", bar.GetProperty("visibility").GetString());
 
-        Assert.DoesNotContain(methods, m => m.GetProperty("clrName").GetString() == "InternalVirt");
-        Assert.DoesNotContain(methods, m => m.GetProperty("clrName").GetString() == "PrivateProtectedVirt");
+        Assert.DoesNotContain(methods, m => m.GetProperty("targetName").GetString() == "InternalVirt");
+        Assert.DoesNotContain(methods, m => m.GetProperty("targetName").GetString() == "PrivateProtectedVirt");
     }
 
     private static string FindRepoRoot()

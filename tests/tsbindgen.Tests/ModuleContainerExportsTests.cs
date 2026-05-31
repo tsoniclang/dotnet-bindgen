@@ -46,7 +46,8 @@ public sealed class ModuleContainerExportsTests
         using var doc = JsonDocument.Parse(File.ReadAllText(bindingsPath));
         var root = doc.RootElement;
 
-        Assert.True(root.TryGetProperty("exports", out var exports), "bindings.json is missing `exports`");
+        Assert.True(root.TryGetProperty("targetSurface", out var targetSurface), "bindings.json is missing `targetSurface`");
+        Assert.True(targetSurface.TryGetProperty("exports", out var exports), "bindings.json is missing `targetSurface.exports`");
 
         AssertExport(exports, "buildSite", "method", "ModuleContainerExportsFixture.BuildSite", "ModuleContainerExportsFixture", "buildSite");
         AssertExport(exports, "Version", "property", "ModuleContainerExportsFixture.BuildSite", "ModuleContainerExportsFixture", "Version");
@@ -117,16 +118,16 @@ public sealed class ModuleContainerExportsTests
         JsonElement exports,
         string exportName,
         string expectedKind,
-        string expectedDeclaringClrType,
-        string expectedDeclaringAssembly,
-        string expectedClrName)
+        string expectedOwnerQualifiedName,
+        string expectedOwnerIdentity,
+        string expectedTargetName)
     {
         Assert.True(exports.TryGetProperty(exportName, out var exp), $"Missing export '{exportName}'");
 
         Assert.Equal(expectedKind, exp.GetProperty("kind").GetString());
-        Assert.Equal(expectedDeclaringClrType, exp.GetProperty("declaringClrType").GetString());
-        Assert.Equal(expectedDeclaringAssembly, exp.GetProperty("declaringAssemblyName").GetString());
-        Assert.Equal(expectedClrName, exp.GetProperty("clrName").GetString());
+        Assert.Equal(expectedOwnerQualifiedName, exp.GetProperty("ownerQualifiedName").GetString());
+        Assert.Equal(expectedOwnerIdentity, exp.GetProperty("ownerIdentity").GetString());
+        Assert.Equal(expectedTargetName, exp.GetProperty("targetName").GetString());
     }
 
     private static string FindRepoRoot()
