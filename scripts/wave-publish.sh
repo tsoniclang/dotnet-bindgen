@@ -9,7 +9,7 @@ TSONICLANG_ROOT="$(cd "$TSBINDGEN_ROOT/.." && pwd)"
 source "$SCRIPT_DIR/publish-auth.sh"
 
 NPM_WAVE_REPOS=(
-  "tsbindgen"
+  "dotnet-bindgen"
   "tsonic"
   "core"
   "dotnet"
@@ -126,7 +126,7 @@ repo_path() {
 package_json_for_repo() {
   local repo="$1"
   case "$repo" in
-    tsbindgen) echo "$TSONICLANG_ROOT/tsbindgen/package.json" ;;
+    dotnet-bindgen) echo "$TSONICLANG_ROOT/dotnet-bindgen/package.json" ;;
     tsonic) echo "$TSONICLANG_ROOT/tsonic/packages/cli/package.json" ;;
     core|dotnet|globals|js|nodejs) echo "$TSONICLANG_ROOT/$repo/versions/10/package.json" ;;
     express|aspnetcore|microsoft-extensions|efcore|efcore-sqlite|efcore-sqlserver|efcore-npgsql) echo "$TSONICLANG_ROOT/$repo/package.json" ;;
@@ -187,11 +187,11 @@ NODE
 package_scope_paths_for_repo() {
   local repo="$1"
   case "$repo" in
-    tsbindgen) echo "src test npm/tsbindgen package.json" ;;
+    dotnet-bindgen) echo "src test npm/dotnet-bindgen package.json" ;;
     tsonic) echo "packages npm/tsonic test package.json" ;;
     core|dotnet|globals|js|nodejs) echo "versions/10" ;;
     express|aspnetcore|microsoft-extensions|efcore|efcore-sqlite|efcore-sqlserver|efcore-npgsql) echo "." ;;
-    runtime) echo "Directory.Build.props src/Tsonic.Runtime" ;;
+    csharp-runtime) echo "Directory.Build.props src/Tsonic.CSharp.Runtime" ;;
     *)
       echo "Error: unknown repo '$repo'" >&2
       exit 1
@@ -202,7 +202,7 @@ package_scope_paths_for_repo() {
 nuget_project_for_repo() {
   local repo="$1"
   case "$repo" in
-    runtime) echo "src/Tsonic.Runtime/Tsonic.Runtime.csproj" ;;
+    csharp-runtime) echo "src/Tsonic.CSharp.Runtime/Tsonic.CSharp.Runtime.csproj" ;;
     *)
       echo "Error: unknown NuGet repo '$repo'" >&2
       exit 1
@@ -213,7 +213,7 @@ nuget_project_for_repo() {
 xml_version_file_for_repo() {
   local repo="$1"
   case "$repo" in
-    runtime) echo "Directory.Build.props" ;;
+    csharp-runtime) echo "Directory.Build.props" ;;
     *)
       echo "Error: unknown NuGet repo '$repo'" >&2
       exit 1
@@ -651,7 +651,7 @@ preflight_repo() {
       echo ">>> preflight $repo: dotnet test"
       (cd "$path" && dotnet test)
       ;;
-    tsbindgen)
+    dotnet-bindgen)
       echo ">>> preflight $repo: bash test/scripts/run-all.sh"
       (cd "$path" && bash test/scripts/run-all.sh)
       ;;
@@ -688,7 +688,7 @@ preflight_wave() {
   done
 
   local ordered_npm_preflight=(
-    "tsbindgen"
+    "dotnet-bindgen"
     "tsonic"
     "core"
     "dotnet"
@@ -730,7 +730,7 @@ publish_nuget_wave() {
 publish_npm_wave() {
   echo "=== Publish npm wave ==="
   local ordered_npm=(
-    "tsbindgen"
+    "dotnet-bindgen"
     "tsonic"
     "core"
     "dotnet"
@@ -751,7 +751,7 @@ publish_npm_wave() {
       continue
     fi
     case "$repo" in
-      tsbindgen|tsonic)
+      dotnet-bindgen|tsonic)
         run_repo_publish_script "$repo" "$(package_json_for_repo "$repo")"
         ;;
       core|dotnet|globals|js|nodejs|express)

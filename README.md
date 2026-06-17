@@ -1,8 +1,8 @@
-# tsbindgen
+# dotnet-bindgen
 
 **TypeScript type declaration generator for .NET assemblies**
 
-tsbindgen generates TypeScript declaration files (`.d.ts`) from .NET assemblies using reflection. It creates fully-typed, IDE-friendly TypeScript definitions that map the entire .NET Base Class Library (BCL) to TypeScript.
+dotnet-bindgen generates TypeScript declaration files (`.d.ts`) from .NET assemblies using reflection. It creates fully-typed, IDE-friendly TypeScript definitions that map the entire .NET Base Class Library (BCL) to TypeScript.
 
 ## Features
 
@@ -23,9 +23,9 @@ tsbindgen generates TypeScript declaration files (`.d.ts`) from .NET assemblies 
 ### Via npm (recommended)
 
 ```bash
-npm install tsbindgen
+npm install dotnet-bindgen
 # or
-npm install @tsonic/tsbindgen
+npm install @tsonic/dotnet-bindgen
 ```
 
 Requires .NET 10 runtime installed.
@@ -33,9 +33,9 @@ Requires .NET 10 runtime installed.
 ### From source
 
 ```bash
-git clone https://github.com/tsoniclang/tsbindgen
-cd tsbindgen
-dotnet build src/tsbindgen/tsbindgen.csproj
+git clone https://github.com/tsoniclang/dotnet-bindgen
+cd dotnet-bindgen
+dotnet build src/DotnetBindgen/DotnetBindgen.csproj
 ```
 
 ## Quick Start
@@ -46,10 +46,10 @@ dotnet build src/tsbindgen/tsbindgen.csproj
 DOTNET_RUNTIME=$(dirname "$(dotnet --list-runtimes | awk '/Microsoft.NETCore.App 10\\./ { print $3; exit }')")
 
 # Via npm
-npx tsbindgen generate -d "$DOTNET_RUNTIME" -o ./output
+npx dotnet-bindgen generate -d "$DOTNET_RUNTIME" -o ./output
 
 # Via dotnet (from source)
-dotnet run --project src/tsbindgen/tsbindgen.csproj -- \
+dotnet run --project src/DotnetBindgen/DotnetBindgen.csproj -- \
   generate -d "$DOTNET_RUNTIME" -o ./output
 ```
 
@@ -57,10 +57,10 @@ dotnet run --project src/tsbindgen/tsbindgen.csproj -- \
 
 ```bash
 # Via npm
-npx tsbindgen generate -a ./MyLibrary.dll -d $DOTNET_RUNTIME -o ./output
+npx dotnet-bindgen generate -a ./MyLibrary.dll -d $DOTNET_RUNTIME -o ./output
 
 # Via dotnet (from source)
-dotnet run --project src/tsbindgen/tsbindgen.csproj -- \
+dotnet run --project src/DotnetBindgen/DotnetBindgen.csproj -- \
   generate -a ./MyLibrary.dll -d $DOTNET_RUNTIME -o ./output
 ```
 
@@ -68,18 +68,18 @@ dotnet run --project src/tsbindgen/tsbindgen.csproj -- \
 
 ```bash
 # First, generate BCL types
-npx tsbindgen generate -d $DOTNET_RUNTIME -o ./bcl-types
+npx dotnet-bindgen generate -d $DOTNET_RUNTIME -o ./bcl-types
 
 # Then generate your library, importing BCL from the pre-existing package
-npx tsbindgen generate -a ./MyLibrary.dll -d $DOTNET_RUNTIME -o ./my-lib --lib ./bcl-types
+npx dotnet-bindgen generate -a ./MyLibrary.dll -d $DOTNET_RUNTIME -o ./my-lib --lib ./bcl-types
 ```
 
-If you provide multiple `--lib` packages and the same CLR type exists in more than one of them, tsbindgen will hard-error
+If you provide multiple `--lib` packages and the same CLR type exists in more than one of them, dotnet-bindgen will hard-error
 because it cannot safely choose an import source. In rare cases where this is expected, you can provide explicit per-type
 overrides:
 
 ```bash
-npx tsbindgen generate -a ./MyLibrary.dll -d $DOTNET_RUNTIME -o ./my-lib \
+npx dotnet-bindgen generate -a ./MyLibrary.dll -d $DOTNET_RUNTIME -o ./my-lib \
   --lib ./efcore-types \
   --lib ./efcore-abstractions \
   --lib-type-override "Microsoft.EntityFrameworkCore.DbContext=@tsonic/efcore"
@@ -103,7 +103,7 @@ npx tsbindgen generate -a ./MyLibrary.dll -d $DOTNET_RUNTIME -o ./my-lib \
 | `--ref-dir` | - | Additional directory to search for referenced assemblies (repeatable) | - |
 | `--out-dir` | `-o` | Output directory for generated files | `out` |
 | `--namespaces` | `-n` | Namespace filter (reserved; currently ignored) | (all) |
-| `--lib` | - | Path to pre-existing tsbindgen package (repeatable) | - |
+| `--lib` | - | Path to pre-existing dotnet-bindgen package (repeatable) | - |
 | `--lib-type-override` | - | Override owning package for a CLR type when merging multiple `--lib` packages (repeatable; `ClrFullName=packageName`) | - |
 | `--namespace-map` | - | Map CLR namespace to output name (repeatable) | - |
 | `--flatten-class` | - | Flatten static class to top-level exports (repeatable) | - |
@@ -121,10 +121,10 @@ Machine-readable dependency resolution for one or more seed assemblies. Useful f
 
 ```bash
 # Standard SDK/runtime installs usually work with no extra ref dirs
-npx tsbindgen resolve-closure -a ./MyLibrary.dll
+npx dotnet-bindgen resolve-closure -a ./MyLibrary.dll
 
 # Add extra directories only when dependencies live outside the runtime closure
-npx tsbindgen resolve-closure \
+npx dotnet-bindgen resolve-closure \
   -a ./MyLibrary.dll \
   --ref-dir ./libs
 ```
@@ -143,22 +143,22 @@ version mismatch directly.
 
 ```bash
 # Generate a custom assembly
-npx tsbindgen generate -a ./MyLibrary.dll -o ./out
+npx dotnet-bindgen generate -a ./MyLibrary.dll -o ./out
 
 # Add extra directories when dependencies live outside the runtime closure
-npx tsbindgen generate -a ./MyLibrary.dll -o ./out \
+npx dotnet-bindgen generate -a ./MyLibrary.dll -o ./out \
   --ref-dir ./libs
 
 # Verbose output with specific log categories
-npx tsbindgen generate -d $DOTNET_RUNTIME -o ./out -v --logs ImportPlanner FacadeEmitter
+npx dotnet-bindgen generate -d $DOTNET_RUNTIME -o ./out -v --logs ImportPlanner FacadeEmitter
 
 # Strict mode (additional validation)
-npx tsbindgen generate -d $DOTNET_RUNTIME -o ./out --strict
+npx dotnet-bindgen generate -d $DOTNET_RUNTIME -o ./out --strict
 ```
 
 ## Output Structure
 
-tsbindgen emits a flat ESM facade per namespace plus a per-namespace directory for internals:
+dotnet-bindgen emits a flat ESM facade per namespace plus a per-namespace directory for internals:
 
 ```
 output/
@@ -223,7 +223,7 @@ Tsonic resolves the import using Node’s module resolution (including `exports`
 
 ## Extension Methods (C# `using` Semantics)
 
-tsbindgen collects C# extension methods into bucket helper types under `__internal/extensions/index.d.ts` and re-exports a per-namespace helper from each facade:
+dotnet-bindgen collects C# extension methods into bucket helper types under `__internal/extensions/index.d.ts` and re-exports a per-namespace helper from each facade:
 
 ```ts
 // System.Linq.d.ts
@@ -296,7 +296,7 @@ import { List } from "@tsonic/dotnet/System.Collections.Generic.js";  // Friendl
 
 ## Naming
 
-tsbindgen emits **CLR-faithful names** (no casing transforms).
+dotnet-bindgen emits **CLR-faithful names** (no casing transforms).
 
 ## Testing
 
@@ -319,8 +319,8 @@ bash test/scripts/test-lib.sh
 ### Project Structure
 
 ```
-tsbindgen/
-├── src/tsbindgen/
+dotnet-bindgen/
+├── src/DotnetBindgen/
 │   ├── Cli/                 # Command-line interface
 │   ├── Load/                # Assembly loading and reflection
 │   ├── Model/               # Symbol graph data structures
@@ -341,13 +341,13 @@ tsbindgen/
 
 ```bash
 # Build
-dotnet build src/tsbindgen/tsbindgen.csproj
+dotnet build src/DotnetBindgen/DotnetBindgen.csproj
 
 # Build release
-dotnet build src/tsbindgen/tsbindgen.csproj -c Release
+dotnet build src/DotnetBindgen/DotnetBindgen.csproj -c Release
 
 # Run
-dotnet run --project src/tsbindgen/tsbindgen.csproj -- <args>
+dotnet run --project src/DotnetBindgen/DotnetBindgen.csproj -- <args>
 ```
 
 ## Documentation
@@ -357,7 +357,7 @@ dotnet run --project src/tsbindgen/tsbindgen.csproj -- <args>
 
 ## Related Projects
 
-- **[@tsonic/dotnet](https://www.npmjs.com/package/@tsonic/dotnet)** - Pre-generated BCL types (generated by tsbindgen)
+- **[@tsonic/dotnet](https://www.npmjs.com/package/@tsonic/dotnet)** - Pre-generated BCL types (generated by dotnet-bindgen)
 - **[@tsonic/core](https://www.npmjs.com/package/@tsonic/core)** - Tsonic runtime types and primitives
 
 ## License

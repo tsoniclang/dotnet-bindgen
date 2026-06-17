@@ -1,7 +1,7 @@
 #!/bin/bash
 # Test: No bigint carrier in emitted constraints
 # Verifies that constraint relaxation uses only { number, string, boolean } per @tsonic/core contract.
-# This prevents contract drift between tsbindgen and @tsonic/core.
+# This prevents contract drift between dotnet-bindgen and @tsonic/core.
 
 source "$(dirname "${BASH_SOURCE[0]}")/_common.sh"
 

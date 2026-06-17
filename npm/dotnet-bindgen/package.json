@@ -1,0 +1,26 @@
+{
+  "name": "dotnet-bindgen",
+  "version": "0.7.55",
+  "description": "Generate TypeScript declarations from .NET assemblies",
+  "type": "module",
+  "bin": {
+    "dotnet-bindgen": "bin.js"
+  },
+  "dependencies": {
+    "@tsonic/dotnet-bindgen": "0.7.55"
+  },
+  "keywords": [
+    "tsonic",
+    "typescript",
+    "dotnet",
+    "csharp",
+    "codegen",
+    "bindings"
+  ],
+  "author": "Tsonic Team",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/tsoniclang/dotnet-bindgen.git"
+  }
+}

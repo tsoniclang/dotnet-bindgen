@@ -1,6 +1,6 @@
 # Naming
 
-`tsbindgen` favors CLR-faithful naming over cosmetic translation.
+`dotnet-bindgen` favors CLR-faithful naming over cosmetic translation.
 
 ## Why
 

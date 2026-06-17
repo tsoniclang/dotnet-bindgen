@@ -22,7 +22,7 @@ mkdir -p "$LIB_TEST_DIR"
 
 # Step 1: Generate BCL types (the library contract)
 echo "[2/5] Generating BCL types (library contract)..."
-if ! dotnet run --project "$PROJECT_ROOT/src/tsbindgen/tsbindgen.csproj" -- \
+if ! dotnet run --project "$PROJECT_ROOT/src/DotnetBindgen/DotnetBindgen.csproj" -- \
     generate -d "$DOTNET_RUNTIME" \
     -o "$LIB_TEST_DIR/bcl-types" \
     > "$LIB_TEST_DIR/bcl-gen.txt" 2>&1; then
@@ -63,7 +63,7 @@ echo "          ✓ User library fixture built ($userlib_dll)"
 
 # Step 3: Generate user library WITHOUT --lib (should emit everything)
 echo "[4/5] Generating user library without --lib (baseline)..."
-if ! dotnet run --project "$PROJECT_ROOT/src/tsbindgen/tsbindgen.csproj" -- \
+if ! dotnet run --project "$PROJECT_ROOT/src/DotnetBindgen/DotnetBindgen.csproj" -- \
     generate -a "$userlib_dll" \
     -d "$DOTNET_RUNTIME" \
     -o "$LIB_TEST_DIR/user-lib-full" \
@@ -79,7 +79,7 @@ echo "          (Includes both user types AND BCL types)"
 
 # Step 4: Generate user library WITH --lib (should only emit user types)
 echo "[5/5] Generating user library with --lib (filtered)..."
-if ! dotnet run --project "$PROJECT_ROOT/src/tsbindgen/tsbindgen.csproj" -- \
+if ! dotnet run --project "$PROJECT_ROOT/src/DotnetBindgen/DotnetBindgen.csproj" -- \
     generate -a "$userlib_dll" \
     -d "$DOTNET_RUNTIME" \
     -o "$LIB_TEST_DIR/user-lib-filtered" \

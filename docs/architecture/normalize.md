@@ -66,7 +66,7 @@ When a name is already taken in a scope, numeric suffixes are added:
 
 ## Naming Style
 
-tsbindgen emits **CLR-faithful names**. The renamer’s style transforms are
+dotnet-bindgen emits **CLR-faithful names**. The renamer’s style transforms are
 identity transforms, and there is no `--naming` option.
 
 ## Reserved Word Handling

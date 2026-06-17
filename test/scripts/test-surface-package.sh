@@ -16,12 +16,12 @@ WITH_ASSEMBLY_OUT="$TESTS_DIR/surface-package-with-assembly"
 rm -rf "$SURFACE_ONLY_OUT" "$MODULE_ONLY_OUT" "$WITH_ASSEMBLY_OUT"
 mkdir -p "$SURFACE_ONLY_OUT" "$MODULE_ONLY_OUT" "$WITH_ASSEMBLY_OUT"
 
-echo "[1/4] Building tsbindgen..."
-dotnet build "$PROJECT_ROOT/src/tsbindgen/tsbindgen.csproj" -c Release --verbosity quiet >/dev/null
-echo -e "${GREEN}✓ tsbindgen built${NC}"
+echo "[1/4] Building DotnetBindgen..."
+dotnet build "$PROJECT_ROOT/src/DotnetBindgen/DotnetBindgen.csproj" -c Release --verbosity quiet >/dev/null
+echo -e "${GREEN}✓ dotnet-bindgen built${NC}"
 
 echo "[2/4] Surface-only generation..."
-dotnet run --project "$PROJECT_ROOT/src/tsbindgen/tsbindgen.csproj" --no-build -c Release -- \
+dotnet run --project "$PROJECT_ROOT/src/DotnetBindgen/DotnetBindgen.csproj" --no-build -c Release -- \
   generate \
   --out-dir "$SURFACE_ONLY_OUT" \
   --surface-package "$PROJECT_ROOT/test/fixtures/SurfacePackage/surface-only.json" \
@@ -36,7 +36,7 @@ assert_grep '"surfaceMode": "@acme/js"' "$SURFACE_ONLY_OUT/tsonic.bindings.json"
 assert_grep '"id": "@acme/js"' "$SURFACE_ONLY_OUT/tsonic.surface.json" "surface-only emits surface manifest"
 
 echo "[3/5] Module-only surface generation..."
-dotnet run --project "$PROJECT_ROOT/src/tsbindgen/tsbindgen.csproj" --no-build -c Release -- \
+dotnet run --project "$PROJECT_ROOT/src/DotnetBindgen/DotnetBindgen.csproj" --no-build -c Release -- \
   generate \
   --out-dir "$MODULE_ONLY_OUT" \
   --surface-package "$PROJECT_ROOT/test/fixtures/SurfacePackage/module-only.json" \
@@ -65,7 +65,7 @@ if [ ! -f "$USERLIB_DLL" ]; then
 fi
 
 echo "[5/5] Assembly + surface package generation..."
-dotnet run --project "$PROJECT_ROOT/src/tsbindgen/tsbindgen.csproj" --no-build -c Release -- \
+dotnet run --project "$PROJECT_ROOT/src/DotnetBindgen/DotnetBindgen.csproj" --no-build -c Release -- \
   generate \
   -a "$USERLIB_DLL" \
   -d "$DOTNET_RUNTIME" \
@@ -80,7 +80,7 @@ assert_grep '"emitSemantics"' "$WITH_ASSEMBLY_OUT/MyCompany.Utils/bindings.json"
 assert_grep '"callStyle": "static"' "$WITH_ASSEMBLY_OUT/MyCompany.Utils/bindings.json" "embedded member semantics preserve declared static style"
 
 echo "[6/6] Standalone bindings-semantics overlay..."
-dotnet run --project "$PROJECT_ROOT/src/tsbindgen/tsbindgen.csproj" --no-build -c Release -- \
+dotnet run --project "$PROJECT_ROOT/src/DotnetBindgen/DotnetBindgen.csproj" --no-build -c Release -- \
   generate \
   -a "$USERLIB_DLL" \
   -d "$DOTNET_RUNTIME" \

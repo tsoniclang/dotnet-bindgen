@@ -16,7 +16,7 @@ mkdir -p .tests/perf-baseline
 start_time=$(date +%s.%N)
 
 echo "Running strict generation with detailed logging..."
-output=$(dotnet run --project src/tsbindgen/tsbindgen.csproj -- \
+output=$(dotnet run --project src/DotnetBindgen/DotnetBindgen.csproj -- \
     generate -d ~/dotnet/shared/Microsoft.NETCore.App/10.0.0-rc.1.25451.107 \
     -o .tests/perf-baseline --strict --logs PhaseGate,SCC,HonestEmission 2>&1)
 

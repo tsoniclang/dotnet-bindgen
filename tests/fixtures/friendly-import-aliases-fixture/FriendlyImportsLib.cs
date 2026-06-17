@@ -5,7 +5,7 @@ public sealed class Box<T>
 }
 
 // Intentionally ends with "_1" but is NOT generic.
-// Used to ensure tsbindgen does not "prettify" based on name alone.
+// Used to ensure dotnet-bindgen does not "prettify" based on name alone.
 public sealed class Database_1
 {
 }

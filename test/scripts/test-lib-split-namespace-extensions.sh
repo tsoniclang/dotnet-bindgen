@@ -27,7 +27,7 @@ rm -rf "$EXT_TEST_DIR"
 mkdir -p "$EXT_TEST_DIR"
 
 echo "[2/6] Generating BCL types (library contract)..."
-if ! dotnet run --project "$PROJECT_ROOT/src/tsbindgen/tsbindgen.csproj" -- \
+if ! dotnet run --project "$PROJECT_ROOT/src/DotnetBindgen/DotnetBindgen.csproj" -- \
     generate -d "$DOTNET_RUNTIME" \
     -o "$EXT_TEST_DIR/bcl-types" \
     > "$EXT_TEST_DIR/bcl-gen.txt" 2>&1; then
@@ -54,7 +54,7 @@ else
 fi
 
 echo "      Generating SplitNsLib bindings (filtered by --lib BCL)..."
-if ! dotnet run --project "$PROJECT_ROOT/src/tsbindgen/tsbindgen.csproj" -- \
+if ! dotnet run --project "$PROJECT_ROOT/src/DotnetBindgen/DotnetBindgen.csproj" -- \
     generate -a "$splitns_dll" \
     -d "$DOTNET_RUNTIME" \
     -o "$EXT_TEST_DIR/split-ns-types" \
@@ -83,7 +83,7 @@ else
 fi
 
 echo "[5/6] Generating SplitNsExtensions bindings with TWO --lib packages (split namespace)..."
-if ! dotnet run --project "$PROJECT_ROOT/src/tsbindgen/tsbindgen.csproj" -- \
+if ! dotnet run --project "$PROJECT_ROOT/src/DotnetBindgen/DotnetBindgen.csproj" -- \
     generate -a "$ext_dll" \
     -d "$DOTNET_RUNTIME" \
     -o "$EXT_TEST_DIR/ext-types" \

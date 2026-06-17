@@ -1,15 +1,15 @@
 ---
-title: tsbindgen
+title: dotnet-bindgen
 ---
 
-# tsbindgen
+# dotnet-bindgen
 
-`tsbindgen` generates TypeScript declaration packages from .NET assemblies and
+`dotnet-bindgen` generates TypeScript declaration packages from .NET assemblies and
 frameworks.
 
 ## Role in the stack
 
-`tsbindgen` is the generator for CLR binding packages. It is **not** the
+`dotnet-bindgen` is the generator for CLR binding packages. It is **not** the
 source-of-truth for first-party authored packages like `@tsonic/js`,
 `@tsonic/nodejs`, or `@tsonic/express`.
 
@@ -17,7 +17,7 @@ source-of-truth for first-party authored packages like `@tsonic/js`,
 
 - [Getting Started](getting-started.md)
 - [CLI](cli.md)
-- [What tsbindgen Generates](what-tsbindgen-generates.md)
+- [What dotnet-bindgen Generates](what-dotnet-bindgen-generates.md)
 - [Type Mappings](type-mappings.md)
 - [Naming](naming.md)
 - [Library Mode](library-mode.md)
@@ -89,7 +89,7 @@ rather than package-by-package API narration.
 
 ## What makes it important
 
-`tsbindgen` sits at the boundary between CLR ecosystems and Tsonic authoring.
+`dotnet-bindgen` sits at the boundary between CLR ecosystems and Tsonic authoring.
 It is responsible for:
 
 - reflecting CLR assemblies and frameworks

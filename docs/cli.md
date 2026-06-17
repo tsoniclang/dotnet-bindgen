@@ -4,7 +4,7 @@ title: CLI
 
 # CLI
 
-The `tsbindgen` CLI is used to generate binding packages from CLR inputs.
+The `dotnet-bindgen` CLI is used to generate binding packages from CLR inputs.
 
 ## Main commands
 
@@ -14,7 +14,7 @@ The `tsbindgen` CLI is used to generate binding packages from CLR inputs.
 ## Typical usage
 
 ```bash
-dotnet run --project src/tsbindgen/tsbindgen.csproj -- \
+dotnet run --project src/DotnetBindgen/DotnetBindgen.csproj -- \
   generate -d /path/to/assemblies -o ./output
 ```
 
@@ -44,7 +44,7 @@ The CLI emits strict TypeScript declarations:
 ## `resolve-closure`
 
 ```bash
-npx tsbindgen resolve-closure -a ./MyLibrary.dll
+npx dotnet-bindgen resolve-closure -a ./MyLibrary.dll
 ```
 
 Use this to inspect the resolved assembly closure without generating output.
@@ -56,7 +56,7 @@ use `dotnet --list-runtimes` to locate `Microsoft.NETCore.App`:
 
 ```bash
 DOTNET_RUNTIME=$(dirname "$(dotnet --list-runtimes | awk '/Microsoft.NETCore.App 10\\./ { print $3; exit }')")
-npx tsbindgen generate -d "$DOTNET_RUNTIME" -o ./output
+npx dotnet-bindgen generate -d "$DOTNET_RUNTIME" -o ./output
 ```
 
 Repo-local test scripts perform the same discovery and accept `DOTNET_RUNTIME`

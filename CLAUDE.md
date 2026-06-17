@@ -1,6 +1,6 @@
 # CLAUDE.md
 
-This file provides guidance to Claude Code (claude.ai/code) when working with the tsbindgen project.
+This file provides guidance to Claude Code (claude.ai/code) when working with the dotnet-bindgen project.
 
 ## Critical Guidelines
 
@@ -138,8 +138,8 @@ public class TypeModel
 
 **Non-negotiable rules for type emission:**
 
-1. **tsbindgen never infers CLR identity from a TS type** - No "if `T extends number` then CLR.Int32". All type decisions come from CLR metadata.
-2. **tsbindgen only emits types derived from CLR metadata** - TypeScript is for shape/callability/ergonomics, not CLR identity.
+1. **dotnet-bindgen never infers CLR identity from a TS type** - No "if `T extends number` then CLR.Int32". All type decisions come from CLR metadata.
+2. **dotnet-bindgen only emits types derived from CLR metadata** - TypeScript is for shape/callability/ergonomics, not CLR identity.
 3. **Primitive identity does not exist in TS for numerics** - Any API relying on TS to distinguish `Int32` vs `SByte` is invalid. The Tsonic compiler is the numeric authority.
 
 **Primitive emission pattern:**
@@ -411,7 +411,7 @@ Only after reading these documents should you proceed with implementation tasks.
 
 ## Project Overview
 
-**tsbindgen** is a .NET tool that generates TypeScript declaration files (`.d.ts`) and CLR bindings manifests (`bindings.json`) from .NET assemblies using reflection.
+**dotnet-bindgen** is a .NET tool that generates TypeScript declaration files (`.d.ts`) and CLR bindings manifests (`bindings.json`) from .NET assemblies using reflection.
 
 ### Purpose
 
@@ -600,7 +600,7 @@ TS6200 - Duplicate type aliases (expected for primitive type aliases)
 ### Generating Declarations for an Assembly
 
 ```bash
-dotnet run --project src/tsbindgen/tsbindgen.csproj -- \
+dotnet run --project src/DotnetBindgen/DotnetBindgen.csproj -- \
   generate -a /path/to/Assembly.dll \
   --out-dir output/
 ```
@@ -632,10 +632,10 @@ grep "System.Collections.Generic" .tests/run.txt
 
 ```bash
 # Build project
-dotnet build src/tsbindgen/tsbindgen.csproj
+dotnet build src/DotnetBindgen/DotnetBindgen.csproj
 
 # Run tool
-dotnet run --project src/tsbindgen/tsbindgen.csproj -- <args>
+dotnet run --project src/DotnetBindgen/DotnetBindgen.csproj -- <args>
 
 # Validate all BCL assemblies
 node test/validate/validate.js
