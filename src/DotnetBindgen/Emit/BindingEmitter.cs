@@ -1,6 +1,7 @@
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
+using System.Text.Encodings.Web;
 using System.Text.Json;
 using System.Text.Json.Serialization;
 using DotnetBindgen.Renaming;
@@ -44,12 +45,13 @@ public static class BindingEmitter
             var jsonOptions = new JsonSerializerOptions
             {
                 WriteIndented = true,
+                Encoder = JavaScriptEncoder.UnsafeRelaxedJsonEscaping,
                 DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull,
                 PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
                 Converters = { new JsonStringEnumConverter(JsonNamingPolicy.CamelCase) }
             };
             var json = JsonSerializer.Serialize(bindings, jsonOptions);
-            File.WriteAllText(outputFile, json);
+            File.WriteAllText(outputFile, json + System.Environment.NewLine);
 
             ctx.Log("BindingEmitter", $"    → {outputFile}");
             emittedCount++;

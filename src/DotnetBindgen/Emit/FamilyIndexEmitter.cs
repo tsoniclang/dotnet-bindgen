@@ -1,4 +1,5 @@
 using System.Collections.Immutable;
+using System.Text.Encodings.Web;
 using System.Text.Json;
 using System.Text.Json.Serialization;
 using DotnetBindgen.Plan;
@@ -70,10 +71,11 @@ public static class FamilyIndexEmitter
         var jsonOptions = new JsonSerializerOptions
         {
             WriteIndented = true,
+            Encoder = JavaScriptEncoder.UnsafeRelaxedJsonEscaping,
             PropertyNamingPolicy = JsonNamingPolicy.CamelCase
         };
         var json = JsonSerializer.Serialize(familyIndex, jsonOptions);
-        File.WriteAllText(outputFile, json);
+        File.WriteAllText(outputFile, json + Environment.NewLine);
 
         ctx.Log("FamilyIndexEmitter", $"Generated families.json with {familyIndex.Count} families");
     }

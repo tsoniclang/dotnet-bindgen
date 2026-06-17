@@ -53,7 +53,7 @@ public static class InternalIndexEmitter
             Directory.CreateDirectory(internalPath);
 
             var outputFile = Path.Combine(internalPath, "index.d.ts");
-            File.WriteAllText(outputFile, content);
+            File.WriteAllText(outputFile, content.TrimEnd() + System.Environment.NewLine);
 
             ctx.Log("InternalIndexEmitter", $"    → {outputFile}");
             emittedCount++;

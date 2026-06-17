@@ -2,8 +2,8 @@
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-TSBINDGEN_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
-TSONICLANG_ROOT="$(cd "$TSBINDGEN_ROOT/.." && pwd)"
+DOTNET_BINDGEN_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
+TSONICLANG_ROOT="$(cd "$DOTNET_BINDGEN_ROOT/.." && pwd)"
 
 # shellcheck source=scripts/publish-auth.sh
 source "$SCRIPT_DIR/publish-auth.sh"
@@ -11,11 +11,15 @@ source "$SCRIPT_DIR/publish-auth.sh"
 NPM_WAVE_REPOS=(
   "dotnet-bindgen"
   "tsonic"
+  "tsonic-wrapper"
   "core"
+  "csharp-core"
   "dotnet"
   "globals"
   "js"
+  "csharp-js"
   "nodejs"
+  "csharp-nodejs"
   "express"
   "aspnetcore"
   "microsoft-extensions"
@@ -26,7 +30,7 @@ NPM_WAVE_REPOS=(
 )
 
 NUGET_WAVE_REPOS=(
-  "runtime"
+  "csharp-runtime"
 )
 
 WAVE_REPOS=(
@@ -128,7 +132,8 @@ package_json_for_repo() {
   case "$repo" in
     dotnet-bindgen) echo "$TSONICLANG_ROOT/dotnet-bindgen/package.json" ;;
     tsonic) echo "$TSONICLANG_ROOT/tsonic/packages/cli/package.json" ;;
-    core|dotnet|globals|js|nodejs) echo "$TSONICLANG_ROOT/$repo/versions/10/package.json" ;;
+    tsonic-wrapper) echo "$TSONICLANG_ROOT/tsonic-wrapper/package.json" ;;
+    core|dotnet|globals|js|nodejs|csharp-core|csharp-js|csharp-nodejs) echo "$TSONICLANG_ROOT/$repo/versions/10/package.json" ;;
     express|aspnetcore|microsoft-extensions|efcore|efcore-sqlite|efcore-sqlserver|efcore-npgsql) echo "$TSONICLANG_ROOT/$repo/package.json" ;;
     *)
       echo "Error: unknown npm repo '$repo'" >&2
@@ -189,7 +194,8 @@ package_scope_paths_for_repo() {
   case "$repo" in
     dotnet-bindgen) echo "src test npm/dotnet-bindgen package.json" ;;
     tsonic) echo "packages npm/tsonic test package.json" ;;
-    core|dotnet|globals|js|nodejs) echo "versions/10" ;;
+    tsonic-wrapper) echo "package.json bin.js README.md" ;;
+    core|dotnet|globals|js|nodejs|csharp-core|csharp-js|csharp-nodejs) echo "versions/10" ;;
     express|aspnetcore|microsoft-extensions|efcore|efcore-sqlite|efcore-sqlserver|efcore-npgsql) echo "." ;;
     csharp-runtime) echo "Directory.Build.props src/Tsonic.CSharp.Runtime" ;;
     *)
@@ -647,9 +653,9 @@ preflight_repo() {
   path="$(repo_path "$repo")"
 
   case "$repo" in
-    runtime)
-      echo ">>> preflight $repo: dotnet test"
-      (cd "$path" && dotnet test)
+    csharp-runtime)
+      echo ">>> preflight $repo: dotnet test Tsonic.CSharp.Runtime.sln --nologo"
+      (cd "$path" && dotnet test Tsonic.CSharp.Runtime.sln --nologo)
       ;;
     dotnet-bindgen)
       echo ">>> preflight $repo: bash test/scripts/run-all.sh"
@@ -659,13 +665,21 @@ preflight_repo() {
       echo ">>> preflight $repo: ./test/scripts/run-all.sh"
       (cd "$path" && ./test/scripts/run-all.sh)
       ;;
+    tsonic-wrapper)
+      echo ">>> preflight $repo: npm pack --dry-run --json"
+      (cd "$path" && npm pack --dry-run --json >/dev/null)
+      ;;
     js)
-      echo ">>> preflight $repo: bash scripts/selftest.sh"
-      (cd "$path" && bash scripts/selftest.sh)
+      echo ">>> preflight $repo: npm run selftest"
+      (cd "$path" && npm run selftest)
       ;;
     nodejs)
-      echo ">>> preflight $repo: bash scripts/selftest.sh"
-      (cd "$path" && bash scripts/selftest.sh)
+      echo ">>> preflight $repo: npm run selftest"
+      (cd "$path" && npm run selftest)
+      ;;
+    csharp-core|csharp-js|csharp-nodejs)
+      echo ">>> preflight $repo: npm pack ./versions/10 --dry-run --json"
+      (cd "$path" && npm pack ./versions/10 --dry-run --json >/dev/null)
       ;;
     express)
       echo ">>> preflight $repo: bash scripts/selftest.sh"
@@ -690,7 +704,9 @@ preflight_wave() {
   local ordered_npm_preflight=(
     "dotnet-bindgen"
     "tsonic"
+    "tsonic-wrapper"
     "core"
+    "csharp-core"
     "dotnet"
     "globals"
     "aspnetcore"
@@ -700,7 +716,9 @@ preflight_wave() {
     "efcore-sqlserver"
     "efcore-npgsql"
     "js"
+    "csharp-js"
     "nodejs"
+    "csharp-nodejs"
     "express"
   )
   local repo
@@ -716,7 +734,7 @@ preflight_wave() {
 publish_nuget_wave() {
   echo "=== Publish NuGet wave ==="
   local ordered_nuget=(
-    "runtime"
+    "csharp-runtime"
   )
   local repo
   for repo in "${ordered_nuget[@]}"; do
@@ -732,7 +750,9 @@ publish_npm_wave() {
   local ordered_npm=(
     "dotnet-bindgen"
     "tsonic"
+    "tsonic-wrapper"
     "core"
+    "csharp-core"
     "dotnet"
     "globals"
     "aspnetcore"
@@ -742,7 +762,9 @@ publish_npm_wave() {
     "efcore-sqlserver"
     "efcore-npgsql"
     "js"
+    "csharp-js"
     "nodejs"
+    "csharp-nodejs"
     "express"
   )
   local repo
@@ -754,7 +776,10 @@ publish_npm_wave() {
       dotnet-bindgen|tsonic)
         run_repo_publish_script "$repo" "$(package_json_for_repo "$repo")"
         ;;
-      core|dotnet|globals|js|nodejs|express)
+      tsonic-wrapper)
+        run_repo_direct_publish "$repo" "$(package_json_for_repo "$repo")"
+        ;;
+      core|dotnet|globals|js|nodejs|csharp-core|csharp-js|csharp-nodejs|express)
         if [ "$DANGEROUSLY_SKIP_TESTS" = true ] && [[ "$repo" =~ ^(js|nodejs|express)$ ]]; then
           run_repo_direct_publish_package_dir "$repo" "$(package_json_for_repo "$repo")"
         else

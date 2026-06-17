@@ -4,7 +4,7 @@ namespace DotnetBindgen.Emit;
 
 internal static class SupportTypePreamble
 {
-    private const string OpaqueTypeSupportMarker = "__TSBINDGEN_OPAQUE_TYPE_SUPPORT__";
+    private const string OpaqueTypeSupportMarker = "__DOTNET_BINDGEN_OPAQUE_TYPE_SUPPORT__";
 
     public static void EmitCoreTypeImports(StringBuilder sb)
     {

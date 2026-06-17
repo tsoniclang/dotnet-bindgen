@@ -43,7 +43,7 @@ public static class ExtensionsEmitter
 
         // Write file
         var filePath = Path.Combine(extensionsDir, "index.d.ts");
-        File.WriteAllText(filePath, content);
+        File.WriteAllText(filePath, content.TrimEnd() + System.Environment.NewLine);
 
         ctx.Log("ExtensionsEmitter", $"Wrote {filePath}");
     }
