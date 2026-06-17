@@ -112,9 +112,36 @@ public static class ExtensionsEmitter
         // Local namespaces are at ../../{Namespace}/internal/index.js
         // External namespaces (from --lib contracts) are imported via package specifiers
         // (e.g., @tsonic/dotnet/System.Linq/internal/index.js).
-        var localNamespaces = graph.Namespaces.Select(n => n.Name).ToHashSet();
-        var namespaceAliasByPackage = new Dictionary<(string Namespace, string Package), string>();
+        var localClrFullNames = graph.TypeIndex.Keys.ToHashSet(StringComparer.Ordinal);
+        var namespaceAliasByOwner = new Dictionary<(string Namespace, string? Package), string>();
         Func<string, string, string, string>? facadeNamespaceAliasResolver = null;
+
+        string CanonicalClrFullName(string clrFullName)
+        {
+            var commaIndex = clrFullName.IndexOf(',');
+            return commaIndex >= 0 ? clrFullName.Substring(0, commaIndex).Trim() : clrFullName;
+        }
+
+        string? GetOwnerPackage(string clrFullName)
+        {
+            var canonical = CanonicalClrFullName(clrFullName);
+            if (localClrFullNames.Contains(canonical))
+            {
+                return null;
+            }
+
+            if (ctx.LibraryContract != null &&
+                (ctx.LibraryContract.ClrFullNameToPackage.ContainsKey(canonical) ||
+                 ctx.LibraryContract.AmbiguousClrFullNameToPackages.ContainsKey(canonical)))
+            {
+                return ctx.LibraryContract.GetPackageForClrFullName(canonical);
+            }
+
+            throw new InvalidOperationException(
+                $"No local or library owner found for CLR type '{canonical}' while emitting extension method imports. " +
+                "Extension method signatures must resolve every referenced CLR type deterministically.");
+        }
+
         if (namespacesUsed.Count > 0)
         {
             static string SanitizePackageAlias(string pkg)
@@ -149,14 +176,17 @@ public static class ExtensionsEmitter
             {
                 if (string.IsNullOrEmpty(ns))
                 {
-                    // Root namespace is always local within the output package.
+                    if (pkg != null)
+                    {
+                        return $"{pkg}/_root/index.js";
+                    }
+
                     return "../../_root/index.js";
                 }
 
                 var outputName = NamespacePathMapper.GetOutputName(ns, ctx);
 
-                // Local namespace: relative import within this output package.
-                if (localNamespaces.Contains(ns) || ctx.LibraryContract == null || pkg == null)
+                if (pkg == null)
                 {
                     return $"../../{outputName}/internal/index.js";
                 }
@@ -174,15 +204,6 @@ public static class ExtensionsEmitter
             {
                 var baseAlias = GetNamespaceAlias(ns);
 
-                // Local namespaces (or non-lib mode): single import as before.
-                if (string.IsNullOrEmpty(ns) || localNamespaces.Contains(ns) || ctx.LibraryContract == null)
-                {
-                    var importPath = GetNamespaceModuleImportPath(ns, pkg: null);
-                    namespaceImports.Add((ns, baseAlias, importPath));
-                    continue;
-                }
-
-                // External namespace in --lib mode: import one module per contributing package.
                 var referenced = namespaceToClrFullNames.TryGetValue(ns, out var clrs) ? clrs : null;
                 if (referenced == null || referenced.Count == 0)
                 {
@@ -193,26 +214,26 @@ public static class ExtensionsEmitter
                         "This indicates a dotnet-bindgen bug in namespace collection.");
                 }
 
-                var pkgs = referenced
-                    .Select(ctx.LibraryContract.GetPackageForClrFullName)
+                var owners = referenced
+                    .Select(GetOwnerPackage)
                     .Distinct(StringComparer.Ordinal)
-                    .OrderBy(p => p, StringComparer.Ordinal)
+                    .OrderBy(p => p ?? "", StringComparer.Ordinal)
                     .ToList();
 
-                if (pkgs.Count == 0)
+                if (owners.Count == 0)
                 {
                     throw new InvalidOperationException(
-                        $"No owning packages resolved for namespace '{ns}' in extension bucket emission.");
+                        $"No owners resolved for namespace '{ns}' in extension bucket emission.");
                 }
 
-                // Choose a canonical package for the base alias so existing code that hardcodes
+                // Choose a canonical owner for the base alias so existing code that hardcodes
                 // certain namespace aliases (e.g., System.* constraints) remains valid.
-                var canonicalPkg = pkgs[0];
+                string? canonicalOwner = owners[0];
                 if (ns == "System")
                 {
                     try
                     {
-                        canonicalPkg = ctx.LibraryContract.GetPackageForClrFullName("System.Int32");
+                        canonicalOwner = GetOwnerPackage("System.Int32");
                     }
                     catch
                     {
@@ -220,24 +241,18 @@ public static class ExtensionsEmitter
                     }
                 }
 
-                foreach (var pkg in pkgs)
+                foreach (var owner in owners)
                 {
-                    var alias = pkg == canonicalPkg ? baseAlias : $"{baseAlias}__{SanitizePackageAlias(pkg)}";
-                    namespaceAliasByPackage[(ns, pkg)] = alias;
-                    namespaceImports.Add((ns, alias, GetNamespaceModuleImportPath(ns, pkg)));
+                    var alias = owner == canonicalOwner ? baseAlias : $"{baseAlias}__{SanitizePackageAlias(owner ?? "local")}";
+                    namespaceAliasByOwner[(ns, owner)] = alias;
+                    namespaceImports.Add((ns, alias, GetNamespaceModuleImportPath(ns, owner)));
                 }
             }
 
             facadeNamespaceAliasResolver = (clrFullName, ns, defaultAlias) =>
             {
-                if (ctx.LibraryContract == null)
-                    return defaultAlias;
-
-                if (string.IsNullOrEmpty(ns) || localNamespaces.Contains(ns))
-                    return defaultAlias;
-
-                var pkg = ctx.LibraryContract.GetPackageForClrFullName(clrFullName);
-                return namespaceAliasByPackage.TryGetValue((ns, pkg), out var alias) ? alias : defaultAlias;
+                var owner = GetOwnerPackage(clrFullName);
+                return namespaceAliasByOwner.TryGetValue((ns, owner), out var alias) ? alias : defaultAlias;
             };
 
             sb.AppendLine("// Import namespace modules for cross-namespace type references");
@@ -267,15 +282,12 @@ public static class ExtensionsEmitter
             var outputName = NamespacePathMapper.GetOutputName(systemNs, ctx);
 
             string systemImportPath;
-            if (localNamespaces.Contains(systemNs) || ctx.LibraryContract == null)
-            {
-                systemImportPath = $"../../{outputName}/internal/index.js";
-            }
-            else
-            {
-                var pkg = ctx.LibraryContract.GetPackageForClrFullName("System.Int32");
-                systemImportPath = $"{pkg}/{outputName}/internal/index.js";
-            }
+            var pkg = ctx.LibraryContract == null
+                ? null
+                : GetOwnerPackage("System.Int32");
+            systemImportPath = pkg == null
+                ? $"../../{outputName}/internal/index.js"
+                : $"{pkg}/{outputName}/internal/index.js";
 
             sb.AppendLine($"import * as System_Internal from \"{systemImportPath}\";");
         }
@@ -307,7 +319,7 @@ public static class ExtensionsEmitter
             var declaringNamespace = group.Key;
             var buckets = group.ToList();
 
-            EmitMethodTableInterface(sb, ctx, declaringNamespace, buckets, resolver, typeByClrFullName);
+            EmitMethodTableInterface(sb, ctx, declaringNamespace, buckets, resolver, typeByClrFullName, graph);
             sb.AppendLine();
 
             EmitExtensionMethodsHelper(sb, declaringNamespace, buckets);
@@ -533,7 +545,8 @@ public static class ExtensionsEmitter
         string declaringNamespace,
         IReadOnlyList<ExtensionBucketPlan> buckets,
         TypeNameResolver resolver,
-        IReadOnlyDictionary<string, TypeSymbol> typeByClrFullName)
+        IReadOnlyDictionary<string, TypeSymbol> typeByClrFullName,
+        SymbolGraph graph)
     {
         var methodsTableName = GetMethodsTableTypeName(declaringNamespace);
 
@@ -566,7 +579,7 @@ public static class ExtensionsEmitter
                          .OrderBy(e => bucketRank[e.Bucket])
                          .ThenBy(e => e.IndexInBucket))
             {
-                EmitExtensionMethodSignature(sb, ctx, e.Method, resolver);
+                EmitExtensionMethodSignature(sb, ctx, e.Method, resolver, graph);
             }
         }
 
@@ -686,7 +699,8 @@ public static class ExtensionsEmitter
         StringBuilder sb,
         BuildContext ctx,
         MethodSymbol method,
-        TypeNameResolver resolver)
+        TypeNameResolver resolver,
+        SymbolGraph graph)
     {
         if (method.Parameters.Length == 0)
         {
@@ -705,7 +719,7 @@ public static class ExtensionsEmitter
         if (method.GenericParameters.Length > 0)
         {
             sb.Append('<');
-            sb.Append(string.Join(", ", method.GenericParameters.Select(p => PrintGenericParameter(p, resolver, ctx))));
+            sb.Append(string.Join(", ", method.GenericParameters.Select(p => PrintGenericParameter(p, resolver, ctx, graph))));
             sb.Append('>');
         }
 
@@ -718,7 +732,6 @@ public static class ExtensionsEmitter
 
         foreach (var param in method.Parameters.Skip(1))
         {
-            var paramType = TypeRefPrinter.Print(param.Type, resolver, ctx, allowedTypeParams);
             var paramName = TypeScriptReservedWords.SanitizeParameterName(param.Name);
 
             // Preserve optional/default parameters and params arrays.
@@ -726,14 +739,16 @@ public static class ExtensionsEmitter
             // callable without arguments (matches C# default-parameter semantics).
             if (param.IsParams)
             {
-                paramStrings.Add($"...{paramName}: {paramType}");
+                paramStrings.Add($"...{paramName}: {PrintParamsRestType(param.Type, resolver, ctx, allowedTypeParams)}");
             }
             else if (param.HasDefaultValue)
             {
+                var paramType = TypeRefPrinter.Print(param.Type, resolver, ctx, allowedTypeParams);
                 paramStrings.Add($"{paramName}?: {paramType}");
             }
             else
             {
+                var paramType = TypeRefPrinter.Print(param.Type, resolver, ctx, allowedTypeParams);
                 paramStrings.Add($"{paramName}: {paramType}");
             }
         }
@@ -746,7 +761,7 @@ public static class ExtensionsEmitter
         sb.AppendLine(";");
     }
 
-    private static string PrintGenericParameter(GenericParameterSymbol gp, TypeNameResolver resolver, BuildContext ctx)
+    private static string PrintGenericParameter(GenericParameterSymbol gp, TypeNameResolver resolver, BuildContext ctx, SymbolGraph graph)
     {
         var sb = new StringBuilder();
         sb.Append(gp.Name);
@@ -756,20 +771,31 @@ public static class ExtensionsEmitter
         // Extension generic parameters must carry the same broad-value closure as the
         // generic receiver/return surfaces they reference.
         var printedConstraints = gp.Constraints
-            .Select(c =>
-            {
-                var printed = TypeRefPrinter.Print(c, resolver, ctx);
-                if (AliasEmit.IsValueSemanticsConstraint(c, gp.Name))
-                    return AliasEmit.RelaxConstraintForPrimitives(printed, gp.Name);
-
-                return printed;
-            })
+            .Select(c => AliasEmit.PrintExplicitConstraint(c, gp, resolver, ctx, graph: graph))
             .Where(c => c != "any" && !TypeRefPrinter.IsOpaqueTypeText(c))
             .ToArray();
 
         sb.Append(AliasEmit.BuildConstraintText(gp, printedConstraints));
 
         return sb.ToString();
+    }
+
+    private static string PrintParamsRestType(
+        TypeReference typeRef,
+        TypeNameResolver resolver,
+        BuildContext ctx,
+        HashSet<string>? allowedTypeParams)
+    {
+        if (typeRef is ArrayTypeReference arrayType && arrayType.Nullability == NrtState.Nullable)
+        {
+            return TypeRefPrinter.Print(
+                arrayType with { Nullability = NrtState.Oblivious },
+                resolver,
+                ctx,
+                allowedTypeParams);
+        }
+
+        return TypeRefPrinter.Print(typeRef, resolver, ctx, allowedTypeParams);
     }
 
     private static void EmitExtensionMethodsHelper(

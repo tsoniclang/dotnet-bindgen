@@ -76,13 +76,13 @@ public static class MethodPrinter
     /// <summary>
     /// Print a method signature to TypeScript.
     /// </summary>
-    public static string Print(MethodSymbol method, TypeSymbol declaringType, TypeNameResolver resolver, BuildContext ctx)
+    public static string Print(MethodSymbol method, TypeSymbol declaringType, TypeNameResolver resolver, BuildContext ctx, SymbolGraph? graph = null)
     {
         // Get the final TS name from Renamer using correct scope
         var scope = ScopeFactory.ClassSurface(declaringType, method.IsStatic);
         var finalName = ctx.Renamer.GetFinalMemberName(method.StableId, scope);
 
-        return PrintWithName(method, declaringType, finalName, resolver, ctx);
+        return PrintWithName(method, declaringType, finalName, resolver, ctx, graph);
     }
 
     /// <summary>
@@ -90,22 +90,32 @@ public static class MethodPrinter
     /// Used when emitting TypeScript overloads with CLR-cased names instead of Renamer names.
     /// </summary>
     /// <param name="emitAbstract">Optional: override whether to emit abstract keyword (for TS2512 fix)</param>
-    public static string PrintWithName(MethodSymbol method, TypeSymbol declaringType, string methodName, TypeNameResolver resolver, BuildContext ctx, bool? emitAbstract = null)
+    public static string PrintWithName(MethodSymbol method, TypeSymbol declaringType, string methodName, TypeNameResolver resolver, BuildContext ctx, SymbolGraph? graph = null, bool? emitAbstract = null)
     {
-        return PrintWithNameVariants(method, declaringType, methodName, resolver, ctx, emitAbstract).First();
+        return PrintWithNameVariants(method, declaringType, methodName, resolver, ctx, graph, emitAbstract).First();
     }
 
-    public static IEnumerable<string> PrintWithNameVariants(MethodSymbol method, TypeSymbol declaringType, string methodName, TypeNameResolver resolver, BuildContext ctx, bool? emitAbstract = null)
+    public static IEnumerable<string> PrintWithNameVariants(MethodSymbol method, TypeSymbol declaringType, string methodName, TypeNameResolver resolver, BuildContext ctx, SymbolGraph? graph = null, bool? emitAbstract = null)
     {
-        yield return PrintWithNameCore(method, declaringType, methodName, resolver, ctx, emitAbstract, emitParamsAsRest: true);
+        yield return PrintWithNameCore(method, declaringType, methodName, resolver, ctx, graph, emitAbstract, emitParamsAsRest: true);
 
         if (HasNullableParamsArray(method))
         {
-            yield return PrintWithNameCore(method, declaringType, methodName, resolver, ctx, emitAbstract, emitParamsAsRest: false);
+            yield return PrintWithNameCore(method, declaringType, methodName, resolver, ctx, graph, emitAbstract, emitParamsAsRest: false);
         }
     }
 
-    private static string PrintWithNameCore(MethodSymbol method, TypeSymbol declaringType, string methodName, TypeNameResolver resolver, BuildContext ctx, bool? emitAbstract, bool emitParamsAsRest)
+    public static IEnumerable<string> PrintFunctionTypeVariants(MethodSymbol method, TypeSymbol declaringType, TypeNameResolver resolver, BuildContext ctx, SymbolGraph? graph = null)
+    {
+        yield return PrintFunctionTypeCore(method, declaringType, resolver, ctx, graph, emitParamsAsRest: true);
+
+        if (HasNullableParamsArray(method))
+        {
+            yield return PrintFunctionTypeCore(method, declaringType, resolver, ctx, graph, emitParamsAsRest: false);
+        }
+    }
+
+    private static string PrintWithNameCore(MethodSymbol method, TypeSymbol declaringType, string methodName, TypeNameResolver resolver, BuildContext ctx, SymbolGraph? graph, bool? emitAbstract, bool emitParamsAsRest)
     {
         var sb = new StringBuilder();
 
@@ -145,7 +155,7 @@ public static class MethodPrinter
         if (enrichedGenericParams.Length > 0)
         {
             sb.Append('<');
-            sb.Append(string.Join(", ", enrichedGenericParams.Select(gp => PrintGenericParameter(gp, resolver, ctx))));
+            sb.Append(string.Join(", ", enrichedGenericParams.Select(gp => PrintGenericParameter(gp, resolver, ctx, graph))));
             sb.Append('>');
         }
 
@@ -169,26 +179,65 @@ public static class MethodPrinter
         return sb.ToString();
     }
 
+    private static string PrintFunctionTypeCore(MethodSymbol method, TypeSymbol declaringType, TypeNameResolver resolver, BuildContext ctx, SymbolGraph? graph, bool emitParamsAsRest)
+    {
+        var sb = new StringBuilder();
+
+        var allowedTypeParams = new HashSet<string>();
+        foreach (var gp in declaringType.GenericParameters)
+        {
+            allowedTypeParams.Add(gp.Name);
+        }
+        foreach (var gp in method.GenericParameters)
+        {
+            allowedTypeParams.Add(gp.Name);
+        }
+
+        sb.Append('(');
+
+        var enrichedGenericParams = EnrichMethodGenericParametersWithClassConstraints(method, declaringType);
+        if (enrichedGenericParams.Length > 0)
+        {
+            sb.Append('<');
+            sb.Append(string.Join(", ", enrichedGenericParams.Select(gp => PrintGenericParameter(gp, resolver, ctx, graph))));
+            sb.Append('>');
+        }
+
+        sb.Append('(');
+        sb.Append(string.Join(", ", method.Parameters.Select((p, index) => PrintParameter(
+            p,
+            resolver,
+            ctx,
+            allowedTypeParams,
+            emitParamsAsRest: emitParamsAsRest,
+            isLastParameter: index == method.Parameters.Length - 1))));
+        sb.Append(") => ");
+        sb.Append(TypeRefPrinter.Print(method.ReturnType, resolver, ctx, allowedTypeParams));
+        sb.Append(')');
+
+        return sb.ToString();
+    }
+
     /// <summary>
     /// STATIC-SIDE FIX: Print method signature without modifiers (static/abstract).
     /// Used in object literal types: { methodName(args): ReturnType; }
     /// </summary>
-    public static string PrintSignatureOnly(MethodSymbol method, TypeSymbol declaringType, string methodName, TypeNameResolver resolver, BuildContext ctx)
+    public static string PrintSignatureOnly(MethodSymbol method, TypeSymbol declaringType, string methodName, TypeNameResolver resolver, BuildContext ctx, SymbolGraph? graph = null)
     {
-        return PrintSignatureOnlyVariants(method, declaringType, methodName, resolver, ctx).First();
+        return PrintSignatureOnlyVariants(method, declaringType, methodName, resolver, ctx, graph).First();
     }
 
-    public static IEnumerable<string> PrintSignatureOnlyVariants(MethodSymbol method, TypeSymbol declaringType, string methodName, TypeNameResolver resolver, BuildContext ctx)
+    public static IEnumerable<string> PrintSignatureOnlyVariants(MethodSymbol method, TypeSymbol declaringType, string methodName, TypeNameResolver resolver, BuildContext ctx, SymbolGraph? graph = null)
     {
-        yield return PrintSignatureOnlyCore(method, declaringType, methodName, resolver, ctx, emitParamsAsRest: true);
+        yield return PrintSignatureOnlyCore(method, declaringType, methodName, resolver, ctx, graph, emitParamsAsRest: true);
 
         if (HasNullableParamsArray(method))
         {
-            yield return PrintSignatureOnlyCore(method, declaringType, methodName, resolver, ctx, emitParamsAsRest: false);
+            yield return PrintSignatureOnlyCore(method, declaringType, methodName, resolver, ctx, graph, emitParamsAsRest: false);
         }
     }
 
-    private static string PrintSignatureOnlyCore(MethodSymbol method, TypeSymbol declaringType, string methodName, TypeNameResolver resolver, BuildContext ctx, bool emitParamsAsRest)
+    private static string PrintSignatureOnlyCore(MethodSymbol method, TypeSymbol declaringType, string methodName, TypeNameResolver resolver, BuildContext ctx, SymbolGraph? graph, bool emitParamsAsRest)
     {
         var sb = new StringBuilder();
 
@@ -213,7 +262,7 @@ public static class MethodPrinter
         if (enrichedGenericParams.Length > 0)
         {
             sb.Append('<');
-            sb.Append(string.Join(", ", enrichedGenericParams.Select(gp => PrintGenericParameter(gp, resolver, ctx))));
+            sb.Append(string.Join(", ", enrichedGenericParams.Select(gp => PrintGenericParameter(gp, resolver, ctx, graph))));
             sb.Append('>');
         }
 
@@ -235,7 +284,7 @@ public static class MethodPrinter
         return sb.ToString();
     }
 
-    private static string PrintGenericParameter(GenericParameterSymbol gp, TypeNameResolver resolver, BuildContext ctx)
+    private static string PrintGenericParameter(GenericParameterSymbol gp, TypeNameResolver resolver, BuildContext ctx, SymbolGraph? graph)
     {
         var sb = new StringBuilder();
         sb.Append(gp.Name);
@@ -249,7 +298,7 @@ public static class MethodPrinter
             // C# value type constraints (struct, unmanaged) can't be represented in TS and emit as "any"
             // "any & IFoo" is invalid - just use "IFoo"
             var printedConstraints = gp.Constraints
-                .Select(c => TypeRefPrinter.Print(c, resolver, ctx))
+                .Select(c => AliasEmit.PrintExplicitConstraint(c, gp, resolver, ctx, graph: graph))
                 .Where(c => c != "any" && !TypeRefPrinter.IsOpaqueTypeText(c))
                 .ToArray();
 
@@ -373,7 +422,7 @@ public static class MethodPrinter
         if (method.GenericParameters.Length > 0)
         {
             sb.Append('<');
-            sb.Append(string.Join(", ", method.GenericParameters.Select(gp => PrintGenericParameter(gp, resolver, ctx))));
+            sb.Append(string.Join(", ", method.GenericParameters.Select(gp => PrintGenericParameter(gp, resolver, ctx, graph: null))));
             sb.Append('>');
         }
 

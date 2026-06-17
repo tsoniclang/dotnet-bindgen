@@ -281,9 +281,7 @@ prepare_local_core_dependency() {
 
     init_runtime
 
-    local dotnet_major
-    dotnet_major="$(basename "$DOTNET_RUNTIME" | cut -d. -f1)"
-    local core_dir="$PROJECT_ROOT/../core/versions/$dotnet_major"
+    local core_dir="$PROJECT_ROOT/../core"
 
     if [ ! -d "$core_dir" ]; then
         echo -e "${RED}ERROR: Local @tsonic/core package not found: $core_dir${NC}" >&2

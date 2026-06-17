@@ -66,10 +66,18 @@ fi
 # Step 3: Test byref vs non-byref signatures are distinct
 echo "[4/6] Testing byref vs non-byref produce different stableIds..."
 
-# Process(int) should have signature without &
-non_ref=$(grep -o '"canonicalSignature": "(System.Int32):System.Void"' "$BINDINGS" || echo "")
-# Process(ref int) should have signature with & (escaped as \\u0026 in JSON)
-ref_sig=$(grep -o 'System\.Int32\\u0026' "$BINDINGS" || echo "")
+signature_status=$(BINDINGS="$BINDINGS" node <<'NODE'
+const fs = require('fs');
+const data = JSON.parse(fs.readFileSync(process.env.BINDINGS, 'utf8'));
+const type = data.targetSurface.types.find(t => t.targetName === 'MyCompany.Utils.OverloadTest');
+const methods = type?.methods?.filter(m => m.targetName === 'Process') ?? [];
+const hasNonRef = methods.some(m => m.canonicalSignature === '(System.Int32):System.Void');
+const hasRef = methods.some(m => m.canonicalSignature === '(System.Int32&):System.Void');
+console.log(JSON.stringify({ hasNonRef, hasRef }));
+NODE
+)
+non_ref=$(node -e "const s = $signature_status; process.stdout.write(s.hasNonRef ? 'yes' : '')")
+ref_sig=$(node -e "const s = $signature_status; process.stdout.write(s.hasRef ? 'yes' : '')")
 
 if [ -z "$non_ref" ]; then
     echo -e "${RED}❌ FAILED: Process(int) signature not found${NC}"

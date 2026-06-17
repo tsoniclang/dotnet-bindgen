@@ -195,21 +195,9 @@ public static class FacadeEmitter
                     ? renamed
                     : export.ExportName;
 
-                // SKIP REDUNDANT EXPORTS: If aliasName == exportName, there's no alias benefit
-                // We only want friendly names (List), not internal names (List_1)
-                // The friendly alias below will emit the useful "List" export
-                if (aliasName == export.ExportName && export.SourceType.GenericParameters.Length > 0)
-                {
-                    // Skip - the friendly alias below will handle this type
-                    // Only skip generics because they get friendly aliases; non-generics are their own final name
-                }
-                else
-                {
-                    // Emit primary export (uses unified helper)
-                    EmitFacadeExport(sb, aliasName, export.SourceType, export.ExportName, resolver, ctx, outputName);
-                }
-
                 // FRIENDLY GENERIC ALIAS: Provide arity-less name (List instead of List_1)
+                var willEmitFriendlyAlias = false;
+                string? friendlyNameForGeneric = null;
                 if (export.SourceType.GenericParameters.Length > 0)
                 {
                     var suffix = $"_{export.SourceType.GenericParameters.Length}";
@@ -221,10 +209,26 @@ public static class FacadeEmitter
                             !skipFriendlyNames.Contains(friendlyName) &&
                             friendlyAliases.Add(friendlyName))
                         {
-                            // Emit friendly alias (uses same unified helper)
-                            EmitFacadeExport(sb, friendlyName, export.SourceType, export.ExportName, resolver, ctx, outputName);
+                            willEmitFriendlyAlias = true;
+                            friendlyNameForGeneric = friendlyName;
                         }
                     }
+                }
+
+                // SKIP REDUNDANT EXPORTS: If a generic export has a real friendly alias
+                // (List_1 -> List), omit the arity-stable primary export from the public
+                // facade. Generic nested CLR types often do not end with the simple "_N"
+                // suffix (HashSet_1_Enumerator<T>), so they must keep their primary export.
+                if (!(aliasName == export.ExportName &&
+                      export.SourceType.GenericParameters.Length > 0 &&
+                      willEmitFriendlyAlias))
+                {
+                    EmitFacadeExport(sb, aliasName, export.SourceType, export.ExportName, resolver, ctx, outputName, plan.Graph);
+                }
+
+                if (willEmitFriendlyAlias && friendlyNameForGeneric != null)
+                {
+                    EmitFacadeExport(sb, friendlyNameForGeneric, export.SourceType, export.ExportName, resolver, ctx, outputName, plan.Graph);
                 }
             }
 
@@ -260,7 +264,7 @@ public static class FacadeEmitter
                 MultiArityAliasEmit.EmitSentinelDeclaration(sb);
                 foreach (var family in multiArityFamilies.OrderBy(f => f.PublicStem))
                 {
-                    MultiArityAliasEmit.Emit(sb, family, resolver, ctx, ns.Name);
+                    MultiArityAliasEmit.Emit(sb, family, resolver, ctx, ns.Name, plan.Graph);
                 }
             }
 
@@ -450,19 +454,8 @@ public static class FacadeEmitter
             }
             else
             {
-                // Print each constraint using TypeRefPrinter (handles imports, qualification, etc.)
-                // PRIMITIVE CONSTRAINT RELAXATION: Widen value semantics constraints
                 var constraintStrings = typeConstraints
-                    .Select(c =>
-                    {
-                        var printed = Printers.TypeRefPrinter.Print(c, resolver, ctx);
-                        // Relax IEquatable_1<T>, IComparable_1<T>, IComparable to admit primitives
-                        if (AliasEmit.IsValueSemanticsConstraint(c, gp.Name))
-                        {
-                            return AliasEmit.RelaxConstraintForPrimitives(printed, gp.Name);
-                        }
-                        return printed;
-                    })
+                    .Select(c => AliasEmit.PrintExplicitConstraint(c, gp, resolver, ctx))
                     .Where(c => c != "any" && !Printers.TypeRefPrinter.IsOpaqueTypeText(c))
                     .ToArray();
 
@@ -550,7 +543,8 @@ public static class FacadeEmitter
         string exportName,
         TypeNameResolver resolver,
         BuildContext ctx,
-        string outputName)
+        string outputName,
+        Model.SymbolGraph graph)
     {
         var kind = sourceType.Kind;
         var internalPath = string.IsNullOrEmpty(outputName) ? "./_root/index.js" : $"./{outputName}/internal/index.js";
@@ -599,7 +593,8 @@ public static class FacadeEmitter
                 resolver,
                 ctx,
                 withConstraints: true,
-                facadeMode: true);
+                facadeMode: true,
+                graph: graph);
         }
     }
 

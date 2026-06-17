@@ -1,5 +1,6 @@
 using System.Collections.Immutable;
 using System.Text;
+using DotnetBindgen.Model;
 using DotnetBindgen.Model.Symbols;
 using DotnetBindgen.Emit.Printers;
 
@@ -40,12 +41,12 @@ public static class MultiArityAliasEmit
     /// Emit a sentinel-ladder alias for a multi-arity family.
     /// Handles both delegate (callable) and non-delegate families.
     /// </summary>
-    public static void Emit(StringBuilder sb, MultiArityFamily family, TypeNameResolver resolver, BuildContext ctx, string? currentNamespace = null)
+    public static void Emit(StringBuilder sb, MultiArityFamily family, TypeNameResolver resolver, BuildContext ctx, string? currentNamespace = null, SymbolGraph? graph = null)
     {
         if (family.IsDelegateFamily)
-            EmitDelegateFamily(sb, family, resolver, ctx, currentNamespace);
+            EmitDelegateFamily(sb, family, resolver, ctx, currentNamespace, graph);
         else
-            EmitNonDelegateFamily(sb, family, resolver, ctx, currentNamespace);
+            EmitNonDelegateFamily(sb, family, resolver, ctx, currentNamespace, graph);
     }
 
     /// <summary>
@@ -53,7 +54,7 @@ public static class MultiArityAliasEmit
     /// Uses explicit k-based generation from MinArity to MaxArity.
     /// Propagates type constraints from max-arity member to facade parameters.
     /// </summary>
-    private static void EmitNonDelegateFamily(StringBuilder sb, MultiArityFamily family, TypeNameResolver resolver, BuildContext ctx, string? currentNamespace)
+    private static void EmitNonDelegateFamily(StringBuilder sb, MultiArityFamily family, TypeNameResolver resolver, BuildContext ctx, string? currentNamespace, SymbolGraph? graph)
     {
         var minArity = family.MinArity;
         var maxArity = family.MaxArity;
@@ -73,7 +74,7 @@ public static class MultiArityAliasEmit
             else
             {
                 // For single-member generic families, use extends clause (no sentinel dispatch)
-                var typeArgs = string.Join(", ", Enumerable.Range(1, member.Arity).Select(n => FormatTypeParamWithConstraint(n, constraints, resolver, ctx, currentNamespace)));
+                var typeArgs = string.Join(", ", Enumerable.Range(1, member.Arity).Select(n => FormatTypeParamWithConstraint(n, constraints, resolver, ctx, currentNamespace, graph)));
                 sb.AppendLine($"export type {family.PublicStem}<{typeArgs}> = Internal.{member.InternalExportName}<{string.Join(", ", Enumerable.Range(1, member.Arity).Select(n => $"T{n}"))}>;");
             }
             sb.AppendLine();
@@ -85,7 +86,7 @@ public static class MultiArityAliasEmit
         sb.AppendLine($"export type {family.PublicStem}<");
         for (int i = 1; i <= maxArity; i++)
         {
-            sb.AppendLine($"  {FormatTypeParamWithConstraint(i, constraints, resolver, ctx, currentNamespace)} = __,");
+            sb.AppendLine($"  {FormatTypeParamWithConstraint(i, constraints, resolver, ctx, currentNamespace, graph)} = __,");
         }
         sb.AppendLine("> =");
 
@@ -103,7 +104,7 @@ public static class MultiArityAliasEmit
             var internalType = $"Internal.{member.InternalExportName}{typeArgs}";
 
             // Build nested constraint check that returns internal type or never
-            var constraintCheck = BuildNestedConstraintCheck(k, member.GenericParameters, resolver, ctx, internalType, currentNamespace);
+            var constraintCheck = BuildNestedConstraintCheck(k, member.GenericParameters, resolver, ctx, internalType, currentNamespace, graph);
             var resultExpr = constraintCheck ?? internalType;
 
             if (k < maxArity)
@@ -128,7 +129,7 @@ public static class MultiArityAliasEmit
     /// Uses explicit k-based generation from MinArity to MaxArity.
     /// Propagates type constraints from max-arity member to facade parameters.
     /// </summary>
-    private static void EmitDelegateFamily(StringBuilder sb, MultiArityFamily family, TypeNameResolver resolver, BuildContext ctx, string? currentNamespace)
+    private static void EmitDelegateFamily(StringBuilder sb, MultiArityFamily family, TypeNameResolver resolver, BuildContext ctx, string? currentNamespace, SymbolGraph? graph)
     {
         // Func-like delegates have return type as last type parameter
         // Detect by checking if CLR base name ends with "Func"
@@ -153,7 +154,7 @@ public static class MultiArityAliasEmit
             else
             {
                 // For single-member generic families, use extends clause (no sentinel dispatch)
-                var typeArgs = string.Join(", ", Enumerable.Range(1, arity).Select(n => FormatTypeParamWithConstraint(n, constraints, resolver, ctx, currentNamespace)));
+                var typeArgs = string.Join(", ", Enumerable.Range(1, arity).Select(n => FormatTypeParamWithConstraint(n, constraints, resolver, ctx, currentNamespace, graph)));
                 sb.AppendLine($"export type {family.PublicStem}<{typeArgs}> = (({callSig}) | Internal.{member.InternalExportName}<{string.Join(", ", Enumerable.Range(1, arity).Select(n => $"T{n}"))}>);");
             }
             sb.AppendLine();
@@ -165,7 +166,7 @@ public static class MultiArityAliasEmit
         sb.AppendLine($"export type {family.PublicStem}<");
         for (int i = 1; i <= maxArity; i++)
         {
-            sb.AppendLine($"  {FormatTypeParamWithConstraint(i, constraints, resolver, ctx, currentNamespace)} = __,");
+            sb.AppendLine($"  {FormatTypeParamWithConstraint(i, constraints, resolver, ctx, currentNamespace, graph)} = __,");
         }
         sb.AppendLine("> =");
 
@@ -181,7 +182,7 @@ public static class MultiArityAliasEmit
             var delegateType = $"(({callSig}) | Internal.{member.InternalExportName}{typeArgs})";
 
             // Build nested constraint check that returns delegate type or never
-            var constraintCheck = BuildNestedConstraintCheck(k, member.GenericParameters, resolver, ctx, delegateType, currentNamespace);
+            var constraintCheck = BuildNestedConstraintCheck(k, member.GenericParameters, resolver, ctx, delegateType, currentNamespace, graph);
             var resultExpr = constraintCheck ?? delegateType;
 
             if (k < maxArity)
@@ -230,10 +231,11 @@ public static class MultiArityAliasEmit
         ImmutableArray<GenericParameterSymbol> constraints,
         TypeNameResolver resolver,
         BuildContext ctx,
-        string? currentNamespace = null)
+        string? currentNamespace = null,
+        SymbolGraph? graph = null)
     {
         var paramName = $"T{position}";
-        var constraintPart = FormatConstraintForPosition(position, constraints, resolver, ctx, currentNamespace);
+        var constraintPart = FormatConstraintForPosition(position, constraints, resolver, ctx, currentNamespace, graph);
         return $"{paramName}{constraintPart}";
     }
 
@@ -248,7 +250,8 @@ public static class MultiArityAliasEmit
         ImmutableArray<GenericParameterSymbol> genericParams,
         TypeNameResolver resolver,
         BuildContext ctx,
-        string? currentNamespace = null)
+        string? currentNamespace = null,
+        SymbolGraph? graph = null)
     {
         // Position is 1-based, array is 0-based
         var index = position - 1;
@@ -262,36 +265,18 @@ public static class MultiArityAliasEmit
         // The facade parameter name is T{position}, need to substitute original param name
         var facadeParamName = $"T{position}";
 
-        // Print and relax constraints (same logic as InternalIndexEmitter)
+        // Print and relax constraints through the canonical CLR constraint emitter.
         var constraintStrings = gp.Constraints.Select(c =>
-        {
-            // Print the constraint, substituting original param name with facade name
-            var printed = TypeRefPrinter.Print(c, resolver, ctx);
-
-            // Replace original param name with facade param name in the constraint
-            // e.g., IEquatable_1<T> becomes IEquatable_1<T1>
-            if (gp.Name != facadeParamName)
-            {
-                printed = SubstituteTypeParam(printed, gp.Name, facadeParamName);
-            }
-
-            if (currentNamespace != null &&
-                printed != "never" && printed != "any" &&
-                !TypeRefPrinter.IsOpaqueTypeText(printed) &&
-                AliasEmit.RequiresFacadeInternalQualification(printed) &&
-                IsSameNamespace(c, currentNamespace))
-            {
-                printed = $"Internal.{printed}";
-            }
-
-            // Relax value semantics constraints for primitives
-            if (AliasEmit.IsValueSemanticsConstraint(c, facadeParamName))
-            {
-                return AliasEmit.RelaxConstraintForPrimitives(printed, facadeParamName);
-            }
-
-            return printed;
-        })
+            AliasEmit.PrintExplicitConstraint(
+                c,
+                gp,
+                resolver,
+                ctx,
+                facadeMode: currentNamespace != null,
+                sourceNamespace: currentNamespace,
+                emittedGenericParameterName: facadeParamName,
+                transformPrintedConstraint: printed => SubstituteTypeParams(printed, genericParams, sentinelSafe: true),
+                graph: graph))
         .Where(c => c != "any" && !TypeRefPrinter.IsOpaqueTypeText(c))
         .ToList();
 
@@ -310,7 +295,8 @@ public static class MultiArityAliasEmit
         TypeNameResolver resolver,
         BuildContext ctx,
         string resultExpr,
-        string? currentNamespace = null)
+        string? currentNamespace = null,
+        SymbolGraph? graph = null)
     {
         if (genericParams.Length == 0)
             return null;
@@ -320,41 +306,24 @@ public static class MultiArityAliasEmit
         for (int i = 0; i < arity && i < genericParams.Length; i++)
         {
             var gp = genericParams[i];
+            if (!HasExplicitConstraint(gp))
+                continue;
+
             var position = i + 1; // 1-based
             var facadeParamName = $"T{position}";
 
-            // Print and relax constraints (same logic as FormatConstraintForPosition)
+            // Print and relax constraints through the canonical CLR constraint emitter.
             var constraintStrings = gp.Constraints.Select(c =>
-            {
-                var printed = TypeRefPrinter.Print(c, resolver, ctx);
-
-                // Replace original param name with facade param name
-                if (gp.Name != facadeParamName)
-                {
-                    printed = SubstituteTypeParam(printed, gp.Name, facadeParamName);
-                }
-
-                // FACADE FIX: Same-namespace constraint types need Internal. prefix
-                // Re-exported types in facade aren't locally available, but Internal.* is
-                // Only prefix if constraint type is from same namespace
-                // Skip built-in TS types (never, any) and explicit opaque placeholders
-                if (currentNamespace != null &&
-                    printed != "never" && printed != "any" &&
-                    !TypeRefPrinter.IsOpaqueTypeText(printed) &&
-                    AliasEmit.RequiresFacadeInternalQualification(printed) &&
-                    IsSameNamespace(c, currentNamespace))
-                {
-                    printed = $"Internal.{printed}";
-                }
-
-                // Relax value semantics constraints for primitives
-                if (AliasEmit.IsValueSemanticsConstraint(c, facadeParamName))
-                {
-                    return AliasEmit.RelaxConstraintForPrimitives(printed, facadeParamName);
-                }
-
-                return printed;
-            })
+                AliasEmit.PrintExplicitConstraint(
+                    c,
+                    gp,
+                    resolver,
+                    ctx,
+                    facadeMode: currentNamespace != null,
+                    sourceNamespace: currentNamespace,
+                    emittedGenericParameterName: facadeParamName,
+                    transformPrintedConstraint: printed => SubstituteTypeParams(printed, genericParams, sentinelSafe: true),
+                    graph: graph))
             .Where(c => c != "any" && !TypeRefPrinter.IsOpaqueTypeText(c))
             .ToList();
 
@@ -373,6 +342,11 @@ public static class MultiArityAliasEmit
             result = $"{guards[i]} ? {result} : never";
         }
         return result;
+    }
+
+    private static bool HasExplicitConstraint(GenericParameterSymbol gp)
+    {
+        return gp.Constraints.Length > 0 || gp.SpecialConstraints != GenericParameterConstraints.None;
     }
 
     /// <summary>
@@ -440,5 +414,23 @@ public static class MultiArityAliasEmit
             i++;
         }
         return result.ToString();
+    }
+
+    private static string SubstituteTypeParams(
+        string printed,
+        ImmutableArray<GenericParameterSymbol> genericParams,
+        bool sentinelSafe = false)
+    {
+        for (var index = 0; index < genericParams.Length; index++)
+        {
+            var sourceName = genericParams[index].Name;
+            var facadeName = sentinelSafe ? $"Exclude<T{index + 1}, __>" : $"T{index + 1}";
+            if (sourceName != facadeName)
+            {
+                printed = SubstituteTypeParam(printed, sourceName, facadeName);
+            }
+        }
+
+        return printed;
     }
 }

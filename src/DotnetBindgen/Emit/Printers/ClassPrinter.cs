@@ -41,7 +41,7 @@ public static class ClassPrinter
         // This handles both StaticNamespace and Class types that are marked as static
         if (type.IsStatic || type.Kind == TypeKind.StaticNamespace)
         {
-            return PrintStaticClass(type, resolver, ctx, typesWithoutGenerics);
+            return PrintStaticClass(type, resolver, ctx, graph, typesWithoutGenerics);
         }
 
         return type.Kind switch
@@ -49,7 +49,7 @@ public static class ClassPrinter
             TypeKind.Class => PrintClass(type, resolver, ctx, graph, bindingsProvider: bindingsProvider, staticFlattening: staticFlattening, staticConflicts: staticConflicts, propertyOverrides: propertyOverrides, honestEmission: honestEmission, safeToExtend: safeToExtend),
             TypeKind.Struct => PrintStruct(type, resolver, ctx, graph, bindingsProvider: bindingsProvider, staticFlattening: staticFlattening, staticConflicts: staticConflicts, propertyOverrides: propertyOverrides, honestEmission: honestEmission, safeToExtend: safeToExtend),
             TypeKind.Enum => PrintEnum(type, ctx),
-            TypeKind.Delegate => PrintDelegate(type, resolver, ctx),
+            TypeKind.Delegate => PrintDelegate(type, resolver, ctx, graph),
             TypeKind.Interface => PrintInterface(type, resolver, ctx, graph),
             _ => $"// Unknown type kind: {type.Kind}"
         };
@@ -110,7 +110,7 @@ public static class ClassPrinter
         string genericArgs = "";
         if (hasGenerics)
         {
-            genericParams = "<" + string.Join(", ", type.GenericParameters.Select(gp => PrintGenericParameter(gp, resolver, ctx))) + ">";
+            genericParams = "<" + string.Join(", ", type.GenericParameters.Select(gp => PrintGenericParameter(gp, resolver, ctx, type, graph))) + ">";
             genericArgs = "<" + string.Join(", ", type.GenericParameters.Select(gp => gp.Name)) + ">";
         }
 
@@ -349,7 +349,7 @@ public static class ClassPrinter
                 // Lift class generic parameters into method
                 var liftedMethod = LiftClassGenericsToMethod(method, type, ctx);
 
-                foreach (var signature in MethodPrinter.PrintSignatureOnlyVariants(liftedMethod, type, emitName, resolver, ctx))
+                foreach (var signature in MethodPrinter.PrintSignatureOnlyVariants(liftedMethod, type, emitName, resolver, ctx, graph: graph))
                 {
                     sb.Append("    ");
                     sb.Append(signature);
@@ -383,39 +383,8 @@ public static class ClassPrinter
         if (type.GenericParameters.Length > 0)
         {
             sb.Append('<');
-            sb.Append(string.Join(", ", type.GenericParameters.Select(gp => PrintGenericParameter(gp, resolver, ctx))));
+            sb.Append(string.Join(", ", type.GenericParameters.Select(gp => PrintGenericParameter(gp, resolver, ctx, type, graph))));
             sb.Append('>');
-        }
-
-        // STATIC-SIDE FIX: Build extends list from base class AND interfaces
-        // Interfaces use "extends" for all inheritance (not "implements")
-        var extendsList = new List<string>();
-
-        // Base class: extends BaseClass$instance
-        // D1 FIX: Skip extends for static-only types that are being flattened
-        var shouldFlatten = staticFlattening?.ShouldFlattenType(type.StableId.ToString()) ?? false;
-
-        if (type.BaseType != null && !shouldFlatten)
-        {
-            // Pass forValuePosition=false since this is an interface (type position)
-            var baseTypeName = TypeRefPrinter.Print(type.BaseType, resolver, ctx, allowedTypeParameterNames: null, forValuePosition: false);
-            // TS2693 FIX (Same-Namespace): For same-namespace types with views, use instance class name
-            baseTypeName = ApplyInstanceSuffixForSameNamespaceViews(baseTypeName, type.BaseType, type.Namespace, graph, ctx);
-
-            var isImplicitClrRoot =
-                type.BaseType is NamedTypeReference { FullName: "System.Object" or "System.ValueType" };
-
-            // Skip implicit CLR roots and explicit opaque placeholder types.
-            if (!isImplicitClrRoot &&
-                baseTypeName != "any" &&
-                !TypeRefPrinter.IsOpaqueTypeText(baseTypeName))
-            {
-                extendsList.Add(baseTypeName);
-            }
-        }
-        else if (shouldFlatten)
-        {
-            ctx.Log("StaticFlattening", $"  Suppressing extends for static-only type: {type.ClrFullName}");
         }
 
         // Interfaces: extends IFoo$instance, IBar$instance
@@ -428,9 +397,63 @@ public static class ClassPrinter
             .Where(i => !IsUnsatisfiableInterface(type, i, honestEmission))
             .ToArray();
 
-        foreach (var iface in publicInterfaces)
+        var inheritedMemberNamesForSuppression = new HashSet<string>(
+            CollectExternalInheritedInstanceMemberNames(type, ctx),
+            StringComparer.Ordinal);
+        Dictionary<string, string>? baseMemberTypeIndexByName = null;
+
+        // STATIC-SIDE FIX: Build extends list from base class AND interfaces.
+        // Interfaces use "extends" for all inheritance (not "implements").
+        var extendsList = new List<string>();
+
+        // Base class: extends BaseClass$instance only when the generated TS surface can
+        // prove the heritage relation structurally. CLR inheritance is nominal, but TS
+        // interface heritage is structural; same-name overload/property collisions make
+        // raw `extends` unsound and invalid.
+        var shouldFlatten = staticFlattening?.ShouldFlattenType(type.StableId.ToString()) ?? false;
+
+        HashSet<string>? baseExtendsMemberNames = null;
+        if (type.BaseType != null && !shouldFlatten && CanEmitBaseExtends(type.BaseType, graph, ctx))
         {
-            var ifaceName = TypeRefPrinter.Print(iface, resolver, ctx, allowedTypeParameterNames: null, forValuePosition: false);
+            var baseTypeName = TypeRefPrinter.Print(type.BaseType, resolver, ctx, allowedTypeParameterNames: null, forValuePosition: true);
+            // TS2693 FIX (Same-Namespace): For same-namespace types with views, use instance class name
+            baseTypeName = ApplyInstanceSuffixForSameNamespaceViews(baseTypeName, type.BaseType, type.Namespace, graph, ctx);
+
+            var isImplicitClrRoot =
+                type.BaseType is NamedTypeReference { FullName: "System.Object" or "System.ValueType" };
+
+            // Skip implicit CLR roots and explicit opaque placeholder types.
+            if (!isImplicitClrRoot &&
+                baseTypeName != "any" &&
+                !TypeRefPrinter.IsOpaqueTypeText(baseTypeName))
+            {
+                baseExtendsMemberNames = CollectBaseHeritageInstanceMemberNames(type.BaseType, graph, ctx);
+                foreach (var name in baseExtendsMemberNames)
+                    inheritedMemberNamesForSuppression.Add(name);
+
+                if (!IsBuiltInTypeScriptType(baseTypeName))
+                {
+                    baseMemberTypeIndexByName = baseExtendsMemberNames.ToDictionary(
+                        memberName => memberName,
+                        _ => baseTypeName,
+                        StringComparer.Ordinal);
+                }
+
+                extendsList.Add(baseTypeName);
+            }
+        }
+        else if (shouldFlatten)
+        {
+            ctx.Log("StaticFlattening", $"  Suppressing extends for static-only type: {type.ClrFullName}");
+        }
+
+        var interfacesForExtends = baseExtendsMemberNames == null
+            ? publicInterfaces
+            : Array.Empty<TypeReference>();
+
+        foreach (var iface in interfacesForExtends)
+        {
+            var ifaceName = TypeRefPrinter.Print(iface, resolver, ctx, allowedTypeParameterNames: null, forValuePosition: true);
             ifaceName = ApplyInstanceSuffixForSameNamespaceViews(ifaceName, iface, type.Namespace, graph, ctx);
             extendsList.Add(ifaceName);
         }
@@ -447,7 +470,7 @@ public static class ClassPrinter
         // NOMINAL CLR TYPES: Attach a per-type brand for all class/struct types.
         // This prevents structural false positives between unrelated CLR types that
         // happen to share members (e.g., List<T> structurally matching ParallelQuery<T>).
-        EmitNominalClrTypeBrand(sb, type);
+        EmitNominalClrTypeBrands(sb, type, ctx, graph);
 
         // NOMINAL CLR INTERFACES: Attach interface brands for all implemented CLR interfaces
         // (including explicit views and inherited interfaces). This prevents structural matches
@@ -457,7 +480,7 @@ public static class ClassPrinter
 
         // STATIC-SIDE FIX: Emit only INSTANCE members for the interface
         // Static members and constructors will be emitted separately in PrintValueExport
-        EmitInstanceMembersOnly(sb, type, resolver, ctx, graph, bindingsProvider, overrideConflicts, propertyOverrides);
+        EmitInstanceMembersOnly(sb, type, resolver, ctx, graph, bindingsProvider, overrideConflicts, propertyOverrides, inheritedMemberNamesForSuppression, baseMemberTypeIndexByName);
 
         sb.AppendLine("}");
 
@@ -481,7 +504,7 @@ public static class ClassPrinter
         if (type.GenericParameters.Length > 0)
         {
             sb.Append('<');
-            sb.Append(string.Join(", ", type.GenericParameters.Select(gp => PrintGenericParameter(gp, resolver, ctx))));
+            sb.Append(string.Join(", ", type.GenericParameters.Select(gp => PrintGenericParameter(gp, resolver, ctx, type, graph))));
             sb.Append('>');
         }
 
@@ -498,7 +521,7 @@ public static class ClassPrinter
         if (publicInterfaces.Length > 0)
         {
             sb.Append(" extends ");
-            sb.Append(string.Join(", ", publicInterfaces.Select(i => TypeRefPrinter.Print(i, resolver, ctx))));
+            sb.Append(string.Join(", ", publicInterfaces.Select(i => TypeRefPrinter.Print(i, resolver, ctx, forValuePosition: true))));
         }
 
         sb.AppendLine(" {");
@@ -506,7 +529,7 @@ public static class ClassPrinter
         // NOMINAL CLR TYPES: Attach a per-type brand for all class/struct types.
         // This prevents structural false positives between unrelated CLR types that
         // happen to share members (e.g., List<T> structurally matching ParallelQuery<T>).
-        EmitNominalClrTypeBrand(sb, type);
+        EmitNominalClrTypeBrands(sb, type, ctx, graph);
 
         // NOMINAL CLR INTERFACES: Attach interface brands for all implemented CLR interfaces
         // (including explicit views and inherited interfaces). This prevents structural matches
@@ -523,7 +546,7 @@ public static class ClassPrinter
         return sb.ToString();
     }
 
-    private static string PrintStaticClass(TypeSymbol type, TypeNameResolver resolver, BuildContext ctx, HashSet<string>? typesWithoutGenerics)
+    private static string PrintStaticClass(TypeSymbol type, TypeNameResolver resolver, BuildContext ctx, SymbolGraph graph, HashSet<string>? typesWithoutGenerics)
     {
         // Static classes emit as abstract classes with static members in TypeScript
         // NOTE: We do NOT emit class-level generic parameters here because TypeScript
@@ -549,7 +572,7 @@ public static class ClassPrinter
         sb.AppendLine(" {");
 
         // Emit static members with generic lifting
-        EmitStaticMembers(sb, type, resolver, ctx);
+        EmitStaticMembers(sb, type, resolver, ctx, graph: graph);
 
         sb.AppendLine("}");
 
@@ -562,40 +585,43 @@ public static class ClassPrinter
 
         var finalName = ctx.Renamer.GetFinalTypeName(type);
 
-        sb.Append("enum ");
+        sb.Append("type ");
         sb.Append(finalName);
-        sb.AppendLine(" {");
+        sb.Append(" = number");
+        foreach (var brandName in GetEnumTypeBrandPropertyNames(type))
+        {
+            sb.Append(" & { readonly ");
+            sb.Append(brandName);
+            sb.Append(": never }");
+        }
+        sb.AppendLine(";");
+        sb.AppendLine();
+
+        sb.Append("export const ");
+        sb.Append(finalName);
+        sb.AppendLine(": {");
 
         // Create type scope for enum member name resolution
         var typeScope = ScopeFactory.ClassStatic(type); // Enum members are like static fields
 
         // Emit enum fields
         var fields = type.Members.Fields.Where(f => f.IsConst).ToList();
-        for (int i = 0; i < fields.Count; i++)
+        foreach (var field in fields)
         {
-            var field = fields[i];
             var memberFinalName = ctx.Renamer.GetFinalMemberName(field.StableId, typeScope);
-            sb.Append("    ");
+            sb.Append("    readonly ");
             sb.Append(memberFinalName);
-
-            if (field.ConstValue != null)
-            {
-                sb.Append(" = ");
-                sb.Append(field.ConstValue);
-            }
-
-            if (i < fields.Count - 1)
-                sb.Append(',');
-
-            sb.AppendLine();
+            sb.Append(": ");
+            sb.Append(finalName);
+            sb.AppendLine(";");
         }
 
-        sb.AppendLine("}");
+        sb.AppendLine("};");
 
         return sb.ToString();
     }
 
-    private static string PrintDelegate(TypeSymbol type, TypeNameResolver resolver, BuildContext ctx)
+    private static string PrintDelegate(TypeSymbol type, TypeNameResolver resolver, BuildContext ctx, SymbolGraph graph)
     {
         // Delegates emit as type aliases to function signatures
         var sb = new StringBuilder();
@@ -609,7 +635,7 @@ public static class ClassPrinter
         if (type.GenericParameters.Length > 0)
         {
             sb.Append('<');
-            sb.Append(string.Join(", ", type.GenericParameters.Select(gp => PrintGenericParameter(gp, resolver, ctx))));
+            sb.Append(string.Join(", ", type.GenericParameters.Select(gp => PrintGenericParameter(gp, resolver, ctx, type, graph))));
             sb.Append('>');
         }
 
@@ -666,15 +692,8 @@ public static class ClassPrinter
         if (type.GenericParameters.Length > 0)
         {
             sb.Append('<');
-            sb.Append(string.Join(", ", type.GenericParameters.Select(gp => PrintGenericParameter(gp, resolver, ctx))));
+            sb.Append(string.Join(", ", type.GenericParameters.Select(gp => PrintGenericParameter(gp, resolver, ctx, type, graph))));
             sb.Append('>');
-        }
-
-        // Base interfaces: extends IFoo, IBar
-        if (type.Interfaces.Length > 0)
-        {
-            sb.Append(" extends ");
-            sb.Append(string.Join(", ", type.Interfaces.Select(i => TypeRefPrinter.Print(i, resolver, ctx))));
         }
 
         sb.AppendLine(" {");
@@ -682,11 +701,17 @@ public static class ClassPrinter
         // NOMINAL CLR INTERFACES: Prevent TypeScript structural typing ("duck typing") from
         // treating any structurally compatible object as a CLR interface.
         //
-        // This brand is a phantom field. It is populated on CLR types that implement this
-        // interface (including via base types) during emission (see EmitNominalClrInterfaceBrands).
-        sb.Append("    readonly ");
-        sb.Append(NameUtilities.GetClrInterfaceBrandPropertyName(type.ClrFullName));
-        sb.AppendLine(": never;");
+        // These brands are phantom fields. The interface carries its own brand plus inherited
+        // interface brands so generic constraints can prove CLR interface inheritance without
+        // relying on TypeScript structural extends.
+        var interfaceBrands = CollectInterfaceBrandFullNames(type, graph);
+        interfaceBrands.Add(type.ClrFullName);
+        foreach (var fullName in interfaceBrands.OrderBy(n => n, StringComparer.Ordinal))
+        {
+            sb.Append("    readonly ");
+            sb.Append(NameUtilities.GetClrInterfaceBrandPropertyName(fullName));
+            sb.AppendLine(": never;");
+        }
         sb.AppendLine();
 
         // Emit members (interfaces only have instance members)
@@ -719,15 +744,120 @@ public static class ClassPrinter
         sb.AppendLine();
     }
 
-    private static void EmitNominalClrTypeBrand(StringBuilder sb, TypeSymbol type)
+    private static void EmitNominalClrTypeBrands(StringBuilder sb, TypeSymbol type, BuildContext ctx, SymbolGraph graph)
     {
         if (type.Kind != TypeKind.Class && type.Kind != TypeKind.Struct)
             return;
 
-        sb.Append("    readonly ");
-        sb.Append(NameUtilities.GetClrTypeBrandPropertyName(type.ClrFullName));
-        sb.AppendLine(": never;");
+        foreach (var brandName in GetNominalClrTypeBrandPropertyNames(type, ctx, graph))
+        {
+            sb.Append("    readonly ");
+            sb.Append(brandName);
+            sb.AppendLine(": never;");
+        }
+
         sb.AppendLine();
+    }
+
+    public static IReadOnlyList<string> GetNominalClrTypeBrandPropertyNames(TypeSymbol type, BuildContext ctx, SymbolGraph graph)
+    {
+        var fullNames = new SortedSet<string>(StringComparer.Ordinal);
+        var visited = new HashSet<string>(StringComparer.Ordinal);
+
+        void AddFullName(string? fullName)
+        {
+            if (string.IsNullOrWhiteSpace(fullName))
+                return;
+
+            var canonical = StripAssemblyQualification(fullName);
+            if (canonical == "System.Object")
+                return;
+
+            fullNames.Add(canonical);
+        }
+
+        void AddTypeAndBases(TypeSymbol symbol)
+        {
+            if (!visited.Add(symbol.ClrFullName))
+                return;
+
+            AddFullName(symbol.ClrFullName);
+
+            if (symbol.Kind == TypeKind.Struct)
+            {
+                AddFullName("System.ValueType");
+            }
+
+            AddBaseReference(symbol.BaseType);
+        }
+
+        void AddBaseReference(TypeReference? typeRef)
+        {
+            var fullName = GetNamedTypeFullName(typeRef);
+            if (fullName == null)
+                return;
+
+            var canonical = StripAssemblyQualification(fullName);
+            AddFullName(canonical);
+
+            var baseSymbol = FindTypeSymbolByClrFullName(graph, canonical);
+            if (baseSymbol != null)
+            {
+                AddTypeAndBases(baseSymbol);
+                return;
+            }
+
+            if (ctx.LibraryContract?.BaseClrFullNameByClrFullName.TryGetValue(canonical, out var externalBaseFullName) == true)
+                AddBaseFullName(externalBaseFullName);
+        }
+
+        AddTypeAndBases(type);
+
+        return fullNames
+            .Select(NameUtilities.GetClrTypeBrandPropertyName)
+            .ToArray();
+
+        void AddBaseFullName(string fullName)
+        {
+            var canonical = StripAssemblyQualification(fullName);
+            AddFullName(canonical);
+
+            var baseSymbol = FindTypeSymbolByClrFullName(graph, canonical);
+            if (baseSymbol != null)
+            {
+                AddTypeAndBases(baseSymbol);
+                return;
+            }
+
+            if (ctx.LibraryContract?.BaseClrFullNameByClrFullName.TryGetValue(canonical, out var externalBaseFullName) == true)
+                AddBaseFullName(externalBaseFullName);
+        }
+    }
+
+    public static IReadOnlyList<string> GetEnumTypeBrandPropertyNames(TypeSymbol type)
+    {
+        return new[]
+        {
+            NameUtilities.GetClrTypeBrandPropertyName(type.ClrFullName),
+            NameUtilities.GetClrTypeBrandPropertyName("System.Enum"),
+            NameUtilities.GetClrTypeBrandPropertyName("System.ValueType")
+        };
+    }
+
+    private static string? GetNamedTypeFullName(TypeReference? typeRef)
+    {
+        return typeRef switch
+        {
+            NamedTypeReference named => StripAssemblyQualification(named.FullName),
+            NestedTypeReference nested => StripAssemblyQualification(nested.FullReference.FullName),
+            _ => null
+        };
+    }
+
+    private static string StripAssemblyQualification(string fullName)
+    {
+        var commaIndex = fullName.IndexOf(',');
+        return commaIndex >= 0 ? fullName.Substring(0, commaIndex).Trim() : fullName;
     }
 
     private static HashSet<string> CollectInterfaceBrandFullNames(TypeSymbol type, SymbolGraph graph)
@@ -978,7 +1108,7 @@ public static class ClassPrinter
                     var methodToEmit = SubstituteMemberIfNeeded(type, exposure.Method, ctx, graph);
 
                     // Use unified TsName from derived type's own methods
-                    foreach (var signature in MethodPrinter.PrintWithNameVariants(methodToEmit, type, tsName, resolver, ctx, emitAbstract: groupIsAbstract))
+                    foreach (var signature in MethodPrinter.PrintWithNameVariants(methodToEmit, type, tsName, resolver, ctx, graph: graph, emitAbstract: groupIsAbstract))
                     {
                         sb.Append("    ");
                         sb.Append(signature);
@@ -1023,7 +1153,7 @@ public static class ClassPrinter
                     var methodToEmit = SubstituteMemberIfNeeded(type, method, ctx, graph);
 
                     // TS2512 FIX: Pass group-level abstract status to ensure consistency
-                    foreach (var signature in MethodPrinter.PrintWithNameVariants(methodToEmit, type, emitName, resolver, ctx, emitAbstract: groupIsAbstract))
+                    foreach (var signature in MethodPrinter.PrintWithNameVariants(methodToEmit, type, emitName, resolver, ctx, graph: graph, emitAbstract: groupIsAbstract))
                     {
                         sb.Append("    ");
                         sb.Append(signature);
@@ -1034,14 +1164,24 @@ public static class ClassPrinter
         }
 
         // Static members
-        EmitStaticMembers(sb, type, resolver, ctx, staticConflicts);
+        EmitStaticMembers(sb, type, resolver, ctx, staticConflicts, graph);
     }
 
     /// <summary>
     /// STATIC-SIDE FIX: Emit only INSTANCE members (no constructors, no static members).
     /// Used when emitting interface for instance side of class.
     /// </summary>
-    private static void EmitInstanceMembersOnly(StringBuilder sb, TypeSymbol type, TypeNameResolver resolver, BuildContext ctx, Model.SymbolGraph graph, BindingsProvider? bindingsProvider = null, Shape.OverrideConflictPlan? overrideConflicts = null, Plan.PropertyOverridePlan? propertyOverrides = null)
+    private static void EmitInstanceMembersOnly(
+        StringBuilder sb,
+        TypeSymbol type,
+        TypeNameResolver resolver,
+        BuildContext ctx,
+        Model.SymbolGraph graph,
+        BindingsProvider? bindingsProvider = null,
+        Shape.OverrideConflictPlan? overrideConflicts = null,
+        Plan.PropertyOverridePlan? propertyOverrides = null,
+        IReadOnlySet<string>? inheritedMemberNames = null,
+        IReadOnlyDictionary<string, string>? baseMemberTypeIndexByName = null)
     {
         var members = type.Members;
 
@@ -1064,6 +1204,17 @@ public static class ClassPrinter
             return shouldSuppress;
         }
 
+        bool ShouldSuppressInheritedMember(string emitName)
+        {
+            if (inheritedMemberNames?.Contains(emitName) != true)
+                return false;
+
+            ctx.Log(
+                "Inheritance",
+                $"  Suppressing {type.ClrFullName}.{emitName}: inherited from base surface");
+            return true;
+        }
+
         // NO CONSTRUCTORS - they go in the value export (const declaration)
 
         // Fields - only emit ClassSurface members, no static fields
@@ -1071,6 +1222,8 @@ public static class ClassPrinter
         {
             // Get final name from Renamer (applies camelCase transform if configured)
             var emitName = ctx.Renamer.GetFinalMemberName(field.StableId, typeScope);
+            if (ShouldSuppressInheritedMember(emitName))
+                continue;
 
             sb.Append("    ");
             if (field.IsReadOnly)
@@ -1111,7 +1264,14 @@ public static class ClassPrinter
                 if (!isPublic && !isProtectedVirtual)
                     continue;
 
+                // E: Check for property override unification
+                var key = (type.StableId.ToString(), ownProperty.Property.StableId.ToString());
+                string? overrideType = null;
+                propertyOverrides?.PropertyTypeOverrides.TryGetValue(key, out overrideType);
+
                 var tsName = ownProperty.TsName;
+                if (overrideType == null && ShouldSuppressInheritedMember(tsName))
+                    continue;
 
                 // D3: Skip if this instance property conflicts with base class
                 if (ShouldSuppressMember(ownProperty.Property.StableId.ToString()))
@@ -1119,11 +1279,6 @@ public static class ClassPrinter
 
                 // FIX D EXTENSION: Substitute generic parameters for properties from interfaces
                 var propToEmit = SubstituteMemberIfNeeded(type, ownProperty.Property, ctx, graph);
-
-                // E: Check for property override unification
-                var key = (type.StableId.ToString(), ownProperty.Property.StableId.ToString());
-                string? overrideType = null;
-                propertyOverrides?.PropertyTypeOverrides.TryGetValue(key, out overrideType);
 
                 // NRT: Use EmitProperty helper to handle split get/set accessors for nullable properties
                 EmitProperty(sb, propToEmit, tsName, propToEmit.PropertyType, resolver, ctx, overrideType);
@@ -1143,13 +1298,16 @@ public static class ClassPrinter
                 if (ShouldSuppressMember(prop.StableId.ToString()))
                     continue;
 
-                var emitName = ctx.Renamer.GetFinalMemberName(prop.StableId, typeScope);
-                var propToEmit = SubstituteMemberIfNeeded(type, prop, ctx, graph);
-
                 // E: Check for property override unification
                 var key = (type.StableId.ToString(), prop.StableId.ToString());
                 string? overrideType = null;
                 propertyOverrides?.PropertyTypeOverrides.TryGetValue(key, out overrideType);
+
+                var emitName = ctx.Renamer.GetFinalMemberName(prop.StableId, typeScope);
+                if (overrideType == null && ShouldSuppressInheritedMember(emitName))
+                    continue;
+
+                var propToEmit = SubstituteMemberIfNeeded(type, prop, ctx, graph);
 
                 // NRT: Use EmitProperty helper to handle split get/set accessors for nullable properties
                 EmitProperty(sb, propToEmit, emitName, propToEmit.PropertyType, resolver, ctx, overrideType);
@@ -1167,14 +1325,12 @@ public static class ClassPrinter
                 .GroupBy(e => e.Method.ClrName)
                 .OrderBy(g => g.Key);
 
-            foreach (var group in methodGroups)
-            {
-                var exposures = group.ToList();
+                foreach (var group in methodGroups)
+                {
+                    var exposures = group.ToList();
 
-                bool ShouldExpose(MethodSymbol m) =>
-                    m.Visibility == Visibility.Public ||
-                    ((m.Visibility == Visibility.Protected || m.Visibility == Visibility.ProtectedInternal) &&
-                     (m.IsVirtual || m.IsAbstract || m.IsOverride));
+                    bool ShouldExpose(MethodSymbol m) =>
+                        IsCallableInstanceSurfaceMethod(m);
 
                 var ownMethods = exposures
                     .Where(e => !e.IsInherited && ShouldExpose(e.Method))
@@ -1208,26 +1364,41 @@ public static class ClassPrinter
                 else
                     tsName = ownMethods.First().TsName;
 
+                if (baseMemberTypeIndexByName?.TryGetValue(tsName, out var baseTypeName) == true)
+                {
+                    var functionTypes = methodsToEmit
+                        .Where(e => !ShouldSuppressMember(e.Method.StableId.ToString()))
+                        .Where(e => !(shouldSkipAbstract && e.Method.IsAbstract))
+                        .Select(e => SubstituteMemberIfNeeded(type, e.Method, ctx, graph))
+                        .SelectMany(methodToEmit => MethodPrinter.PrintFunctionTypeVariants(methodToEmit, type, resolver, ctx, graph: graph))
+                        .Distinct(StringComparer.Ordinal)
+                        .OrderBy(signature => signature, StringComparer.Ordinal)
+                        .ToList();
+
+                    if (functionTypes.Count > 0)
+                    {
+                        EmitIndexedBaseMethodFamily(sb, tsName, baseTypeName, functionTypes);
+                    }
+
+                    continue;
+                }
+
                 // STATIC-SIDE FIX: Interfaces don't have abstract keyword - all methods are implicitly abstract
                 // Since we're now emitting classes as interfaces, we never emit abstract
 
-                foreach (var exposure in methodsToEmit)
+                var signatures = methodsToEmit
+                    .Where(e => !ShouldSuppressMember(e.Method.StableId.ToString()))
+                    .Where(e => !(shouldSkipAbstract && e.Method.IsAbstract))
+                    .Select(e => SubstituteMemberIfNeeded(type, e.Method, ctx, graph))
+                    .SelectMany(methodToEmit => MethodPrinter.PrintWithNameVariants(methodToEmit, type, tsName, resolver, ctx, graph: graph, emitAbstract: false))
+                    .Distinct(StringComparer.Ordinal)
+                    .OrderBy(signature => signature, StringComparer.Ordinal);
+
+                foreach (var signature in signatures)
                 {
-                    // D3: Skip if this instance method conflicts with base class
-                    if (ShouldSuppressMember(exposure.Method.StableId.ToString()))
-                        continue;
-
-                    if (shouldSkipAbstract && exposure.Method.IsAbstract)
-                        continue;
-
-                    var methodToEmit = SubstituteMemberIfNeeded(type, exposure.Method, ctx, graph);
-                    // Never emit abstract - we're emitting as interface now
-                    foreach (var signature in MethodPrinter.PrintWithNameVariants(methodToEmit, type, tsName, resolver, ctx, emitAbstract: false))
-                    {
-                        sb.Append("    ");
-                        sb.Append(signature);
-                        sb.AppendLine(";");
-                    }
+                    sb.Append("    ");
+                    sb.Append(signature);
+                    sb.AppendLine(";");
                 }
             }
         }
@@ -1238,9 +1409,7 @@ public static class ClassPrinter
                 .Where(m =>
                     !m.IsStatic &&
                     m.EmitScope == EmitScope.ClassSurface &&
-                    (m.Visibility == Visibility.Public ||
-                     ((m.Visibility == Visibility.Protected || m.Visibility == Visibility.ProtectedInternal) &&
-                      (m.IsVirtual || m.IsAbstract || m.IsOverride))))
+                    IsCallableInstanceSurfaceMethod(m))
                 .ToList();
 
             var methodGroups = GroupMethodsByClrName(instanceMethods, isStatic: false);
@@ -1249,26 +1418,41 @@ public static class ClassPrinter
             {
                 var firstMethod = overloads.First();
                 var emitName = ctx.Renamer.GetFinalMemberName(firstMethod.StableId, typeScope);
+                if (baseMemberTypeIndexByName?.TryGetValue(emitName, out var baseTypeName) == true)
+                {
+                    var functionTypes = overloads
+                        .Where(method => !ShouldSuppressMember(method.StableId.ToString()))
+                        .Where(method => !(shouldSkipAbstract && method.IsAbstract))
+                        .Select(method => SubstituteMemberIfNeeded(type, method, ctx, graph))
+                        .SelectMany(methodToEmit => MethodPrinter.PrintFunctionTypeVariants(methodToEmit, type, resolver, ctx, graph: graph))
+                        .Distinct(StringComparer.Ordinal)
+                        .OrderBy(signature => signature, StringComparer.Ordinal)
+                        .ToList();
+
+                    if (functionTypes.Count > 0)
+                    {
+                        EmitIndexedBaseMethodFamily(sb, emitName, baseTypeName, functionTypes);
+                    }
+
+                    continue;
+                }
 
                 // STATIC-SIDE FIX: Interfaces don't have abstract keyword - all methods are implicitly abstract
                 // Since we're now emitting classes as interfaces, we never emit abstract
 
-                foreach (var method in overloads)
+                var signatures = overloads
+                    .Where(method => !ShouldSuppressMember(method.StableId.ToString()))
+                    .Where(method => !(shouldSkipAbstract && method.IsAbstract))
+                    .Select(method => SubstituteMemberIfNeeded(type, method, ctx, graph))
+                    .SelectMany(methodToEmit => MethodPrinter.PrintWithNameVariants(methodToEmit, type, emitName, resolver, ctx, graph: graph, emitAbstract: false))
+                    .Distinct(StringComparer.Ordinal)
+                    .OrderBy(signature => signature, StringComparer.Ordinal);
+
+                foreach (var signature in signatures)
                 {
-                    if (ShouldSuppressMember(method.StableId.ToString()))
-                        continue;
-
-                    if (shouldSkipAbstract && method.IsAbstract)
-                        continue;
-
-                    var methodToEmit = SubstituteMemberIfNeeded(type, method, ctx, graph);
-                    // Never emit abstract - we're emitting as interface now
-                    foreach (var signature in MethodPrinter.PrintWithNameVariants(methodToEmit, type, emitName, resolver, ctx, emitAbstract: false))
-                    {
-                        sb.Append("    ");
-                        sb.Append(signature);
-                        sb.AppendLine(";");
-                    }
+                    sb.Append("    ");
+                    sb.Append(signature);
+                    sb.AppendLine(";");
                 }
             }
         }
@@ -1281,7 +1465,42 @@ public static class ClassPrinter
         // NO STATIC MEMBERS - they go in the value export (const declaration)
     }
 
-    private static void EmitStaticMembers(StringBuilder sb, TypeSymbol type, TypeNameResolver resolver, BuildContext ctx, Shape.StaticConflictPlan? staticConflicts = null)
+    private static void EmitIndexedBaseMethodFamily(
+        StringBuilder sb,
+        string methodName,
+        string baseTypeName,
+        IReadOnlyList<string> functionTypes)
+    {
+        sb.Append("    ");
+        sb.Append(methodName);
+        sb.Append(": ");
+        sb.Append(baseTypeName);
+        sb.Append("[\"");
+        sb.Append(EscapeTypeScriptString(methodName));
+        sb.Append("\"]");
+        foreach (var functionType in functionTypes)
+        {
+            sb.Append(" & ");
+            sb.Append(functionType);
+        }
+        sb.AppendLine(";");
+    }
+
+    private static string EscapeTypeScriptString(string text) =>
+        text.Replace("\\", "\\\\", StringComparison.Ordinal)
+            .Replace("\"", "\\\"", StringComparison.Ordinal);
+
+    private static bool IsCallableInstanceSurfaceMethod(MethodSymbol method)
+    {
+        if (method.Visibility == Visibility.Public)
+            return true;
+
+        return (method.Visibility == Visibility.Protected ||
+                method.Visibility == Visibility.ProtectedInternal) &&
+               (method.IsVirtual || method.IsAbstract || method.IsOverride);
+    }
+
+    private static void EmitStaticMembers(StringBuilder sb, TypeSymbol type, TypeNameResolver resolver, BuildContext ctx, Shape.StaticConflictPlan? staticConflicts = null, SymbolGraph? graph = null)
     {
         var members = type.Members;
 
@@ -1428,7 +1647,7 @@ public static class ClassPrinter
                 // Lift class generic parameters into this method
                 var liftedMethod = LiftClassGenericsToMethod(method, type, ctx);
 
-                foreach (var signature in MethodPrinter.PrintWithNameVariants(liftedMethod, type, emitName, resolver, ctx, emitAbstract: groupIsAbstract))
+                foreach (var signature in MethodPrinter.PrintWithNameVariants(liftedMethod, type, emitName, resolver, ctx, graph: graph, emitAbstract: groupIsAbstract))
                 {
                     sb.Append("    ");
                     sb.Append(signature);
@@ -1483,15 +1702,15 @@ public static class ClassPrinter
             var emittedSignatures = new HashSet<string>();
 
             // Emit each overload signature (interfaces have no abstract keyword)
-            foreach (var method in overloads)
+            foreach (var signature in overloads
+                         .SelectMany(method => MethodPrinter.PrintWithNameVariants(method, type, emitName, resolver, ctx, graph: graph))
+                         .Distinct(StringComparer.Ordinal)
+                         .OrderBy(signature => signature, StringComparer.Ordinal))
             {
-                foreach (var signature in MethodPrinter.PrintWithNameVariants(method, type, emitName, resolver, ctx))
-                {
-                    sb.Append("    ");
-                    sb.Append(signature);
-                    sb.AppendLine(";");
-                    emittedSignatures.Add(signature);
-                }
+                sb.Append("    ");
+                sb.Append(signature);
+                sb.AppendLine(";");
+                emittedSignatures.Add(signature);
             }
 
             // TS2430 FIX: Emit inherited overloads with different signatures
@@ -1591,7 +1810,7 @@ public static class ClassPrinter
                 var emitName = ctx.Renamer.GetFinalMemberName(method.StableId, instanceScope);
 
                 // Build the signature string with substitution
-                var sig = BuildMethodSignatureWithSubstitution(method, ifaceSymbol, emitName, resolver, ctx, localSubMap);
+                var sig = BuildMethodSignatureWithSubstitution(method, ifaceSymbol, emitName, resolver, ctx, graph, localSubMap);
 
                 if (!result.TryGetValue(emitName, out var list))
                 {
@@ -1781,6 +2000,7 @@ public static class ClassPrinter
         string emitName,
         TypeNameResolver resolver,
         BuildContext ctx,
+        SymbolGraph graph,
         Dictionary<string, TypeReference> substitutionMap)
     {
         var sb = new StringBuilder();
@@ -1790,7 +2010,7 @@ public static class ClassPrinter
         if (method.GenericParameters.Length > 0)
         {
             sb.Append('<');
-            sb.Append(string.Join(", ", method.GenericParameters.Select(gp => gp.Name)));
+            sb.Append(string.Join(", ", method.GenericParameters.Select(gp => PrintGenericParameter(gp, resolver, ctx, declaringType, graph))));
             sb.Append('>');
         }
 
@@ -1832,7 +2052,12 @@ public static class ClassPrinter
         return sb.ToString();
     }
 
-    private static string PrintGenericParameter(GenericParameterSymbol gp, TypeNameResolver resolver, BuildContext ctx)
+    private static string PrintGenericParameter(
+        GenericParameterSymbol gp,
+        TypeNameResolver resolver,
+        BuildContext ctx,
+        TypeSymbol? ownerType = null,
+        SymbolGraph? graph = null)
     {
         var sb = new StringBuilder();
         sb.Append(gp.Name);
@@ -1847,16 +2072,7 @@ public static class ClassPrinter
             // "any & IFoo" is invalid - just use "IFoo"
             // PRIMITIVE CONSTRAINT RELAXATION: Widen value semantics constraints
             var printedConstraints = gp.Constraints
-                .Select(c =>
-                {
-                    var printed = TypeRefPrinter.Print(c, resolver, ctx);
-                    // Relax IEquatable_1<T>, IComparable_1<T>, IComparable to admit primitives
-                    if (AliasEmit.IsValueSemanticsConstraint(c, gp.Name))
-                    {
-                        return AliasEmit.RelaxConstraintForPrimitives(printed, gp.Name);
-                    }
-                    return printed;
-                })
+                .Select(c => AliasEmit.PrintExplicitConstraint(c, gp, resolver, ctx, graph: graph))
                 .Where(c => c != "any" && !TypeRefPrinter.IsOpaqueTypeText(c))
                 .ToArray();
 
@@ -2221,20 +2437,181 @@ public static class ClassPrinter
     private static TypeSymbol? FindTypeSymbol(Model.SymbolGraph graph, TypeReference typeRef)
     {
         var typeName = GetTypeFullName(typeRef);
+        return FindTypeSymbolByClrFullName(graph, typeName);
+    }
 
-        // Search through all namespaces in the graph for the type
+    private static TypeSymbol? FindTypeSymbolByClrFullName(Model.SymbolGraph graph, string clrFullName)
+    {
+        var typeName = StripAssemblyQualification(clrFullName);
         foreach (var ns in graph.Namespaces)
         {
             foreach (var type in ns.Types)
             {
                 if (type.ClrFullName == typeName)
-                {
                     return type;
-                }
+
+                var nested = FindNestedTypeSymbolByClrFullName(type, typeName);
+                if (nested != null)
+                    return nested;
             }
         }
 
-        return null; // Type not found in graph
+        if (graph.TypeIndex.TryGetValue(typeName, out var indexed))
+            return indexed;
+
+        return null;
+    }
+
+    private static TypeSymbol? FindNestedTypeSymbolByClrFullName(TypeSymbol type, string clrFullName)
+    {
+        foreach (var nested in type.NestedTypes)
+        {
+            if (nested.ClrFullName == clrFullName)
+                return nested;
+
+            var match = FindNestedTypeSymbolByClrFullName(nested, clrFullName);
+            if (match != null)
+                return match;
+        }
+
+        return null;
+    }
+
+    private static bool CanEmitBaseExtends(
+        TypeReference baseType,
+        Model.SymbolGraph graph,
+        BuildContext ctx)
+    {
+        var localBase = FindTypeSymbol(graph, baseType);
+        if (localBase != null)
+            return true;
+
+        if (ctx.LibraryContract == null)
+            return false;
+
+        var baseFullName = GetTypeFullName(baseType);
+        if (!ctx.LibraryContract.AllowedClrFullNames.Contains(baseFullName))
+            return false;
+
+        return true;
+    }
+
+    private static bool IsExternalLibraryType(
+        TypeReference typeRef,
+        Model.SymbolGraph graph,
+        BuildContext ctx)
+    {
+        if (ctx.LibraryContract == null)
+            return false;
+
+        var fullName = StripAssemblyQualification(GetTypeFullName(typeRef));
+        if (string.IsNullOrWhiteSpace(fullName))
+            return false;
+
+        return FindTypeSymbolByClrFullName(graph, fullName) == null &&
+               ctx.LibraryContract.AllowedClrFullNames.Contains(fullName);
+    }
+
+    private static HashSet<string> CollectBaseHeritageInstanceMemberNames(
+        TypeReference baseTypeRef,
+        Model.SymbolGraph graph,
+        BuildContext ctx)
+    {
+        var names = new HashSet<string>(StringComparer.Ordinal);
+        var visited = new HashSet<string>(StringComparer.Ordinal);
+
+        void AddBase(TypeReference? typeRef)
+        {
+            if (typeRef == null)
+                return;
+
+            var fullName = GetTypeFullName(typeRef);
+            if (string.IsNullOrWhiteSpace(fullName))
+                return;
+
+            var canonical = StripAssemblyQualification(fullName);
+            if (IsImplicitClrRoot(canonical))
+                return;
+
+            if (!visited.Add(canonical))
+                return;
+
+            var localType = FindTypeSymbolByClrFullName(graph, canonical);
+            if (localType != null)
+            {
+                foreach (var memberName in CollectOwnEmittedInstanceMemberNames(localType))
+                    names.Add(memberName);
+
+                AddBase(localType.BaseType);
+                return;
+            }
+
+            if (ctx.LibraryContract?.AllowedClrFullNames.Contains(canonical) == true)
+            {
+                foreach (var memberName in ctx.LibraryContract.GetTransitiveInstanceMemberNames(canonical))
+                    names.Add(memberName);
+            }
+        }
+
+        AddBase(baseTypeRef);
+        return names;
+    }
+
+    private static bool IsImplicitClrRoot(string clrFullName) =>
+        clrFullName is "System.Object" or "System.ValueType" or "System.Enum";
+
+    private static IReadOnlySet<string> CollectExternalInheritedInstanceMemberNames(TypeSymbol type, BuildContext ctx)
+    {
+        var contract = ctx.LibraryContract;
+        if (contract == null || type.BaseType == null)
+            return new HashSet<string>(StringComparer.Ordinal);
+
+        var baseFullName = GetTypeFullName(type.BaseType);
+        if (!contract.AllowedClrFullNames.Contains(baseFullName))
+            return new HashSet<string>(StringComparer.Ordinal);
+
+        return contract.GetTransitiveInstanceMemberNames(baseFullName);
+    }
+
+    private static HashSet<string> CollectOwnEmittedInstanceMemberNames(TypeSymbol type)
+    {
+        var names = new HashSet<string>(StringComparer.Ordinal);
+
+        foreach (var method in type.Members.Methods.Where(m =>
+                     !m.IsStatic &&
+                     m.EmitScope == EmitScope.ClassSurface &&
+                     IsCallableInstanceSurfaceMethod(m)))
+        {
+            names.Add(string.IsNullOrEmpty(method.TsEmitName) ? method.ClrName : method.TsEmitName);
+        }
+
+        foreach (var property in type.Members.Properties.Where(p =>
+                     !p.IsStatic &&
+                     p.EmitScope == EmitScope.ClassSurface &&
+                     (p.Visibility == Visibility.Public ||
+                      ((p.Visibility == Visibility.Protected || p.Visibility == Visibility.ProtectedInternal) &&
+                       (p.IsVirtual || p.IsAbstract || p.IsOverride)))))
+        {
+            names.Add(string.IsNullOrEmpty(property.TsEmitName) ? property.ClrName : property.TsEmitName);
+        }
+
+        foreach (var field in type.Members.Fields.Where(f =>
+                     !f.IsStatic &&
+                     f.EmitScope == EmitScope.ClassSurface &&
+                     f.Visibility == Visibility.Public))
+        {
+            names.Add(string.IsNullOrEmpty(field.TsEmitName) ? field.ClrName : field.TsEmitName);
+        }
+
+        foreach (var evt in type.Members.Events.Where(e =>
+                     !e.IsStatic &&
+                     e.EmitScope == EmitScope.ClassSurface &&
+                     e.Visibility == Visibility.Public))
+        {
+            names.Add(string.IsNullOrEmpty(evt.TsEmitName) ? evt.ClrName : evt.TsEmitName);
+        }
+
+        return names;
     }
 
     private static string GetTypeFullName(TypeReference typeRef)

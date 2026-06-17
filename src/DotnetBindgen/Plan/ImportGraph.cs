@@ -293,6 +293,28 @@ public static class ImportGraph
             }
         }
 
+        // Analyze explicit view interfaces. Companion view interfaces emit As_IInterface()
+        // return types, so their target interfaces must be imported just like normal
+        // member return types.
+        foreach (var view in type.ExplicitViews)
+        {
+            var viewTypeRefs = new HashSet<(string FullName, string? Namespace)>();
+            CollectTypeReferences(ctx, view.InterfaceReference, graph, graphData, viewTypeRefs);
+
+            foreach (var (fullName, targetNs) in viewTypeRefs)
+            {
+                RecordTypeReference(
+                    ctx,
+                    graphData,
+                    ns,
+                    type.ClrFullName,
+                    fullName,
+                    targetNs,
+                    ReferenceKind.Interface,
+                    dependencies);
+            }
+        }
+
         // Analyze generic parameters constraints - collect ALL referenced types recursively
         foreach (var gp in type.GenericParameters)
         {

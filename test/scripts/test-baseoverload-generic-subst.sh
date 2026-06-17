@@ -57,9 +57,12 @@ if [ ! -f "$FILE" ]; then
     exit 1
 fi
 
-# Application must inherit/retain Router overloads for TS2430 compatibility, but the return must be closed (Router),
-# not `unknown` (which indicates an unbound TSelf leak).
-assert_grep "get(path: string, callback: Handler): Router;" "$FILE" "Application.get(path, callback) returns Router (closed TSelf)"
+# Application must inherit/retain Router overloads for TS2430 compatibility. In the
+# current structural surface this is expressed by extending Router$instance; the closed
+# Router return lives on RoutingHost_1<Router>, not by duplicating the method on Application.
+assert_grep 'interface Application$instance extends Router$instance' "$FILE" "Application inherits Router surface"
+assert_grep 'interface Router$instance extends RoutingHost_1$instance<Router>' "$FILE" "Router closes TSelf to Router"
+assert_grep "get(path: string, callback: Handler): TSelf;" "$FILE" "RoutingHost_1 keeps generic get return"
 
 if grep -Fq "get(path: string, callback: Handler): unknown;" "$FILE"; then
     echo -e "${RED}❌ FAILED: Found unbound/unknown return type leak for Application.get(path, callback)${NC}"
@@ -73,4 +76,3 @@ echo "================================================"
 echo -e "${GREEN}✓ BASEOVERLOAD GENERIC SUBSTITUTION TEST PASSED${NC}"
 echo "================================================"
 echo ""
-

@@ -18,7 +18,11 @@
     "README.md"
   ],
   "scripts": {
-    "build": "dotnet publish src/DotnetBindgen/DotnetBindgen.csproj -c Release -o lib/"
+    "build": "dotnet publish src/DotnetBindgen/DotnetBindgen.csproj -c Release -o lib/",
+    "prepack": "npm run build",
+    "test": "bash test/scripts/run-all.sh",
+    "test:generated-types": "node scripts/typecheck-generated-packages.mjs",
+    "test:unit": "dotnet test tests/DotnetBindgen.Tests/DotnetBindgen.Tests.csproj -c Release --verbosity quiet"
   },
   "keywords": [
     "tsonic",
@@ -35,6 +39,6 @@
     "url": "git+https://github.com/tsoniclang/dotnet-bindgen.git"
   },
   "devDependencies": {
-    "typescript": "^5.9.3"
+    "@typescript/native-preview": "7.0.0-dev.20260617.2"
   }
 }
