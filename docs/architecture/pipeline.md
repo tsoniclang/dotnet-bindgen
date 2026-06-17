@@ -32,7 +32,7 @@ Write declaration files, facades, and binding metadata.
 
 ## Why these phases exist
 
-The pipeline is intentionally split so tsbindgen can:
+The pipeline is intentionally split so dotnet-bindgen can:
 
 - preserve CLR identity
 - still emit readable TypeScript

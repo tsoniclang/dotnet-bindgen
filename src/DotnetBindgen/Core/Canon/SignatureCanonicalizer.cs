@@ -1,0 +1,136 @@
+using System.Text;
+
+namespace DotnetBindgen.Core.Canon;
+
+/// <summary>
+/// Creates stable, collision-free canonical signatures for methods and properties.
+/// Used for:
+/// - Overload deduplication
+/// - Bindings/metadata correlation
+/// - Interface surface matching
+/// </summary>
+public static class SignatureCanonicalizer
+{
+    /// <summary>
+    /// Create a canonical signature for a method.
+    /// Format: "(param1Type,param2Type,...):ReturnType"
+    /// NOTE: Method name is NOT included here - it's stored separately in MemberStableId.MemberName
+    /// and concatenated in MemberStableId.ToString()
+    /// </summary>
+    public static string CanonicalizeMethod(
+        string methodName,
+        IReadOnlyList<string> parameterTypes,
+        string returnType)
+    {
+        var sb = new StringBuilder();
+        // Do NOT append methodName here - it's already in MemberStableId.MemberName
+        sb.Append('(');
+
+        for (int i = 0; i < parameterTypes.Count; i++)
+        {
+            if (i > 0) sb.Append(',');
+            sb.Append(NormalizeTypeName(parameterTypes[i]));
+        }
+
+        sb.Append(')');
+        sb.Append(':');
+        sb.Append(NormalizeTypeName(returnType));
+
+        return sb.ToString();
+    }
+
+    /// <summary>
+    /// Create a canonical signature for a property.
+    /// Format: "[param1Type,param2Type,...]:PropertyType" (for indexers) or ":PropertyType" (for regular properties)
+    /// NOTE: Property name is NOT included here - it's stored separately in MemberStableId.MemberName
+    /// </summary>
+    public static string CanonicalizeProperty(
+        string propertyName,
+        IReadOnlyList<string> indexParameterTypes,
+        string propertyType)
+    {
+        var sb = new StringBuilder();
+        // Do NOT append propertyName here - it's already in MemberStableId.MemberName
+
+        if (indexParameterTypes.Count > 0)
+        {
+            sb.Append('[');
+            for (int i = 0; i < indexParameterTypes.Count; i++)
+            {
+                if (i > 0) sb.Append(',');
+                sb.Append(NormalizeTypeName(indexParameterTypes[i]));
+            }
+            sb.Append(']');
+        }
+
+        sb.Append(':');
+        sb.Append(NormalizeTypeName(propertyType));
+
+        return sb.ToString();
+    }
+
+    /// <summary>
+    /// Create a canonical signature for a field.
+    /// Format: ":FieldType"
+    /// NOTE: Field name is NOT included here - it's stored separately in MemberStableId.MemberName
+    /// </summary>
+    public static string CanonicalizeField(string fieldName, string fieldType)
+    {
+        // Do NOT include fieldName here - it's already in MemberStableId.MemberName
+        return $":{NormalizeTypeName(fieldType)}";
+    }
+
+    /// <summary>
+    /// Create a canonical signature for an event.
+    /// Format: ":DelegateType"
+    /// NOTE: Event name is NOT included here - it's stored separately in MemberStableId.MemberName
+    /// </summary>
+    public static string CanonicalizeEvent(string eventName, string delegateType)
+    {
+        // Do NOT include eventName here - it's already in MemberStableId.MemberName
+        return $":{NormalizeTypeName(delegateType)}";
+    }
+
+    /// <summary>
+    /// Normalize a type name for signature matching.
+    /// Handles generic arity, nested types, etc.
+    /// </summary>
+    private static string NormalizeTypeName(string typeName)
+    {
+        // Remove whitespace
+        var normalized = typeName.Replace(" ", "");
+
+        // Normalize generic backtick to underscore (List`1 -> List_1)
+        normalized = normalized.Replace('`', '_');
+
+        // Note: Array/Nullable/ByRef/Pointer types are kept as-is for now.
+        // Current normalization is sufficient for signature matching.
+
+        return normalized;
+    }
+
+    /// <summary>
+    /// Extract method signature from a canonical signature.
+    /// Useful for debugging and diagnostics.
+    /// Format is: "(param1,param2):ReturnType"
+    /// </summary>
+    public static (string? name, string[] parameters, string returnType) ParseMethodSignature(
+        string canonicalSignature)
+    {
+        var parenIndex = canonicalSignature.IndexOf('(');
+        var closeParenIndex = canonicalSignature.IndexOf(')');
+        var colonIndex = canonicalSignature.IndexOf(':', closeParenIndex);
+
+        // Canonical signature does not include method name
+        // Return null for name since it's not in the signature
+        var name = parenIndex > 0 ? canonicalSignature[..parenIndex] : null;
+        var paramsStr = canonicalSignature[(parenIndex + 1)..closeParenIndex];
+        var returnType = canonicalSignature[(colonIndex + 1)..];
+
+        var parameters = string.IsNullOrEmpty(paramsStr)
+            ? Array.Empty<string>()
+            : paramsStr.Split(',');
+
+        return (name, parameters, returnType);
+    }
+}

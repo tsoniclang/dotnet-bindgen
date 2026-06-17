@@ -1,5 +1,5 @@
 #!/bin/bash
-# Regression test: tsbindgen emits CLR-faithful names and does not support
+# Regression test: dotnet-bindgen emits CLR-faithful names and does not support
 # JS-style naming transforms.
 
 source "$(dirname "${BASH_SOURCE[0]}")/_common.sh"
@@ -52,7 +52,7 @@ echo "  OK: unified bindings.json only"
 
 echo ""
 echo "Test 4: --naming flag is rejected..."
-if dotnet run --project "$PROJECT_ROOT/src/tsbindgen/tsbindgen.csproj" -- generate \
+if dotnet run --project "$PROJECT_ROOT/src/DotnetBindgen/DotnetBindgen.csproj" -- generate \
     -a "$DOTNET_RUNTIME/System.Collections.dll" \
     --out-dir "$TESTS_DIR/_tmp-naming-flag" \
     --naming js \

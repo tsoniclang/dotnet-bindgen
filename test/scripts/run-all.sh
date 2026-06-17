@@ -1,5 +1,5 @@
 #!/bin/bash
-# Run all tsbindgen regression tests
+# Run all dotnet-bindgen regression tests
 # Usage: ./scripts/test/run-all.sh [--no-clean]
 #
 # This script:
@@ -32,7 +32,7 @@ for arg in "$@"; do
 done
 
 echo "========================================"
-echo "tsbindgen Regression Test Suite"
+echo "dotnet-bindgen Regression Test Suite"
 echo "========================================"
 echo ""
 

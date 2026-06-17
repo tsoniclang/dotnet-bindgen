@@ -1,5 +1,5 @@
 #!/bin/bash
-# Common test utilities for tsbindgen regression tests
+# Common test utilities for dotnet-bindgen regression tests
 # Source this file at the top of each test script:
 #   source "$(dirname "${BASH_SOURCE[0]}")/_common.sh"
 
@@ -219,7 +219,7 @@ compute_bcl_cache_key() {
         {
             echo "mode=$mode"
             echo "runtime=$DOTNET_RUNTIME"
-            find src/tsbindgen -type f \( -name '*.cs' -o -name '*.csproj' -o -name '*.json' \) -print0 \
+            find src/DotnetBindgen -type f \( -name '*.cs' -o -name '*.csproj' -o -name '*.json' \) -print0 \
                 | sort -z \
                 | xargs -0 sha256sum
         } | sha256sum | awk '{print $1}'
@@ -262,7 +262,7 @@ ensure_bcl() {
     rm -rf "$out_dir"
     mkdir -p "$out_dir"
 
-    if ! dotnet run --project "$PROJECT_ROOT/src/tsbindgen/tsbindgen.csproj" -- \
+    if ! dotnet run --project "$PROJECT_ROOT/src/DotnetBindgen/DotnetBindgen.csproj" -- \
         generate -d "$DOTNET_RUNTIME" \
         --out-dir "$out_dir" \
         > /dev/null 2>&1; then
@@ -314,7 +314,7 @@ generate_assembly() {
 
     mkdir -p "$out_dir"
 
-    dotnet run --project "$PROJECT_ROOT/src/tsbindgen/tsbindgen.csproj" -- \
+    dotnet run --project "$PROJECT_ROOT/src/DotnetBindgen/DotnetBindgen.csproj" -- \
         generate -a "$DOTNET_RUNTIME/$assembly" \
         --out-dir "$out_dir" \
         $extra_args

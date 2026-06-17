@@ -1,4 +1,4 @@
-# Agent Notes (tsbindgen)
+# Agent Notes (dotnet-bindgen)
 
 This repo is “airplane-grade”: correctness > speed.
 

@@ -43,7 +43,7 @@ echo "          ✓ Built: $userlib_dll"
 
 # Step 2: Generate bindings for UserLib
 echo "[3/6] Generating bindings for UserLib..."
-if ! dotnet run --project "$PROJECT_ROOT/src/tsbindgen/tsbindgen.csproj" -- \
+if ! dotnet run --project "$PROJECT_ROOT/src/DotnetBindgen/DotnetBindgen.csproj" -- \
     generate -a "$userlib_dll" \
     -d "$DOTNET_RUNTIME" \
     -o "$TEST_DIR" \

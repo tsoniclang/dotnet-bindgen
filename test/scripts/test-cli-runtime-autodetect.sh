@@ -28,7 +28,7 @@ if [ ! -f "$USERLIB_DLL" ]; then
 fi
 
 echo "[3/4] Verifying generate auto-discovers runtime references..."
-if ! dotnet run --project "$PROJECT_ROOT/src/tsbindgen/tsbindgen.csproj" -- \
+if ! dotnet run --project "$PROJECT_ROOT/src/DotnetBindgen/DotnetBindgen.csproj" -- \
     generate -a "$USERLIB_DLL" \
     -o "$TEST_DIR/out" \
     > "$TEST_DIR/generate.log" 2>&1; then
@@ -43,7 +43,7 @@ if [ ! -f "$TEST_DIR/out/MyCompany.Utils.d.ts" ] || [ ! -f "$TEST_DIR/out/MyComp
 fi
 
 echo "[4/4] Verifying resolve-closure auto-discovers runtime references..."
-if ! dotnet run --project "$PROJECT_ROOT/src/tsbindgen/tsbindgen.csproj" -- \
+if ! dotnet run --project "$PROJECT_ROOT/src/DotnetBindgen/DotnetBindgen.csproj" -- \
     resolve-closure -a "$USERLIB_DLL" \
     > "$TEST_DIR/closure.json" 2> "$TEST_DIR/closure.err"; then
     echo -e "${RED}❌ FAILED: resolve-closure should succeed without --ref-dir${NC}"

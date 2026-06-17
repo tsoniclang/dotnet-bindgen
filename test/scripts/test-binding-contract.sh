@@ -1,7 +1,7 @@
 #!/bin/bash
 # COMPILER-GRADE Binding Contract Test
 #
-# Validates the contract between tsbindgen and Tsonic for overload resolution.
+# Validates the contract between dotnet-bindgen and Tsonic for overload resolution.
 #
 # CALLABLE IDENTITY = stableId + modifier vector
 # - stableId: contains CLR type names with '&' for byref (overload-unique)
@@ -45,7 +45,7 @@ echo "          ✓ Built UserLib"
 
 # Step 3: Generate bindings
 echo "[3/8] Generating bindings for UserLib..."
-if ! dotnet run --project "$PROJECT_ROOT/src/tsbindgen/tsbindgen.csproj" -- \
+if ! dotnet run --project "$PROJECT_ROOT/src/DotnetBindgen/DotnetBindgen.csproj" -- \
     generate -a "$PROJECT_ROOT/artifacts/bin/UserLib/Release/net10.0/UserLib.dll" \
     -d "$DOTNET_RUNTIME" -o "$TEST_DIR" \
     > "$TEST_DIR/gen.log" 2>&1; then

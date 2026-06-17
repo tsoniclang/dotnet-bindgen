@@ -5,7 +5,7 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
-const dllPath = join(__dirname, "lib", "tsbindgen.dll");
+const dllPath = join(__dirname, "lib", "DotnetBindgen.dll");
 
 const result = spawnSync("dotnet", [dllPath, ...process.argv.slice(2)], {
   stdio: "inherit",

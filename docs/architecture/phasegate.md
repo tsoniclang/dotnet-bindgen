@@ -4,7 +4,7 @@
 
 A **phase gate** (also called stage gate) is a quality checkpoint between phases in a pipeline. The gate validates that all criteria are satisfied before allowing progression to the next phase. If validation fails, the gate blocks further progress until issues are resolved.
 
-In tsbindgen, the Phase Gate sits between the Plan and Emit phases:
+In dotnet-bindgen, the Phase Gate sits between the Plan and Emit phases:
 
 ```
 Load -> Model -> Shape -> Normalize -> Plan -> [PHASE GATE] -> Emit
@@ -43,7 +43,7 @@ Phase Gate runs validation through multiple specialized modules:
 
 ## Diagnostic Codes
 
-All diagnostics use prefix `TBG` (tsbindgen) with 3-digit codes. Severity (ERROR/WARNING/INFO) is separate from the code.
+All diagnostics use prefix `TBG` (dotnet-bindgen) with 3-digit codes. Severity (ERROR/WARNING/INFO) is separate from the code.
 
 ### 0xx - Resolution / Binding
 
@@ -196,7 +196,7 @@ All diagnostics use prefix `TBG` (tsbindgen) with 3-digit codes. Severity (ERROR
 When `--strict` is enabled, non-whitelisted warnings are promoted to errors:
 
 ```bash
-npx tsbindgen generate -d $DOTNET_RUNTIME -o ./out --strict
+npx dotnet-bindgen generate -d $DOTNET_RUNTIME -o ./out --strict
 ```
 
 Strict mode ensures zero warnings in output. Certain warnings are whitelisted (documented, expected limitations like property covariance).

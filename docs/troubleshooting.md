@@ -17,7 +17,7 @@ Common sources:
 
 Keep the ownership line clear:
 
-- `tsbindgen` owns generated binding packages
+- `dotnet-bindgen` owns generated binding packages
 - `js`, `nodejs`, and `express` own their own source packages
 
 ## Closure resolution looks wrong

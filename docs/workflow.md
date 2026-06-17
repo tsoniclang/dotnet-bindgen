@@ -4,7 +4,7 @@ title: Workflow
 
 # Workflow and Publish Discipline
 
-`tsbindgen` participates in release waves, not just one-off generation.
+`dotnet-bindgen` participates in release waves, not just one-off generation.
 
 ## Normal workflow
 
@@ -39,8 +39,8 @@ In the generated binding repos, prefer the repo-local scripts over ad hoc manual
 publishing. The stack uses:
 
 - repo-local generation scripts for each binding family
-- `tsbindgen` test suites for generator work
-- `tsbindgen/scripts/wave-publish.sh` for release-wave preflight and publish of
+- `dotnet-bindgen` test suites for generator work
+- `dotnet-bindgen/scripts/wave-publish.sh` for release-wave preflight and publish of
   npm packages and NuGet runtime packages
 
 Those scripts enforce the release rules:
@@ -57,14 +57,14 @@ Those scripts enforce the release rules:
 Generated CLR bindings and first-party source packages live side by side, but
 they are not owned the same way:
 
-- `tsbindgen` owns the generated binding packages
+- `dotnet-bindgen` owns the generated binding packages
 - `js`, `nodejs`, and `express` own their own authored TypeScript source
 
 ## Practical consequence
 
 If you are debugging:
 
-- a CLR namespace import problem -> start in `tsbindgen` or the generated repo
+- a CLR namespace import problem -> start in `dotnet-bindgen` or the generated repo
 - a first-party authored package issue -> start in `js`, `nodejs`, or `express`
 - a mixed wave failure -> verify the generated packages and downstreams together
 
@@ -72,7 +72,7 @@ If you are debugging:
 
 The release wave includes:
 
-- npm packages: `tsbindgen`, `tsonic`, `core`, `dotnet`, `globals`, `js`,
+- npm packages: `dotnet-bindgen`, `tsonic`, `core`, `dotnet`, `globals`, `js`,
   `nodejs`, `express`, `aspnetcore`, `microsoft-extensions`, `efcore`,
   `efcore-sqlite`, `efcore-sqlserver`, and `efcore-npgsql`
 - NuGet packages: `runtime`

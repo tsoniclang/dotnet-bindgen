@@ -1,6 +1,6 @@
 # Getting Started
 
-`tsbindgen` turns CLR assemblies into TypeScript declaration packages.
+`dotnet-bindgen` turns CLR assemblies into TypeScript declaration packages.
 
 ## Requirements
 
@@ -10,34 +10,34 @@
 ## Install
 
 ```bash
-npm install tsbindgen
+npm install dotnet-bindgen
 ```
 
 or:
 
 ```bash
-npm install @tsonic/tsbindgen
+npm install @tsonic/dotnet-bindgen
 ```
 
 ## Basic flow
 
 ```bash
-dotnet build src/tsbindgen/tsbindgen.csproj
-dotnet run --project src/tsbindgen/tsbindgen.csproj -- \
+dotnet build src/DotnetBindgen/DotnetBindgen.csproj
+dotnet run --project src/DotnetBindgen/DotnetBindgen.csproj -- \
   generate -d /path/to/assemblies -o ./output
 ```
 
 Or via npm:
 
 ```bash
-npx tsbindgen generate -d /path/to/assemblies -o ./output
+npx dotnet-bindgen generate -d /path/to/assemblies -o ./output
 ```
 
 For .NET runtime assemblies, derive the runtime path from the installed SDK:
 
 ```bash
 DOTNET_RUNTIME=$(dirname "$(dotnet --list-runtimes | awk '/Microsoft.NETCore.App 10\\./ { print $3; exit }')")
-npx tsbindgen generate -d "$DOTNET_RUNTIME" -o ./output
+npx dotnet-bindgen generate -d "$DOTNET_RUNTIME" -o ./output
 ```
 
 ## Typical output shape
@@ -57,7 +57,7 @@ Generated packages normally include:
 
 ## When not to use it
 
-Do not use `tsbindgen` as the source generator for:
+Do not use `dotnet-bindgen` as the source generator for:
 
 - `@tsonic/js`
 - `@tsonic/nodejs`

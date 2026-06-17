@@ -45,7 +45,7 @@ echo "          ✓ Built fixture ($userlib_dll)"
 echo ""
 echo "[3/3] Generating declarations and validating DerivedWriter overloads..."
 
-dotnet run --project "$PROJECT_ROOT/src/tsbindgen/tsbindgen.csproj" -- \
+dotnet run --project "$PROJECT_ROOT/src/DotnetBindgen/DotnetBindgen.csproj" -- \
     generate -a "$userlib_dll" \
     -d "$DOTNET_RUNTIME" \
     -o "$OUT_DIR" \

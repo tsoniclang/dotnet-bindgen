@@ -1,10 +1,10 @@
 #!/usr/bin/env node
 /**
- * Validation script for tsbindgen
+ * Validation script for dotnet-bindgen
  *
  * This script:
  * 1. Cleans the validation directory
- * 2. Runs tsbindgen generate command
+ * 2. Runs dotnet-bindgen generate command
  * 3. Creates a tsconfig.json in the output directory
  * 4. Runs TypeScript compiler to validate all declarations
  * 5. Reports error breakdown by category
@@ -12,7 +12,7 @@
  * Usage:
  *   node scripts/validate.js              # Full validation
  *   node scripts/validate.js --skip-tsc   # Skip TypeScript compilation
- *   node scripts/validate.js --verbose    # Enable verbose logging from tsbindgen
+ *   node scripts/validate.js --verbose    # Enable verbose logging from dotnet-bindgen
  *   node scripts/validate.js --strict     # Fail on ANY TypeScript error (not just syntax)
  */
 
@@ -130,7 +130,7 @@ function generateTypes(verbose = false) {
         }
         log('');
 
-        const projectPath = path.join(PROJECT_ROOT, 'src', 'tsbindgen', 'tsbindgen.csproj');
+        const projectPath = path.join(PROJECT_ROOT, 'src', 'dotnet-bindgen', 'DotnetBindgen.csproj');
 
         // Build arguments array
         const args = [
@@ -334,7 +334,7 @@ function validateMetadataFiles() {
 async function main() {
     console.log('');
     console.log('================================================================');
-    console.log('tsbindgen - Validation');
+    console.log('dotnet-bindgen - Validation');
     console.log('================================================================');
     console.log('');
 

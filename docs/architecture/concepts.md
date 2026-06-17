@@ -11,7 +11,7 @@ This keeps user imports stable while allowing internal structure to stay richer.
 
 ## Friendly aliases vs CLR identity
 
-`tsbindgen` preserves CLR identity, but facades can also expose ergonomic export
+`dotnet-bindgen` preserves CLR identity, but facades can also expose ergonomic export
 names where that does not destroy determinism.
 
 ## Binding metadata
@@ -22,7 +22,7 @@ declarations.
 
 ## Library mode
 
-Library mode is how tsbindgen avoids re-owning types that should come from
+Library mode is how dotnet-bindgen avoids re-owning types that should come from
 pre-existing binding packages.
 
 That matters for packages built on top of:

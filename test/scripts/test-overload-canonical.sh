@@ -27,7 +27,7 @@ echo ""
 
 # Test 1: Verify no TBG101 warnings in strict mode
 echo "[1/3] Checking for duplicate signature warnings..."
-output=$(dotnet run --project "$PROJECT_ROOT/src/tsbindgen/tsbindgen.csproj" -- \
+output=$(dotnet run --project "$PROJECT_ROOT/src/DotnetBindgen/DotnetBindgen.csproj" -- \
     generate -d "$DOTNET_RUNTIME" \
     -o "$TESTS_DIR/canonical-test" --strict --logs PhaseGate 2>&1)
 

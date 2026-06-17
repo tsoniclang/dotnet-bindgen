@@ -26,7 +26,7 @@ mkdir -p "$TESTS_DIR/determinism"
 
 # Run 1
 echo "[2/3] Running generation (run 1)..."
-if ! dotnet run --project "$PROJECT_ROOT/src/tsbindgen/tsbindgen.csproj" -- \
+if ! dotnet run --project "$PROJECT_ROOT/src/DotnetBindgen/DotnetBindgen.csproj" -- \
     generate -d "$DOTNET_RUNTIME" \
     -o "$RUN1_DIR" > /dev/null 2>&1; then
     echo -e "${RED}FAILED: Generation run 1 failed${NC}"
@@ -35,7 +35,7 @@ fi
 
 # Run 2
 echo "          Running generation (run 2)..."
-if ! dotnet run --project "$PROJECT_ROOT/src/tsbindgen/tsbindgen.csproj" -- \
+if ! dotnet run --project "$PROJECT_ROOT/src/DotnetBindgen/DotnetBindgen.csproj" -- \
     generate -d "$DOTNET_RUNTIME" \
     -o "$RUN2_DIR" > /dev/null 2>&1; then
     echo -e "${RED}FAILED: Generation run 2 failed${NC}"

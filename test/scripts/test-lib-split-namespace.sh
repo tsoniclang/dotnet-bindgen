@@ -5,7 +5,7 @@
 # This test constructs two --lib packages that both contribute to System.Transactions, then
 # generates a module-container-style user library that references types from both packages.
 #
-# Before fix: tsbindgen would throw:
+# Before fix: dotnet-bindgen would throw:
 #   Namespace 'System.Transactions' is split across multiple packages ...
 # because facade emission required a unique owning package for the namespace module.
 
@@ -27,7 +27,7 @@ rm -rf "$SPLIT_TEST_DIR"
 mkdir -p "$SPLIT_TEST_DIR"
 
 echo "[2/5] Generating BCL types (library contract)..."
-if ! dotnet run --project "$PROJECT_ROOT/src/tsbindgen/tsbindgen.csproj" -- \
+if ! dotnet run --project "$PROJECT_ROOT/src/DotnetBindgen/DotnetBindgen.csproj" -- \
     generate -d "$DOTNET_RUNTIME" \
     -o "$SPLIT_TEST_DIR/bcl-types" \
     > "$SPLIT_TEST_DIR/bcl-gen.txt" 2>&1; then
@@ -54,7 +54,7 @@ else
 fi
 
 echo "      Generating SplitNsLib bindings (filtered by --lib BCL)..."
-if ! dotnet run --project "$PROJECT_ROOT/src/tsbindgen/tsbindgen.csproj" -- \
+if ! dotnet run --project "$PROJECT_ROOT/src/DotnetBindgen/DotnetBindgen.csproj" -- \
     generate -a "$splitns_dll" \
     -d "$DOTNET_RUNTIME" \
     -o "$SPLIT_TEST_DIR/split-ns-types" \
@@ -83,7 +83,7 @@ else
 fi
 
 echo "[5/5] Generating consumer bindings with TWO --lib packages (split namespace)..."
-if ! dotnet run --project "$PROJECT_ROOT/src/tsbindgen/tsbindgen.csproj" -- \
+if ! dotnet run --project "$PROJECT_ROOT/src/DotnetBindgen/DotnetBindgen.csproj" -- \
     generate -a "$consumer_dll" \
     -d "$DOTNET_RUNTIME" \
     -o "$SPLIT_TEST_DIR/consumer-types" \

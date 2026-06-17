@@ -1,6 +1,6 @@
 # Type Mappings
 
-`tsbindgen` projects CLR type shapes into TypeScript declarations.
+`dotnet-bindgen` projects CLR type shapes into TypeScript declarations.
 
 ## Goals
 
@@ -57,7 +57,7 @@ Generated packages must stay:
 - faithful enough for CLR identity
 - predictable enough for large binding waves
 
-That is why tsbindgen does not try to “JavaScript-ify” CLR naming.
+That is why dotnet-bindgen does not try to “JavaScript-ify” CLR naming.
 
 ## Important distinction
 

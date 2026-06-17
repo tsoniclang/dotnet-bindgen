@@ -4,7 +4,7 @@
 #
 # We construct two --lib packages that both contain MyCompany.Duplicate.DupType,
 # then generate a consumer that references OTHER types from both packages
-# (LibAThing / LibBThing). Before the fix, tsbindgen failed up-front while
+# (LibAThing / LibBThing). Before the fix, dotnet-bindgen failed up-front while
 # merging --lib contracts. After the fix, it should succeed because DupType is
 # never referenced by the emitted consumer surface.
 
@@ -26,7 +26,7 @@ rm -rf "$AMBIG_TEST_DIR"
 mkdir -p "$AMBIG_TEST_DIR"
 
 echo "[2/6] Generating BCL types (library contract)..."
-if ! dotnet run --project "$PROJECT_ROOT/src/tsbindgen/tsbindgen.csproj" -- \
+if ! dotnet run --project "$PROJECT_ROOT/src/DotnetBindgen/DotnetBindgen.csproj" -- \
     generate -d "$DOTNET_RUNTIME" \
     -o "$AMBIG_TEST_DIR/bcl-types" \
     > "$AMBIG_TEST_DIR/bcl-gen.txt" 2>&1; then
@@ -53,7 +53,7 @@ else
 fi
 
 echo "      Generating DupLibA bindings (filtered by --lib BCL)..."
-if ! dotnet run --project "$PROJECT_ROOT/src/tsbindgen/tsbindgen.csproj" -- \
+if ! dotnet run --project "$PROJECT_ROOT/src/DotnetBindgen/DotnetBindgen.csproj" -- \
     generate -a "$dupa_dll" \
     -d "$DOTNET_RUNTIME" \
     -o "$AMBIG_TEST_DIR/dup-a-types" \
@@ -82,7 +82,7 @@ else
 fi
 
 echo "      Generating DupLibB bindings (filtered by --lib BCL)..."
-if ! dotnet run --project "$PROJECT_ROOT/src/tsbindgen/tsbindgen.csproj" -- \
+if ! dotnet run --project "$PROJECT_ROOT/src/DotnetBindgen/DotnetBindgen.csproj" -- \
     generate -a "$dupb_dll" \
     -d "$DOTNET_RUNTIME" \
     -o "$AMBIG_TEST_DIR/dup-b-types" \
@@ -111,7 +111,7 @@ else
 fi
 
 echo "[6/6] Generating consumer bindings with TWO dup --lib packages (ambiguous CLR full name)..."
-if ! dotnet run --project "$PROJECT_ROOT/src/tsbindgen/tsbindgen.csproj" -- \
+if ! dotnet run --project "$PROJECT_ROOT/src/DotnetBindgen/DotnetBindgen.csproj" -- \
     generate -a "$consumer_dll" \
     -d "$DOTNET_RUNTIME" \
     -o "$AMBIG_TEST_DIR/consumer-types" \

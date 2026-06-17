@@ -1,6 +1,6 @@
 # Overview
 
-`tsbindgen` transforms CLR assemblies into TypeScript declaration packages
+`dotnet-bindgen` transforms CLR assemblies into TypeScript declaration packages
 through a multi-phase pipeline.
 
 ## Design goals
@@ -13,7 +13,7 @@ through a multi-phase pipeline.
 
 ## What it produces
 
-At the end of the pipeline, tsbindgen emits:
+At the end of the pipeline, dotnet-bindgen emits:
 
 - public facade modules
 - internal declaration trees

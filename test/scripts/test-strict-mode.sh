@@ -20,7 +20,7 @@ echo "[1/4] Running strict mode validation..."
 rm -rf "$STRICT_DIR"
 mkdir -p "$STRICT_DIR"
 
-output=$(dotnet run --project "$PROJECT_ROOT/src/tsbindgen/tsbindgen.csproj" -- \
+output=$(dotnet run --project "$PROJECT_ROOT/src/DotnetBindgen/DotnetBindgen.csproj" -- \
     generate -d "$DOTNET_RUNTIME" \
     -o "$STRICT_DIR" --strict --logs PhaseGate 2>&1)
 

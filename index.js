@@ -1,5 +1,5 @@
 /**
- * @tsonic/tsbindgen - Programmatic API
+ * @tsonic/dotnet-bindgen - Programmatic API
  */
 
 import { spawn } from "node:child_process";
@@ -10,10 +10,10 @@ import { fileURLToPath } from "node:url";
 const __dirname = dirname(fileURLToPath(import.meta.url));
 
 const PLATFORMS = {
-  "darwin-arm64": "tsbindgen-darwin-arm64",
-  "darwin-x64": "tsbindgen-darwin-x64",
-  "linux-arm64": "tsbindgen-linux-arm64",
-  "linux-x64": "tsbindgen-linux-x64",
+  "darwin-arm64": "dotnet-bindgen-darwin-arm64",
+  "darwin-x64": "dotnet-bindgen-darwin-x64",
+  "linux-arm64": "dotnet-bindgen-linux-arm64",
+  "linux-x64": "dotnet-bindgen-linux-x64",
 };
 
 function getPlatformKey() {
@@ -21,7 +21,7 @@ function getPlatformKey() {
 }
 
 /**
- * Get the path to the tsbindgen binary
+ * Get the path to the dotnet-bindgen binary
  */
 export function getBinaryPath() {
   const key = getPlatformKey();
@@ -30,11 +30,11 @@ export function getBinaryPath() {
   if (!packageName) {
     throw new Error(
       `Unsupported platform: ${key}. ` +
-        "tsbindgen supports: darwin-arm64, darwin-x64, linux-arm64, linux-x64"
+        "dotnet-bindgen supports: darwin-arm64, darwin-x64, linux-arm64, linux-x64"
     );
   }
 
-  const binaryName = "tsbindgen";
+  const binaryName = "dotnet-bindgen";
   const paths = [
     join(__dirname, "node_modules", "@tsonic", packageName, binaryName),
     join(__dirname, "..", packageName, binaryName),
@@ -48,13 +48,13 @@ export function getBinaryPath() {
   }
 
   throw new Error(
-    `Could not find tsbindgen binary for ${key}. ` +
+    `Could not find dotnet-bindgen binary for ${key}. ` +
       `Package @tsonic/${packageName} may not be installed.`
   );
 }
 
 /**
- * Run tsbindgen with the given arguments
+ * Run dotnet-bindgen with the given arguments
  * @param {string[]} args
  * @returns {Promise<{ code: number; stdout: string; stderr: string }>}
  */
@@ -83,7 +83,7 @@ export function run(args) {
 }
 
 /**
- * Check if tsbindgen is available
+ * Check if dotnet-bindgen is available
  */
 export function isAvailable() {
   try {

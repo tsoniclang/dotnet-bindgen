@@ -22,7 +22,7 @@ mkdir -p "$TEMP_OUTPUT"
 
 # Run generation (without --strict to allow capture even with warnings)
 echo "[2/4] Running generation..."
-output=$(dotnet run --project "$PROJECT_ROOT/src/tsbindgen/tsbindgen.csproj" -- \
+output=$(dotnet run --project "$PROJECT_ROOT/src/DotnetBindgen/DotnetBindgen.csproj" -- \
     generate -d "$DOTNET_RUNTIME" \
     -o "$TEMP_OUTPUT" --logs PhaseGate 2>&1)
 

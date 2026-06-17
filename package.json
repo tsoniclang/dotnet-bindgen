@@ -1,10 +1,10 @@
 {
-  "name": "@tsonic/tsbindgen",
+  "name": "@tsonic/dotnet-bindgen",
   "version": "0.7.55",
   "description": "Generate TypeScript declarations from .NET assemblies",
   "type": "module",
   "bin": {
-    "tsbindgen": "bin.js"
+    "dotnet-bindgen": "bin.js"
   },
   "main": "./index.js",
   "exports": {
@@ -18,7 +18,7 @@
     "README.md"
   ],
   "scripts": {
-    "build": "dotnet publish src/tsbindgen/tsbindgen.csproj -c Release -o lib/"
+    "build": "dotnet publish src/DotnetBindgen/DotnetBindgen.csproj -c Release -o lib/"
   },
   "keywords": [
     "tsonic",
@@ -32,7 +32,7 @@
   "license": "MIT",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/tsoniclang/tsbindgen.git"
+    "url": "git+https://github.com/tsoniclang/dotnet-bindgen.git"
   },
   "devDependencies": {
     "typescript": "^5.9.3"

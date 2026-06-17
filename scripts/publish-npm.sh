@@ -1,7 +1,7 @@
 #!/bin/bash
 set -euo pipefail
 
-# Publish @tsonic/tsbindgen and tsbindgen wrapper to npm
+# Publish @tsonic/dotnet-bindgen and dotnet-bindgen wrapper to npm
 #
 # Usage: ./scripts/publish-npm.sh [--ignore-branches-ahead] [--dangerously-skip-tests]
 #
@@ -12,7 +12,7 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 ROOT_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
-WRAPPER_DIR="$ROOT_DIR/npm/tsbindgen"
+WRAPPER_DIR="$ROOT_DIR/npm/dotnet-bindgen"
 
 # shellcheck source=scripts/publish-auth.sh
 source "$SCRIPT_DIR/publish-auth.sh"
@@ -124,15 +124,15 @@ if [ -n "$(git status --porcelain)" ]; then
     exit 1
 fi
 
-# 5. Ensure tsbindgen and wrapper have the same version
+# 5. Ensure dotnet-bindgen and wrapper have the same version
 echo "=== Checking package version consistency ==="
 LOCAL_VERSION=$(node -p "require('./package.json').version")
 WRAPPER_VERSION=$(node -p "require('$WRAPPER_DIR/package.json').version")
 
 if [ "$LOCAL_VERSION" != "$WRAPPER_VERSION" ]; then
     echo "Error: Package version mismatch!"
-    echo "  @tsonic/tsbindgen: $LOCAL_VERSION"
-    echo "  tsbindgen (wrapper): $WRAPPER_VERSION"
+    echo "  @tsonic/dotnet-bindgen: $LOCAL_VERSION"
+    echo "  dotnet-bindgen (wrapper): $WRAPPER_VERSION"
     echo "All packages must have the same version."
     exit 1
 fi
@@ -143,10 +143,10 @@ echo "  All packages at version $LOCAL_VERSION"
 echo "=== Checking versions against npm ==="
 NEEDS_BUMP=false
 
-NPM_VERSION=$(npm view @tsonic/tsbindgen version 2>/dev/null || echo "0.0.0")
+NPM_VERSION=$(npm view @tsonic/dotnet-bindgen version 2>/dev/null || echo "0.0.0")
 CMP=$(compare_versions "$LOCAL_VERSION" "$NPM_VERSION")
 
-echo "  @tsonic/tsbindgen: local=$LOCAL_VERSION npm=$NPM_VERSION"
+echo "  @tsonic/dotnet-bindgen: local=$LOCAL_VERSION npm=$NPM_VERSION"
 
 if [ "$CMP" = "-1" ]; then
     echo "Error: Local version ($LOCAL_VERSION) is LESS than npm version ($NPM_VERSION)"
@@ -157,10 +157,10 @@ elif [ "$CMP" = "0" ]; then
 fi
 
 # Also check wrapper
-WRAPPER_NPM_VERSION=$(npm view tsbindgen version 2>/dev/null || echo "0.0.0")
+WRAPPER_NPM_VERSION=$(npm view dotnet-bindgen version 2>/dev/null || echo "0.0.0")
 WRAPPER_CMP=$(compare_versions "$WRAPPER_VERSION" "$WRAPPER_NPM_VERSION")
 
-echo "  tsbindgen (wrapper): local=$WRAPPER_VERSION npm=$WRAPPER_NPM_VERSION"
+echo "  dotnet-bindgen (wrapper): local=$WRAPPER_VERSION npm=$WRAPPER_NPM_VERSION"
 
 if [ "$WRAPPER_CMP" = "-1" ]; then
     echo "Error: Local wrapper version ($WRAPPER_VERSION) is LESS than npm version ($WRAPPER_NPM_VERSION)"
@@ -172,7 +172,7 @@ fi
 
 echo ""
 
-ensure_npm_publish_auth "@tsonic/tsbindgen" "tsbindgen"
+ensure_npm_publish_auth "@tsonic/dotnet-bindgen" "dotnet-bindgen"
 echo ""
 
 # ============================================================
@@ -198,8 +198,8 @@ fi
 # BUILD AND TEST
 # ============================================================
 
-echo "=== Building tsbindgen ==="
-dotnet publish "$ROOT_DIR/src/tsbindgen/tsbindgen.csproj" -c Release -o "$ROOT_DIR/lib/"
+echo "=== Building dotnet-bindgen ==="
+dotnet publish "$ROOT_DIR/src/DotnetBindgen/DotnetBindgen.csproj" -c Release -o "$ROOT_DIR/lib/"
 
 echo "=== Cleaning lib/ ==="
 # Remove localization folders
@@ -209,7 +209,7 @@ done
 # Remove pdb files
 rm -f "$ROOT_DIR/lib/"*.pdb
 # Remove native exe (if any)
-rm -f "$ROOT_DIR/lib/tsbindgen"
+rm -f "$ROOT_DIR/lib/dotnet-bindgen"
 
 if [ "$DANGEROUSLY_SKIP_TESTS" = true ]; then
     echo "=== DANGEROUSLY skipping tests (--dangerously-skip-tests) ==="
@@ -239,13 +239,13 @@ if [ "$NEED_BRANCH" = true ]; then
         const fs = require('fs');
         const pkg = JSON.parse(fs.readFileSync('$WRAPPER_DIR/package.json', 'utf8'));
         pkg.version = '$NEW_VERSION';
-        pkg.dependencies['@tsonic/tsbindgen'] = '$NEW_VERSION';
+        pkg.dependencies['@tsonic/dotnet-bindgen'] = '$NEW_VERSION';
         fs.writeFileSync('$WRAPPER_DIR/package.json', JSON.stringify(pkg, null, 2) + '\n');
     "
 
     echo "=== Committing version changes ==="
     cd "$ROOT_DIR"
-    git add package.json npm/tsbindgen/package.json
+    git add package.json npm/dotnet-bindgen/package.json
     git commit -m "chore: bump version to $NEW_VERSION"
     git push -u origin HEAD
 
@@ -256,11 +256,11 @@ fi
 # PUBLISH PACKAGES
 # ============================================================
 
-echo "=== Publishing @tsonic/tsbindgen@$LOCAL_VERSION ==="
+echo "=== Publishing @tsonic/dotnet-bindgen@$LOCAL_VERSION ==="
 cd "$ROOT_DIR"
 npm publish --access public --ignore-scripts
 
-echo "=== Publishing tsbindgen@$LOCAL_VERSION ==="
+echo "=== Publishing dotnet-bindgen@$LOCAL_VERSION ==="
 cd "$WRAPPER_DIR"
 npm publish --access public --ignore-scripts
 
@@ -273,8 +273,8 @@ cd "$ROOT_DIR"
 echo ""
 echo "=== Done ==="
 echo "Published:"
-echo "  - @tsonic/tsbindgen@$LOCAL_VERSION"
-echo "  - tsbindgen@$LOCAL_VERSION"
+echo "  - @tsonic/dotnet-bindgen@$LOCAL_VERSION"
+echo "  - dotnet-bindgen@$LOCAL_VERSION"
 
 if [ "$NEED_BRANCH" = true ]; then
     echo ""
