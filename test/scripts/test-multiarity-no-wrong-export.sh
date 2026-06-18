@@ -71,9 +71,16 @@ echo
 
 echo "[3/3] Checking for nested type pollution..."
 
-# Check that FrozenDictionary family doesn't include Enumerator
-# The facade should NOT have FrozenDictionary_2$Enumerator in its conditional ladder
-NESTED_POLLUTION=$(grep -n "FrozenDictionary.*Enumerator" "$BCL_DIR/System.Collections.Frozen.d.ts" 2>/dev/null | grep -v "^export { FrozenDictionary" || true)
+# Check that FrozenDictionary family doesn't include Enumerator in the sentinel ladder.
+# Normal curated exports for nested types are valid; only the arity-dispatch alias must
+# exclude nested CLR types.
+NESTED_POLLUTION=$(
+    awk '
+        /^export type FrozenDictionary</ { in_alias=1 }
+        in_alias { print }
+        in_alias && /;$/ { exit }
+    ' "$BCL_DIR/System.Collections.Frozen.d.ts" 2>/dev/null | grep "Enumerator" || true
+)
 if [[ -n "$NESTED_POLLUTION" ]]; then
     echo "[FAIL] FrozenDictionary family includes nested types:"
     echo "$NESTED_POLLUTION"

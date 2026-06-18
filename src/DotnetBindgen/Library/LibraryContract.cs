@@ -57,6 +57,20 @@ public sealed record LibraryContract
     public required ImmutableDictionary<string, string> ClrFullNameToNamespace { get; init; }
 
     /// <summary>
+    /// Mapping from CLR full name to its direct base CLR full name, loaded from bindings.json.
+    /// This is used when a later generated package extends a type from this package: TypeScript
+    /// checks inherited member shapes structurally, so the generator must know transitive base
+    /// member names even when the base type itself is external to the current graph.
+    /// </summary>
+    public required ImmutableDictionary<string, string> BaseClrFullNameByClrFullName { get; init; }
+
+    /// <summary>
+    /// Mapping from CLR full name to the generated instance member names declared directly on
+    /// that type. Names are target-surface names, not raw CLR names.
+    /// </summary>
+    public required ImmutableDictionary<string, ImmutableHashSet<string>> InstanceMemberNamesByClrFullName { get; init; }
+
+    /// <summary>
     /// Canonical facade family index.
     /// Maps CLR base name (e.g., "System.ValueTuple") to family entry with stem/namespace/arity info.
     /// ImportPlanner uses this to determine if a type belongs to a multi-arity family
@@ -114,6 +128,38 @@ public sealed record LibraryContract
 
         throw new KeyNotFoundException($"No package mapping found for CLR type '{clrFullName}'.");
     }
+
+    public ImmutableHashSet<string> GetTransitiveInstanceMemberNames(string clrFullName)
+    {
+        var result = ImmutableHashSet.CreateBuilder<string>(StringComparer.Ordinal);
+        var visited = new HashSet<string>(StringComparer.Ordinal);
+        var current = clrFullName;
+
+        while (visited.Add(current))
+        {
+            if (InstanceMemberNamesByClrFullName.TryGetValue(current, out var memberNames))
+            {
+                result.UnionWith(memberNames);
+            }
+
+            if (!BaseClrFullNameByClrFullName.TryGetValue(current, out var baseName))
+            {
+                break;
+            }
+
+            if (IsImplicitClrRoot(baseName))
+            {
+                break;
+            }
+
+            current = baseName;
+        }
+
+        return result.ToImmutable();
+    }
+
+    private static bool IsImplicitClrRoot(string clrFullName) =>
+        clrFullName is "System.Object" or "System.ValueType" or "System.Enum";
 
     /// <summary>
     /// Get the unique package that owns a namespace module.
@@ -201,6 +247,19 @@ public sealed record LibraryContract
             .GroupBy(kvp => kvp.Key)
             .ToImmutableDictionary(g => g.Key, g => g.First().Value);
 
+        var baseClrFullNameByClrFullName = contracts
+            .SelectMany(c => c.BaseClrFullNameByClrFullName)
+            .GroupBy(kvp => kvp.Key)
+            .ToImmutableDictionary(g => g.Key, g => g.First().Value, StringComparer.Ordinal);
+
+        var instanceMemberNamesByClrFullName = contracts
+            .SelectMany(c => c.InstanceMemberNamesByClrFullName)
+            .GroupBy(kvp => kvp.Key)
+            .ToImmutableDictionary(
+                g => g.Key,
+                g => g.SelectMany(kvp => kvp.Value).ToImmutableHashSet(StringComparer.Ordinal),
+                StringComparer.Ordinal);
+
         // Merge facade families.
         // These are optional (families.json may not exist). If multiple contracts define the same family key,
         // they are expected to be identical; for determinism we take the first (contract order).
@@ -275,6 +334,8 @@ public sealed record LibraryContract
             AllowedClrFullNames = allowedClrFullNames,
             NamespaceToTypes = namespaceToTypes,
             ClrFullNameToNamespace = clrFullNameToNamespace,
+            BaseClrFullNameByClrFullName = baseClrFullNameByClrFullName,
+            InstanceMemberNamesByClrFullName = instanceMemberNamesByClrFullName,
             FacadeFamilies = facadeFamilies,
             PackageNames = packageNameSet,
             ClrFullNameToPackage = clrFullNameToPackage.ToImmutableDictionary(StringComparer.Ordinal),

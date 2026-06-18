@@ -107,26 +107,27 @@ else
     echo -e "${GREEN}PASS${NC}"
 fi
 
-# Test 8: Boolean type has methods but accepts raw boolean values
-# (PRIMITIVE TYPE EMISSION: Primitives now emit with their BCL methods while
-# maintaining LINQ assignability via carrier type in intersection)
-echo -n "  Test 8: Boolean has methods and accepts raw boolean... "
+# Test 8: Boolean type has methods and remains a branded CLR shape.
+# Raw boolean value positions are emitted as `boolean` by TypeRefPrinter; the CLR
+# `Boolean` alias itself stays branded so recursive value-type constraints can
+# prove System.Boolean/System.ValueType.
+echo -n "  Test 8: Boolean has methods and branded CLR identity... "
 BOOLEAN_SHAPE=$(grep "^export type Boolean\\\$shape = " "$INDEX_FILE" 2>/dev/null || true)
 BOOLEAN_TYPE=$(grep "^export type Boolean = " "$INDEX_FILE" 2>/dev/null || true)
 # Expected:
 #   export type Boolean$shape = boolean & Boolean$instance & __Boolean$views;
-#   export type Boolean = boolean | Boolean$shape;
+#   export type Boolean = Boolean$shape;
 if echo "$BOOLEAN_SHAPE" | grep -q "Boolean\\\$instance" \
   && echo "$BOOLEAN_SHAPE" | grep -q "__Boolean\\\$views" \
-  && echo "$BOOLEAN_TYPE" | grep -q "boolean | Boolean\\\$shape"; then
+  && echo "$BOOLEAN_TYPE" | grep -q "Boolean\\\$shape"; then
     echo -e "${GREEN}PASS${NC}"
     echo "    $BOOLEAN_SHAPE" | head -1 | sed 's/^/      /'
     echo "    $BOOLEAN_TYPE" | head -1 | sed 's/^/      /'
 else
     echo -e "${RED}FAIL${NC}"
     echo "    Expected:"
-    echo "      export type Boolean\\$shape = boolean & Boolean\\$instance & __Boolean\\$views;"
-    echo "      export type Boolean = boolean | Boolean\\$shape;"
+    echo '      export type Boolean$shape = boolean & Boolean$instance & __Boolean$views;'
+    echo '      export type Boolean = Boolean$shape;'
     echo "    Got:"
     echo "      $BOOLEAN_SHAPE"
     echo "      $BOOLEAN_TYPE"

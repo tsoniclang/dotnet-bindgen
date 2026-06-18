@@ -268,8 +268,10 @@ public sealed class ReflectionReader
         var events = new List<EventSymbol>();
         var constructors = new List<ConstructorSymbol>();
 
-        // Airplane-grade completeness: include protected/protected-internal members (for override + subclassing),
-        // while still excluding internal/private members (not usable from downstream assemblies).
+        // Declaration packages expose the public ECMAScript-callable surface plus
+        // protected virtual/abstract/override members needed to type CLR override
+        // contracts. TypeScript interfaces cannot encode protected accessibility;
+        // generated C# remains responsible for enforcing CLR access rules.
         const BindingFlags declaredInstance = BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance | BindingFlags.DeclaredOnly;
         const BindingFlags declaredStatic = BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Static | BindingFlags.DeclaredOnly;
 
@@ -277,7 +279,7 @@ public sealed class ReflectionReader
         var seenMethods = new HashSet<string>();
         foreach (var method in type.GetMethods(declaredInstance | declaredStatic))
         {
-            // Only keep methods callable/overridable from consumers (public/protected/protected-internal).
+            // Only keep methods callable from TypeScript consumers.
             if (!IsExposedToConsumers(method))
                 continue;
 
@@ -322,7 +324,7 @@ public sealed class ReflectionReader
         // Read fields
         foreach (var field in type.GetFields(declaredInstance | declaredStatic))
         {
-            // Only keep fields visible to consumers (public/protected/protected-internal).
+            // Only keep fields callable from TypeScript consumers.
             if (!IsExposedToConsumers(field))
                 continue;
 
@@ -361,12 +363,17 @@ public sealed class ReflectionReader
 
     private static bool IsExposedToConsumers(MethodBase method)
     {
-        return method.IsPublic || method.IsFamily || method.IsFamilyOrAssembly;
+        if (method.IsPublic)
+            return true;
+
+        return method is MethodInfo methodInfo &&
+               (methodInfo.IsFamily || methodInfo.IsFamilyOrAssembly) &&
+               (methodInfo.IsVirtual || methodInfo.IsAbstract || IsMethodOverride(methodInfo));
     }
 
     private static bool IsExposedToConsumers(FieldInfo field)
     {
-        return field.IsPublic || field.IsFamily || field.IsFamilyOrAssembly;
+        return field.IsPublic;
     }
 
     private MethodSymbol ReadMethod(MethodInfo method, Type declaringType)
@@ -466,10 +473,10 @@ public sealed class ReflectionReader
             MetadataToken = property.MetadataToken
         };
 
-        // IMPORTANT: include non-public accessors (protected/protected-internal),
-        // since we support subclassing/overrides in downstream projects.
-        var getter = property.GetGetMethod(true);
-        var setter = property.GetSetMethod(true);
+        var rawGetter = property.GetGetMethod(true);
+        var rawSetter = property.GetSetMethod(true);
+        var getter = rawGetter != null && IsExposedToConsumers(rawGetter) ? rawGetter : null;
+        var setter = rawSetter != null && IsExposedToConsumers(rawSetter) ? rawSetter : null;
         // For indexer parameters, get the accessor to check if property is static
         var accessor = getter ?? setter;
         var indexParams = property.GetIndexParameters()
@@ -551,8 +558,8 @@ public sealed class ReflectionReader
             MetadataToken = evt.MetadataToken
         };
 
-        // IMPORTANT: include non-public add/remove methods (protected/protected-internal).
-        var addMethod = evt.GetAddMethod(true);
+        var rawAddMethod = evt.GetAddMethod(true);
+        var addMethod = rawAddMethod != null && IsExposedToConsumers(rawAddMethod) ? rawAddMethod : null;
 
         return new EventSymbol
         {
@@ -764,8 +771,10 @@ public sealed class ReflectionReader
 
     private Visibility GetPropertyVisibility(PropertyInfo property)
     {
-        var getter = property.GetGetMethod(true);
-        var setter = property.GetSetMethod(true);
+        var rawGetter = property.GetGetMethod(true);
+        var rawSetter = property.GetSetMethod(true);
+        var getter = rawGetter != null && IsExposedToConsumers(rawGetter) ? rawGetter : null;
+        var setter = rawSetter != null && IsExposedToConsumers(rawSetter) ? rawSetter : null;
         var method = getter ?? setter;
         return method != null ? GetVisibility(method) : Visibility.Private;
     }
@@ -782,7 +791,8 @@ public sealed class ReflectionReader
 
     private Visibility GetEventVisibility(EventInfo evt)
     {
-        var addMethod = evt.GetAddMethod(true);
+        var rawAddMethod = evt.GetAddMethod(true);
+        var addMethod = rawAddMethod != null && IsExposedToConsumers(rawAddMethod) ? rawAddMethod : null;
         return addMethod != null ? GetVisibility(addMethod) : Visibility.Private;
     }
 

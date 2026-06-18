@@ -37,6 +37,8 @@ public static class LibraryContractLoader
         var allowedTypes = new HashSet<string>();
         var allowedMembers = new HashSet<string>();
         var namespaceToTypes = new Dictionary<string, HashSet<string>>();
+        var baseClrFullNameByClrFullName = new Dictionary<string, string>(StringComparer.Ordinal);
+        var instanceMemberNamesByClrFullName = new Dictionary<string, HashSet<string>>(StringComparer.Ordinal);
 
         // Load all bindings.json files from namespace subdirectories
         //
@@ -59,7 +61,13 @@ public static class LibraryContractLoader
         // same as the member stable-id set.
         foreach (var bindingsFile in bindingsFiles)
         {
-            ProcessBindingsFile(bindingsFile, allowedTypes, allowedMembers, namespaceToTypes);
+            ProcessBindingsFile(
+                bindingsFile,
+                allowedTypes,
+                allowedMembers,
+                namespaceToTypes,
+                baseClrFullNameByClrFullName,
+                instanceMemberNamesByClrFullName);
         }
 
         // Load families.json if it exists (optional, enables multi-arity facade support)
@@ -106,6 +114,11 @@ public static class LibraryContractLoader
                 kvp => kvp.Value.ToImmutableHashSet()),
             AllowedClrFullNames = allowedClrFullNames.ToImmutableHashSet(),
             ClrFullNameToNamespace = clrFullNameToNamespace.ToImmutableDictionary(),
+            BaseClrFullNameByClrFullName = baseClrFullNameByClrFullName.ToImmutableDictionary(StringComparer.Ordinal),
+            InstanceMemberNamesByClrFullName = instanceMemberNamesByClrFullName.ToImmutableDictionary(
+                kvp => kvp.Key,
+                kvp => kvp.Value.ToImmutableHashSet(StringComparer.Ordinal),
+                StringComparer.Ordinal),
             FacadeFamilies = facadeFamilies,
             PackageNames = ImmutableHashSet.Create(StringComparer.Ordinal, packageName),
             ClrFullNameToPackage = allowedClrFullNames
@@ -167,7 +180,9 @@ public static class LibraryContractLoader
         string filePath,
         HashSet<string> allowedTypes,
         HashSet<string> allowedMembers,
-        Dictionary<string, HashSet<string>> namespaceToTypes)
+        Dictionary<string, HashSet<string>> namespaceToTypes,
+        Dictionary<string, string> baseClrFullNameByClrFullName,
+        Dictionary<string, HashSet<string>> instanceMemberNamesByClrFullName)
     {
         var json = File.ReadAllText(filePath);
         using var doc = JsonDocument.Parse(json);
@@ -215,6 +230,36 @@ public static class LibraryContractLoader
             allowedTypes.Add(typeStableId);
             namespaceTypes.Add(typeStableId);
 
+            var clrFullName = GetClrFullNameFromStableId(typeStableId);
+            if (clrFullName != null)
+            {
+                if (typeElement.TryGetProperty("baseType", out var baseTypeElement) &&
+                    baseTypeElement.ValueKind == JsonValueKind.Object &&
+                    baseTypeElement.TryGetProperty("stableId", out var baseStableIdElement))
+                {
+                    var baseStableId = baseStableIdElement.GetString();
+                    var baseClrFullName = baseStableId == null ? null : GetClrFullNameFromStableId(baseStableId);
+                    if (!string.IsNullOrWhiteSpace(baseClrFullName))
+                    {
+                        baseClrFullNameByClrFullName[clrFullName] = baseClrFullName!;
+                    }
+                }
+
+                var instanceMemberNames = instanceMemberNamesByClrFullName.TryGetValue(clrFullName, out var existingMembers)
+                    ? existingMembers
+                    : new HashSet<string>(StringComparer.Ordinal);
+
+                CollectInstanceMemberNames(typeElement, "methods", instanceMemberNames);
+                CollectInstanceMemberNames(typeElement, "properties", instanceMemberNames);
+                CollectInstanceMemberNames(typeElement, "fields", instanceMemberNames);
+                CollectInstanceMemberNames(typeElement, "events", instanceMemberNames);
+
+                if (instanceMemberNames.Count > 0)
+                {
+                    instanceMemberNamesByClrFullName[clrFullName] = instanceMemberNames;
+                }
+            }
+
             ProcessMemberArray(typeElement, "methods", allowedMembers);
             ProcessMemberArray(typeElement, "properties", allowedMembers);
             ProcessMemberArray(typeElement, "fields", allowedMembers);
@@ -223,6 +268,80 @@ public static class LibraryContractLoader
         }
 
         namespaceToTypes[namespaceName] = namespaceTypes;
+    }
+
+    private static string? GetClrFullNameFromStableId(string stableId)
+    {
+        var colonIndex = stableId.IndexOf(':');
+        return colonIndex >= 0 && colonIndex < stableId.Length - 1
+            ? stableId.Substring(colonIndex + 1)
+            : null;
+    }
+
+    private static void CollectInstanceMemberNames(JsonElement typeElement, string memberArrayName, HashSet<string> memberNames)
+    {
+        if (!typeElement.TryGetProperty(memberArrayName, out var memberArray) ||
+            memberArray.ValueKind != JsonValueKind.Array)
+        {
+            return;
+        }
+
+        foreach (var member in memberArray.EnumerateArray())
+        {
+            if (member.TryGetProperty("isStatic", out var isStaticElement) &&
+                isStaticElement.ValueKind == JsonValueKind.True)
+            {
+                continue;
+            }
+
+            if (member.TryGetProperty("emitScope", out var emitScopeElement) &&
+                emitScopeElement.GetString() != "ClassSurface")
+            {
+                continue;
+            }
+
+            if (!IsInstanceSurfaceMember(member))
+            {
+                continue;
+            }
+
+            if (!member.TryGetProperty("targetName", out var targetNameElement))
+            {
+                continue;
+            }
+
+            var targetName = targetNameElement.GetString();
+            if (!string.IsNullOrWhiteSpace(targetName))
+            {
+                memberNames.Add(targetName);
+            }
+        }
+    }
+
+    private static bool IsInstanceSurfaceMember(JsonElement member)
+    {
+        var visibility = member.TryGetProperty("visibility", out var visibilityElement)
+            ? visibilityElement.GetString()
+            : null;
+
+        if (visibility == "Public")
+        {
+            return true;
+        }
+
+        if (visibility is not ("Protected" or "ProtectedInternal"))
+        {
+            return false;
+        }
+
+        var isVirtual = member.TryGetProperty("isVirtual", out var virtualElement) &&
+                        virtualElement.ValueKind == JsonValueKind.True;
+        var isAbstract = member.TryGetProperty("isAbstract", out var abstractElement) &&
+                         abstractElement.ValueKind == JsonValueKind.True;
+        var isOverride = member.TryGetProperty("isOverride", out var overrideElement) &&
+                         overrideElement.ValueKind == JsonValueKind.True;
+
+        return isVirtual || isAbstract || isOverride;
     }
 
     private static void ProcessMemberArray(JsonElement typeElement, string memberArrayName, HashSet<string> allowedMembers)

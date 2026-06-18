@@ -123,11 +123,7 @@ public static class SafeToExtendAnalyzer
 
             if (ifaceSymbol == null)
             {
-                // External interface (filtered out by --lib):
-                // We cannot analyze member conflicts, but we still want assignability for common CLR interfaces
-                // like IQueryable<T>/IEnumerable<T>. We apply conservative filtering above to avoid known
-                // TS2320/TS2430 hazards (non-generic System.Collections interfaces, redundant non-generic variants).
-                assignable.Add(ifaceRef);
+                nonAssignable.Add((ifaceRef, "Interface surface is external to this graph; structural extends cannot be proven"));
                 continue;
             }
 
@@ -883,12 +879,8 @@ public static class SafeToExtendAnalyzer
     }
 
     private static bool ShouldExposeMethod(MethodSymbol method) =>
-        method.Visibility == Visibility.Public ||
-        ((method.Visibility == Visibility.Protected || method.Visibility == Visibility.ProtectedInternal) &&
-         (method.IsVirtual || method.IsAbstract || method.IsOverride));
+        method.Visibility == Visibility.Public;
 
     private static bool ShouldExposeProperty(PropertySymbol property) =>
-        property.Visibility == Visibility.Public ||
-        ((property.Visibility == Visibility.Protected || property.Visibility == Visibility.ProtectedInternal) &&
-         (property.IsVirtual || property.IsAbstract || property.IsOverride));
+        property.Visibility == Visibility.Public;
 }

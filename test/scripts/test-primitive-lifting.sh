@@ -60,15 +60,17 @@ else
     echo -e "  ${GREEN}[PASS]${NC} CharEnumerator has IEnumerator_1 view with Char (correct)"
 fi
 
-# Test 3: CharEnumerator SHOULD extend ICloneable (safe interface)
-# This verifies SafeToExtend allows safe interfaces
-if ! grep -E "interface CharEnumerator\\\$instance extends .*ICloneable" "$SYSTEM_INDEX" > /dev/null 2>&1; then
-    echo -e "  ${RED}[FAIL]${NC} CharEnumerator should extend ICloneable (it's safe)"
+# Test 3: CharEnumerator SHOULD carry ICloneable structurally.
+# The current surface uses nominal interface brands plus the concrete method, so direct
+# `extends ICloneable$instance` is not required for assignability.
+if ! grep -A12 -E "interface CharEnumerator\\\$instance" "$SYSTEM_INDEX" | grep -E "__tsonic_iface_System_ICloneable" > /dev/null 2>&1 ||
+   ! grep -A12 -E "interface CharEnumerator\\\$instance" "$SYSTEM_INDEX" | grep -E "Clone\\(\\): unknown;" > /dev/null 2>&1; then
+    echo -e "  ${RED}[FAIL]${NC} CharEnumerator should carry ICloneable brand and Clone()"
     echo ""
-    grep -A3 "interface CharEnumerator\\\$instance" "$SYSTEM_INDEX" || true
+    grep -A12 "interface CharEnumerator\\\$instance" "$SYSTEM_INDEX" || true
     FAILED=1
 else
-    echo -e "  ${GREEN}[PASS]${NC} CharEnumerator extends ICloneable (correct - it's safe)"
+    echo -e "  ${GREEN}[PASS]${NC} CharEnumerator carries ICloneable brand and Clone()"
 fi
 
 # Test 4: CharEnumerator.Current should return 'char' not 'Char'
@@ -100,7 +102,7 @@ if [ $FAILED -eq 0 ]; then
     echo ""
     echo "SafeToExtend correctly handles primitive/CLR type name differences:"
     echo "  - CharEnumerator does not extend IEnumerator_1<Char> (would cause TS2430)"
-    echo "  - CharEnumerator extends ICloneable (safe, no type mismatch)"
+    echo "  - CharEnumerator carries ICloneable brand + Clone() (safe assignability)"
     echo "  - Generic type args use CLR names (Char, Int32, etc.)"
     echo "  - Value positions use TS primitives (char, int, etc.)"
     echo ""

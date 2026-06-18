@@ -7,7 +7,8 @@
 # - BaseWriter has Dispose() and Dispose(bool)
 # - DerivedWriter overrides Dispose(bool) only
 # - StructuralConformance adds a ViewOnly IMyDisposable.Dispose() on DerivedWriter
-# - BaseOverloadAdder must still inject Dispose() onto DerivedWriter's class surface
+# - DerivedWriter's class surface must still preserve BaseWriter.Dispose() while
+#   adding the derived Dispose(bool) family
 
 source "$(dirname "${BASH_SOURCE[0]}")/_common.sh"
 
@@ -95,11 +96,14 @@ DERIVED_BLOCK=$(awk '
     inblock && $0 ~ /^}/ { exit }
 ' "$DTS_FILE")
 
-echo "$DERIVED_BLOCK" | grep -Fq "Dispose(disposing: boolean): void;"
-echo -e "  ${GREEN}[PASS]${NC} DerivedWriter declares Dispose(bool)"
+echo "$DERIVED_BLOCK" | grep -Fq 'Dispose: BaseWriter$instance["Dispose"] & (() => void) & ((disposing: boolean) => void);'
+echo -e "  ${GREEN}[PASS]${NC} DerivedWriter preserves inherited Dispose() and adds Dispose(bool)"
 
-echo "$DERIVED_BLOCK" | grep -Fq "Dispose(): void;"
-echo -e "  ${GREEN}[PASS]${NC} DerivedWriter includes injected base Dispose() overload"
+if echo "$DERIVED_BLOCK" | grep -Fq "Dispose(): void;"; then
+    echo -e "${RED}❌ FAILED: DerivedWriter emitted stale method-syntax Dispose() instead of preserving the base family by indexed type${NC}"
+    exit 1
+fi
+echo -e "  ${GREEN}[PASS]${NC} DerivedWriter does not duplicate the inherited overload as a stale method declaration"
 
 echo ""
 echo "================================================"

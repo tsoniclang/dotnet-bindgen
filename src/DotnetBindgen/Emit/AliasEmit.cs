@@ -1,6 +1,8 @@
 using System.Collections.Generic;
 using System.Linq;
 using System.Text;
+using DotnetBindgen.Emit.Shared;
+using DotnetBindgen.Model;
 using DotnetBindgen.Model.Symbols;
 using DotnetBindgen.Model.Types;
 
@@ -36,7 +38,8 @@ internal static class AliasEmit
         TypeNameResolver resolver,
         BuildContext ctx,
         bool withConstraints = false,
-        bool facadeMode = false)
+        bool facadeMode = false,
+        SymbolGraph? graph = null)
     {
         var gps = sourceType.GenericParameters;
 
@@ -58,7 +61,7 @@ internal static class AliasEmit
         // LHS: Generate type parameters (with or without constraints)
         if (withConstraints)
         {
-            var typeParamsLHS = GenerateTypeParametersWithConstraints(sourceType, resolver, ctx, facadeMode);
+            var typeParamsLHS = GenerateTypeParametersWithConstraints(sourceType, resolver, ctx, facadeMode, graph);
             sb.Append(typeParamsLHS);
         }
         else
@@ -87,7 +90,8 @@ internal static class AliasEmit
         TypeSymbol sourceType,
         TypeNameResolver resolver,
         BuildContext ctx,
-        bool facadeMode = false)
+        bool facadeMode = false,
+        SymbolGraph? graph = null)
     {
         var gps = sourceType.GenericParameters;
         if (gps.Length == 0)
@@ -111,26 +115,7 @@ internal static class AliasEmit
                 // Print each constraint using TypeRefPrinter
                 // PRIMITIVE CONSTRAINT RELAXATION: Widen value semantics constraints
                 var constraintStrings = typeConstraints
-                    .Select(c =>
-                    {
-                        var printed = Printers.TypeRefPrinter.Print(c, resolver, ctx);
-
-                        // FACADE MODE: Prefix with "Internal." so constraints reference the internal module
-                        // This fixes TS2344 errors where unconstrained facade type params don't satisfy
-                        // internal type constraints. Example:
-                        // export type IFoo<TSelf extends Internal.IFoo_1<TSelf>> = Internal.IFoo_1<TSelf>;
-                        if (facadeMode && RequiresFacadeInternalQualification(printed))
-                        {
-                            printed = "Internal." + printed;
-                        }
-
-                        // Relax IEquatable_1<T>, IComparable_1<T>, IComparable to admit primitives
-                        if (IsValueSemanticsConstraint(c, gp.Name))
-                        {
-                            return RelaxConstraintForPrimitives(printed, gp.Name);
-                        }
-                        return printed;
-                    })
+                    .Select(c => PrintExplicitConstraint(c, gp, resolver, ctx, facadeMode, sourceType.Namespace, graph: graph))
                     .Where(c => c != "any" && !Printers.TypeRefPrinter.IsOpaqueTypeText(c))
                     .ToArray();
                 parts.Add($"{gp.Name} extends {BuildConstraintText(gp, constraintStrings)}");
@@ -158,7 +143,7 @@ internal static class AliasEmit
     /// Checks if a constraint is a special C# constraint that doesn't translate to TypeScript.
     /// Special constraints: struct (System.ValueType), class (System.Object), new()
     /// </summary>
-    private static bool IsSuppressedTypeConstraint(Model.Types.TypeReference constraint)
+    internal static bool IsSuppressedTypeConstraint(Model.Types.TypeReference constraint)
     {
         // The CLR "class" special constraint can surface as System.Object.
         // Suppress it here so generic parameters can use the more precise TS-side
@@ -171,12 +156,175 @@ internal static class AliasEmit
         return false;
     }
 
+    internal static string PrintExplicitConstraint(
+        TypeReference constraint,
+        GenericParameterSymbol gp,
+        TypeNameResolver resolver,
+        BuildContext ctx,
+        bool facadeMode = false,
+        string? sourceNamespace = null,
+        string? emittedGenericParameterName = null,
+        Func<string, string>? transformPrintedConstraint = null,
+        SymbolGraph? graph = null)
+    {
+        if (IsSuppressedTypeConstraint(constraint))
+            return string.Empty;
+
+        var outputGenericParameterName = emittedGenericParameterName ?? gp.Name;
+
+        if (IsValueSemanticsConstraint(constraint, gp.Name))
+        {
+            var printed = Printers.TypeRefPrinter.Print(constraint, resolver, ctx);
+            if (transformPrintedConstraint != null)
+                printed = transformPrintedConstraint(printed);
+
+            if (facadeMode &&
+                sourceNamespace != null &&
+                RequiresFacadeInternalQualification(printed) &&
+                IsSameNamespaceConstraint(constraint, sourceNamespace))
+            {
+                printed = "Internal." + printed;
+            }
+
+            return RelaxConstraintForPrimitives(printed, outputGenericParameterName);
+        }
+
+        var nominalConstraint = TryPrintNominalConstraint(constraint, ctx, graph);
+        if (nominalConstraint != null)
+            return nominalConstraint;
+
+        var fallback = Printers.TypeRefPrinter.Print(constraint, resolver, ctx);
+        if (transformPrintedConstraint != null)
+            fallback = transformPrintedConstraint(fallback);
+
+        if (fallback.TrimStart().StartsWith("extends ", StringComparison.Ordinal))
+            return string.Empty;
+
+        if (facadeMode &&
+            sourceNamespace != null &&
+            RequiresFacadeInternalQualification(fallback) &&
+            IsSameNamespaceConstraint(constraint, sourceNamespace))
+        {
+            fallback = "Internal." + fallback;
+        }
+
+        return fallback;
+    }
+
+    private static string? TryPrintNominalConstraint(TypeReference constraint, BuildContext ctx, SymbolGraph? graph)
+    {
+        var named = constraint switch
+        {
+            NamedTypeReference n => n,
+            NestedTypeReference nested => nested.FullReference,
+            _ => null
+        };
+
+        if (named == null)
+            return null;
+
+        var canonical = StripAssemblyQualification(named.FullName);
+        var graphType = FindTypeByClrFullName(graph, canonical);
+        var isInterface =
+            named.InterfaceStableId != null ||
+            graphType?.Kind == TypeKind.Interface;
+
+        var brandNames = isInterface
+            ? [NameUtilities.GetClrInterfaceBrandPropertyName(canonical)]
+            : GetNominalTypeConstraintBrandNames(canonical, ctx, graph);
+
+        return string.Join(" & ", brandNames.Select(brandName => $"{{ readonly {brandName}: never }}"));
+    }
+
+    private static IReadOnlyList<string> GetNominalTypeConstraintBrandNames(string clrFullName, BuildContext ctx, SymbolGraph? graph)
+    {
+        var fullNames = new SortedSet<string>(StringComparer.Ordinal);
+        var visited = new HashSet<string>(StringComparer.Ordinal);
+
+        void AddType(string fullName)
+        {
+            var canonical = StripAssemblyQualification(fullName);
+            if (canonical == "System.Object" || !visited.Add(canonical))
+                return;
+
+            fullNames.Add(canonical);
+
+            var symbol = FindTypeByClrFullName(graph, canonical);
+            if (symbol != null)
+            {
+                if (symbol.Kind == TypeKind.Struct)
+                    fullNames.Add("System.ValueType");
+
+                var baseFullName = GetNamedTypeFullName(symbol.BaseType);
+                if (baseFullName != null)
+                    AddType(baseFullName);
+                return;
+            }
+
+            if (ctx.LibraryContract?.BaseClrFullNameByClrFullName.TryGetValue(canonical, out var externalBaseFullName) == true)
+                AddType(externalBaseFullName);
+        }
+
+        AddType(clrFullName);
+        return fullNames.Select(NameUtilities.GetClrTypeBrandPropertyName).ToArray();
+    }
+
+    private static TypeSymbol? FindTypeByClrFullName(SymbolGraph? graph, string clrFullName)
+    {
+        if (graph == null)
+            return null;
+
+        var canonical = StripAssemblyQualification(clrFullName);
+        foreach (var ns in graph.Namespaces)
+        {
+            foreach (var type in ns.Types)
+            {
+                if (type.ClrFullName == canonical)
+                    return type;
+
+                var nested = FindNestedTypeByClrFullName(type, canonical);
+                if (nested != null)
+                    return nested;
+            }
+        }
+
+        if (graph.TypeIndex.TryGetValue(canonical, out var indexed))
+            return indexed;
+
+        return null;
+    }
+
+    private static TypeSymbol? FindNestedTypeByClrFullName(TypeSymbol type, string clrFullName)
+    {
+        foreach (var nested in type.NestedTypes)
+        {
+            if (nested.ClrFullName == clrFullName)
+                return nested;
+
+            var match = FindNestedTypeByClrFullName(nested, clrFullName);
+            if (match != null)
+                return match;
+        }
+
+        return null;
+    }
+
+    private static string? GetNamedTypeFullName(TypeReference? typeRef)
+    {
+        return typeRef switch
+        {
+            NamedTypeReference named => named.FullName,
+            NestedTypeReference nested => nested.FullReference.FullName,
+            _ => null
+        };
+    }
+
     internal static string GetImplicitConstraintText(GenericParameterSymbol gp)
     {
         var special = gp.SpecialConstraints;
 
         if ((special & GenericParameterConstraints.ValueType) != 0)
-            return "NonNullable<unknown>";
+            return $"{{ readonly {NameUtilities.GetClrTypeBrandPropertyName("System.ValueType")}: never }}";
 
         if ((special & GenericParameterConstraints.ReferenceType) != 0)
         {
@@ -189,6 +337,30 @@ internal static class AliasEmit
             return "NonNullable<unknown>";
 
         return "unknown";
+    }
+
+    internal static bool ContainsGenericParameter(TypeReference typeRef, string name)
+    {
+        return typeRef switch
+        {
+            GenericParameterReference gp => gp.Name == name,
+            NamedTypeReference named => named.TypeArguments.Any(arg => ContainsGenericParameter(arg, name)),
+            ArrayTypeReference array => ContainsGenericParameter(array.ElementType, name),
+            PointerTypeReference pointer => ContainsGenericParameter(pointer.PointeeType, name),
+            ByRefTypeReference byref => ContainsGenericParameter(byref.ReferencedType, name),
+            NestedTypeReference nested => nested.FullReference.TypeArguments.Any(arg => ContainsGenericParameter(arg, name)),
+            FunctionPointerTypeReference fnptr =>
+                ContainsGenericParameter(fnptr.ReturnType, name) ||
+                fnptr.ParameterTypes.Any(arg => ContainsGenericParameter(arg, name)) ||
+                fnptr.CallingConventionTypes.Any(arg => ContainsGenericParameter(arg, name)),
+            _ => false
+        };
+    }
+
+    private static string StripAssemblyQualification(string fullName)
+    {
+        var commaIndex = fullName.IndexOf(',');
+        return commaIndex >= 0 ? fullName.Substring(0, commaIndex).Trim() : fullName;
     }
 
     internal static string BuildConstraintText(
@@ -204,6 +376,9 @@ internal static class AliasEmit
             if (trimmed.Length == 0)
                 return;
 
+            if (!IsValidConstraintTypeExpression(trimmed))
+                return;
+
             var wrapped = WrapConstraintIfNeeded(trimmed);
             if (seen.Add(wrapped))
                 normalized.Add(wrapped);
@@ -215,6 +390,21 @@ internal static class AliasEmit
             AddPart(explicitConstraint);
 
         return string.Join(" & ", normalized);
+    }
+
+    private static bool IsValidConstraintTypeExpression(string text)
+    {
+        var trimmed = text.TrimStart();
+        if (trimmed.StartsWith("extends ", StringComparison.Ordinal))
+            return false;
+
+        if (trimmed.Contains(" extends ", StringComparison.Ordinal))
+            return false;
+
+        if (trimmed.Contains(" implements ", StringComparison.Ordinal))
+            return false;
+
+        return true;
     }
 
     internal static string WrapConstraintIfNeeded(string text)
@@ -257,6 +447,34 @@ internal static class AliasEmit
             return false;
 
         return true;
+    }
+
+    private static bool IsSameNamespaceConstraint(TypeReference typeRef, string currentNamespace)
+    {
+        return typeRef switch
+        {
+            NamedTypeReference named => GetNamespaceFromClrFullName(named.FullName) == currentNamespace,
+            NestedTypeReference nested => GetNamespaceFromClrFullName(nested.FullReference.FullName) == currentNamespace,
+            ArrayTypeReference array => IsSameNamespaceConstraint(array.ElementType, currentNamespace),
+            ByRefTypeReference byref => IsSameNamespaceConstraint(byref.ReferencedType, currentNamespace),
+            PointerTypeReference pointer => IsSameNamespaceConstraint(pointer.PointeeType, currentNamespace),
+            _ => false
+        };
+    }
+
+    private static string GetNamespaceFromClrFullName(string clrFullName)
+    {
+        var canonical = clrFullName;
+        var commaIndex = canonical.IndexOf(',');
+        if (commaIndex >= 0)
+            canonical = canonical.Substring(0, commaIndex).Trim();
+
+        var nestedIndex = canonical.IndexOf('+');
+        if (nestedIndex >= 0)
+            canonical = canonical.Substring(0, nestedIndex);
+
+        var lastDot = canonical.LastIndexOf('.');
+        return lastDot < 0 ? string.Empty : canonical.Substring(0, lastDot);
     }
 
     /// <summary>

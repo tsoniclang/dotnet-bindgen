@@ -106,9 +106,10 @@ public static class InternalIndexEmitter
 
         // CLR type names (Char, Int32, etc.) are defined in System namespace
         // Check if we need to add System_Internal for non-System namespaces
-        var systemImport = imports.FirstOrDefault(i => i.TargetNamespace == "System");
-        var needsSystemInternalForClrTypes = nsOrder.Namespace.Name != "System"
-            && (systemImport == null || systemImport.TypeImports.All(ti => !ti.IsValueImport));
+            var hasSystemInternalAlias = imports.Any(i =>
+                i.NamespaceAlias == "System_Internal" &&
+                i.TypeImports.Any(ti => ti.IsValueImport));
+            var needsSystemInternalForClrTypes = nsOrder.Namespace.Name != "System" && !hasSystemInternalAlias;
 
         if (imports.Count > 0 || needsSystemInternalForClrTypes)
         {
@@ -249,7 +250,7 @@ public static class InternalIndexEmitter
                 }
 
                 // Emit companion views interface - PUBLIC TYPES GET export KEYWORD
-                var viewsInterface = EmitCompanionViewsInterface(typeOrder.Type, views, resolver, ctx);
+                var viewsInterface = EmitCompanionViewsInterface(typeOrder.Type, views, resolver, ctx, graph);
                 var indentedViews = Indent(viewsInterface, indent);
 
                 // PUBLIC TYPES: Always export (both root and namespaces)
@@ -258,7 +259,7 @@ public static class InternalIndexEmitter
                 sb.AppendLine();
 
                 // Emit intersection type alias (already has export in the returned string)
-                var typeAlias = EmitIntersectionTypeAlias(typeOrder.Type, resolver, ctx);
+                var typeAlias = EmitIntersectionTypeAlias(typeOrder.Type, resolver, ctx, graph);
                 var indentedAlias = Indent(typeAlias, indent);
 
 	                // Type alias already includes "export" keyword
@@ -321,7 +322,7 @@ public static class InternalIndexEmitter
 
                     // Add type parameters if needed
                     var typeArgs = AliasEmit.GenerateTypeArguments(typeOrder.Type);
-                    var typeParams = AliasEmit.GenerateTypeParametersWithConstraints(typeOrder.Type, resolver, ctx);
+                    var typeParams = AliasEmit.GenerateTypeParametersWithConstraints(typeOrder.Type, resolver, ctx, graph: graph);
                     sb.Append(typeParams);
 
                     sb.Append(" = ");
@@ -366,7 +367,8 @@ public static class InternalIndexEmitter
                             rhsExpression: rhsExpression,
                             resolver,
                             ctx,
-                            withConstraints: true);
+                            withConstraints: true,
+                            graph: graph);
                     }
                     else
                     {
@@ -378,7 +380,7 @@ public static class InternalIndexEmitter
                         sb.Append("export type ");
                         sb.Append(finalName);
 
-                        var typeParamsLHS = AliasEmit.GenerateTypeParametersWithConstraints(typeOrder.Type, resolver, ctx);
+                        var typeParamsLHS = AliasEmit.GenerateTypeParametersWithConstraints(typeOrder.Type, resolver, ctx, graph: graph);
                         sb.Append(typeParamsLHS);
 
                         sb.Append(" = ");
@@ -425,7 +427,7 @@ public static class InternalIndexEmitter
 	        for (var i = 0; i < lines.Length; i++)
 	        {
 	            var line = lines[i];
-	            var braceIndex = line.IndexOf('{');
+	            var braceIndex = FindTopLevelOpeningBraceIndex(line);
 	            if (braceIndex < 0)
 	                continue;
 
@@ -447,6 +449,31 @@ public static class InternalIndexEmitter
 	        }
 
 	        return instanceDecl;
+	    }
+
+	    private static int FindTopLevelOpeningBraceIndex(string line)
+	    {
+	        var angleDepth = 0;
+	        for (var i = 0; i < line.Length; i++)
+	        {
+	            var c = line[i];
+	            if (c == '<')
+	            {
+	                angleDepth++;
+	                continue;
+	            }
+
+	            if (c == '>' && angleDepth > 0)
+	            {
+	                angleDepth--;
+	                continue;
+	            }
+
+	            if (c == '{' && angleDepth == 0)
+	                return i;
+	        }
+
+	        return -1;
 	    }
 
 	    private static int FindHeritageExtendsIndex(string header, string extendsToken)
@@ -569,72 +596,6 @@ public static class InternalIndexEmitter
 	            yield return list.Substring(start);
 	    }
 
-    /// <summary>
-    /// INTERNAL CONSTRAINTS: Generates generic type parameters WITH constraints for internal convenience exports.
-    /// Mirrors the facade constraint propagation logic to fix TS2344 errors in module-level type aliases.
-    /// PRIMITIVE CONSTRAINT RELAXATION: IEquatable_1<T>, IComparable_1<T>, IComparable
-    /// are widened to admit TS primitives (number | string | boolean).
-    /// </summary>
-    private static string GenerateTypeParametersWithConstraints(
-        Model.Symbols.TypeSymbol sourceType,
-        TypeNameResolver resolver,
-        BuildContext ctx)
-    {
-        var gps = sourceType.GenericParameters;
-        if (gps.Length == 0)
-            return string.Empty;
-
-        var parts = new List<string>(gps.Length);
-
-        foreach (var gp in gps)
-        {
-            // Collect type constraints (interfaces/classes)
-            // Skip C# special constraints (struct, class, new()) as TypeScript can't express them
-            var typeConstraints = gp.Constraints
-                .Where(c => c is not null && !IsSpecialConstraint(c))
-                .ToList();
-
-            if (typeConstraints.Count == 0)
-            {
-                parts.Add($"{gp.Name} extends {AliasEmit.BuildConstraintText(gp, Array.Empty<string>())}");
-            }
-            else
-            {
-                // Print each constraint using TypeRefPrinter (handles imports, qualification, etc.)
-                // PRIMITIVE CONSTRAINT RELAXATION: Widen value semantics constraints
-                var constraintStrings = typeConstraints
-                    .Select(c =>
-                    {
-                        var printed = Printers.TypeRefPrinter.Print(c, resolver, ctx);
-                        // Relax IEquatable_1<T>, IComparable_1<T>, IComparable to admit primitives
-                        if (AliasEmit.IsValueSemanticsConstraint(c, gp.Name))
-                        {
-                            return AliasEmit.RelaxConstraintForPrimitives(printed, gp.Name);
-                        }
-                        return printed;
-                    })
-                    .Where(c => c != "any" && !Printers.TypeRefPrinter.IsOpaqueTypeText(c))
-                    .ToArray();
-
-                parts.Add($"{gp.Name} extends {AliasEmit.BuildConstraintText(gp, constraintStrings)}");
-            }
-        }
-
-        return $"<{string.Join(", ", parts)}>";
-    }
-
-    /// <summary>
-    /// Check if a constraint is a C# special constraint (struct, class, new()).
-    /// These don't translate to TypeScript and should be filtered out.
-    /// </summary>
-    private static bool IsSpecialConstraint(Model.Types.TypeReference constraint)
-    {
-        // Special constraints (struct, class, new()) are not in GenericParameter.Constraints
-        // They're represented by separate flags in the model
-        // This method is here for future-proofing in case the model changes
-        return false;
-    }
-
     private static void EmitBrandedPrimitiveImports(StringBuilder sb)
     {
         SupportTypePreamble.EmitCoreTypeImports(sb);
@@ -664,6 +625,12 @@ public static class InternalIndexEmitter
         SymbolGraph graph,
         Dictionary<string, Plan.SafeToExtendAnalyzer.SafeToExtendResult> safeToExtend)
     {
+        if ((type.Kind == Model.Symbols.TypeKind.Class || type.Kind == Model.Symbols.TypeKind.Struct) &&
+            type.BaseType != null)
+        {
+            return null;
+        }
+
         // Get assignable interfaces from SafeToExtend analysis
         var typeStableId = type.StableId.ToString();
         if (!safeToExtend.TryGetValue(typeStableId, out var safeToExtendResult))
@@ -672,8 +639,10 @@ public static class InternalIndexEmitter
             return null;
         }
 
-        var interfaces = safeToExtendResult.AssignableInterfaces;
-        if (interfaces.Count == 0)
+        var interfaces = safeToExtendResult.AssignableInterfaces
+            .Where(iface => CanEmitMergedInterfaceExtends(type, iface, graph, ctx))
+            .ToArray();
+        if (interfaces.Length == 0)
             return null;
 
         var sb = new StringBuilder();
@@ -688,7 +657,7 @@ public static class InternalIndexEmitter
         {
             sb.Append('<');
             sb.Append(string.Join(", ", type.GenericParameters.Select(gp =>
-                PrintGenericParameterWithConstraints(gp, resolver, ctx))));
+                PrintGenericParameterWithConstraints(gp, resolver, ctx, graph))));
             sb.Append('>');
         }
 
@@ -707,6 +676,85 @@ public static class InternalIndexEmitter
         sb.Append(" {}");
 
         return sb.ToString();
+    }
+
+    private static bool CanEmitMergedInterfaceExtends(
+        TypeSymbol ownerType,
+        TypeReference interfaceRef,
+        SymbolGraph graph,
+        BuildContext ctx)
+    {
+        var named = interfaceRef switch
+        {
+            NamedTypeReference n => n,
+            NestedTypeReference nested => nested.FullReference,
+            _ => null
+        };
+        if (named == null || named.TypeArguments.Count == 0)
+            return true;
+
+        if (!graph.TypeIndex.TryGetValue(StripAssemblyQualification(named.FullName), out var interfaceSymbol))
+            return true;
+
+        var count = Math.Min(named.TypeArguments.Count, interfaceSymbol.GenericParameters.Length);
+        for (var index = 0; index < count; index++)
+        {
+            var argument = named.TypeArguments[index];
+            var interfaceGenericParameter = interfaceSymbol.GenericParameters[index];
+            var requiredConstraints = interfaceGenericParameter.Constraints
+                .Where(c => c != null && !AliasEmit.IsSuppressedTypeConstraint(c))
+                .ToArray();
+            if (requiredConstraints.Length == 0)
+                continue;
+
+            foreach (var ownerGenericParameter in ownerType.GenericParameters)
+            {
+                if (!AliasEmit.ContainsGenericParameter(argument, ownerGenericParameter.Name))
+                    continue;
+
+                foreach (var requiredConstraint in requiredConstraints)
+                {
+                    if (!GenericParameterDeclaresConstraint(ownerGenericParameter, requiredConstraint))
+                    {
+                        ctx.Log(
+                            "SafeToExtend",
+                            $"Suppressing merged structural extends {ownerType.ClrFullName} -> {named.FullName}: " +
+                            $"generic argument {ownerGenericParameter.Name} does not declare required constraint {GetConstraintFullName(requiredConstraint)}");
+                        return false;
+                    }
+                }
+            }
+        }
+
+        return true;
+    }
+
+    private static bool GenericParameterDeclaresConstraint(
+        GenericParameterSymbol ownerGenericParameter,
+        TypeReference requiredConstraint)
+    {
+        var requiredFullName = GetConstraintFullName(requiredConstraint);
+        if (requiredFullName == null)
+            return true;
+
+        return ownerGenericParameter.Constraints.Any(existing =>
+            GetConstraintFullName(existing) == requiredFullName);
+    }
+
+    private static string? GetConstraintFullName(TypeReference? typeRef)
+    {
+        return typeRef switch
+        {
+            NamedTypeReference named => StripAssemblyQualification(named.FullName),
+            NestedTypeReference nested => StripAssemblyQualification(nested.FullReference.FullName),
+            _ => null
+        };
+    }
+
+    private static string StripAssemblyQualification(string fullName)
+    {
+        var commaIndex = fullName.IndexOf(',');
+        return commaIndex >= 0 ? fullName.Substring(0, commaIndex).Trim() : fullName;
     }
 
     /// <summary>
@@ -862,7 +910,7 @@ public static class InternalIndexEmitter
         return lastDot >= 0 ? fullName.Substring(0, lastDot) : "";
     }
 
-    private static string EmitCompanionViewsInterface(TypeSymbol type, ImmutableArray<Shape.ViewPlanner.ExplicitView> views, TypeNameResolver resolver, BuildContext ctx)
+    private static string EmitCompanionViewsInterface(TypeSymbol type, ImmutableArray<Shape.ViewPlanner.ExplicitView> views, TypeNameResolver resolver, BuildContext ctx, SymbolGraph graph)
     {
         var sb = new StringBuilder();
 
@@ -880,7 +928,7 @@ public static class InternalIndexEmitter
         {
             sb.Append('<');
             sb.Append(string.Join(", ", type.GenericParameters.Select(gp =>
-                PrintGenericParameterWithConstraints(gp, resolver, ctx))));
+                PrintGenericParameterWithConstraints(gp, resolver, ctx, graph))));
             sb.Append('>');
         }
 
@@ -1006,7 +1054,7 @@ public static class InternalIndexEmitter
             if (inSystemNamespace)
                 return simpleName;
             else
-                return $"import(\"../../System/internal/index\").{simpleName}";
+                return $"import(\"../../System/internal/index.js\").{simpleName}";
         }
 
         // IEquatable<T>.Equals
@@ -1078,7 +1126,8 @@ public static class InternalIndexEmitter
     private static string PrintGenericParameterWithConstraints(
         Model.Symbols.GenericParameterSymbol gp,
         TypeNameResolver resolver,
-        BuildContext ctx)
+        BuildContext ctx,
+        SymbolGraph graph)
     {
         var sb = new StringBuilder();
         sb.Append(gp.Name);
@@ -1089,16 +1138,7 @@ public static class InternalIndexEmitter
             sb.Append(" extends ");
 
             // PRIMITIVE CONSTRAINT RELAXATION: Widen value semantics constraints
-            var constraints = gp.Constraints.Select(c =>
-            {
-                var printed = Printers.TypeRefPrinter.Print(c, resolver, ctx);
-                // Relax IEquatable_1<T>, IComparable_1<T>, IComparable to admit primitives
-                if (AliasEmit.IsValueSemanticsConstraint(c, gp.Name))
-                {
-                    return AliasEmit.RelaxConstraintForPrimitives(printed, gp.Name);
-                }
-                return printed;
-            })
+            var constraints = gp.Constraints.Select(c => AliasEmit.PrintExplicitConstraint(c, gp, resolver, ctx, graph: graph))
             .Where(c => c != "any" && !Printers.TypeRefPrinter.IsOpaqueTypeText(c))
             .ToArray();
             sb.Append(AliasEmit.BuildConstraintText(gp, constraints));
@@ -1129,32 +1169,6 @@ public static class InternalIndexEmitter
         // NEVER substitute 'any' - that breaks type safety and poisons downstream inference.
         var baseName = Printers.TypeRefPrinter.Print(interfaceRef, resolver, ctx,
             forValuePosition: true);
-
-        // If it's a NamedTypeReference, check if it's cross-namespace
-        if (interfaceRef is Model.Types.NamedTypeReference named)
-        {
-            // Extract namespace from CLR full name
-            var fullName = named.FullName;
-            var commaIndex = fullName.IndexOf(',');
-            if (commaIndex >= 0)
-            {
-                fullName = fullName.Substring(0, commaIndex).Trim();
-            }
-
-            var interfaceNamespace = fullName.Contains('.')
-                ? fullName.Substring(0, fullName.LastIndexOf('.'))
-                : "";
-
-            // If cross-namespace and not already qualified (doesn't contain '.'), qualify it
-            if (!string.IsNullOrEmpty(interfaceNamespace) &&
-                interfaceNamespace != currentNamespace &&
-                !baseName.Contains('.'))
-            {
-                // Flat ESM: qualify with namespace import alias only
-                var namespaceAlias = interfaceNamespace.Replace('.', '_') + "_Internal";
-                return $"{namespaceAlias}.{baseName}";
-            }
-        }
 
         return baseName;
     }
@@ -1196,7 +1210,7 @@ public static class InternalIndexEmitter
         };
     }
 
-    private static string EmitIntersectionTypeAlias(TypeSymbol type, TypeNameResolver resolver, BuildContext ctx)
+    private static string EmitIntersectionTypeAlias(TypeSymbol type, TypeNameResolver resolver, BuildContext ctx, SymbolGraph graph)
     {
         var sb = new StringBuilder();
 
@@ -1233,9 +1247,12 @@ public static class InternalIndexEmitter
         var indexerIntersection = BuildIndexerIntersection(type, resolver, ctx);
         var thenableIntersection = BuildThenableIntersection(type);
 
-        // BOOLEAN UNION: keep the ergonomic `boolean | Boolean$shape` surface, but avoid TS2344
-        // self-constraint failures by providing a non-union shape alias that can be used in
-        // recursive generic constraints (e.g. IParsable_1<TSelf extends IParsable_1<TSelf>>).
+        // BOOLEAN SHAPE: keep a named shape alias for internal recursive generic contexts
+        // (e.g. IParsable_1<TSelf extends IParsable_1<TSelf>>) but make the public CLR
+        // Boolean alias the branded shape itself. A raw `boolean | Boolean$shape` union is
+        // not assignable to CLR value-type constraints because the raw boolean branch cannot
+        // prove System.ValueType. Non-generic System.Boolean references still print as the
+        // TypeScript carrier `boolean`; generic CLR type arguments use this branded alias.
         if (type.ClrFullName == "System.Boolean")
         {
             // Shape: the branded/CLR-backed carrier (no union)
@@ -1249,7 +1266,7 @@ public static class InternalIndexEmitter
 
             sb.Append("export type ");
             sb.Append(finalName);
-            sb.Append(" = boolean | ");
+            sb.Append(" = ");
             sb.Append(shapeName);
             sb.AppendLine(";");
 
@@ -1263,7 +1280,7 @@ public static class InternalIndexEmitter
         sb.Append("export type ");
         sb.Append(finalName);
 
-        var typeParamsLHS = AliasEmit.GenerateTypeParametersWithConstraints(type, resolver, ctx);
+        var typeParamsLHS = AliasEmit.GenerateTypeParametersWithConstraints(type, resolver, ctx, graph: graph);
         sb.Append(typeParamsLHS);
 
         sb.Append(" = ");
